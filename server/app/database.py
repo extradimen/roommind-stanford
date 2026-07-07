@@ -44,3 +44,24 @@ async def init_db() -> None:
                 "ADD COLUMN IF NOT EXISTS orchestration_mode VARCHAR(32) DEFAULT 'generative'"
             )
         )
+        await conn.execute(
+            text("ALTER TABLE scenario_templates ADD COLUMN IF NOT EXISTS player_side_goal TEXT")
+        )
+        await conn.execute(
+            text("ALTER TABLE scenario_templates ADD COLUMN IF NOT EXISTS opponent_side_goal TEXT")
+        )
+        await conn.execute(
+            text(
+                "UPDATE scenario_templates SET player_side_goal = business_goal "
+                "WHERE player_side_goal IS NULL OR player_side_goal = ''"
+            )
+        )
+        await conn.execute(
+            text("ALTER TABLE character_templates ADD COLUMN IF NOT EXISTS side VARCHAR(32) DEFAULT 'opponent'")
+        )
+        await conn.execute(
+            text("ALTER TABLE character_templates ADD COLUMN IF NOT EXISTS character_name VARCHAR(128) DEFAULT ''")
+        )
+        await conn.execute(
+            text("ALTER TABLE character_templates ADD COLUMN IF NOT EXISTS job_title VARCHAR(128) DEFAULT ''")
+        )

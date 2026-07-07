@@ -1,9 +1,8 @@
-import { Link, Route, Routes } from "react-router-dom";
+import { Link, Navigate, Route, Routes } from "react-router-dom";
 import ClientLinks from "./ClientLinks";
 import LanguageSwitcher from "./components/LanguageSwitcher";
 import { useLocale } from "./i18n";
 import Dashboard from "./pages/Dashboard";
-import DispatchRules from "./pages/DispatchRules";
 import LLMSettings from "./pages/LLMSettings";
 import OrchestrationSettings from "./pages/OrchestrationSettings";
 import PlatformSettings from "./pages/PlatformSettings";
@@ -26,7 +25,6 @@ export default function App() {
           <Link to="/platform">{t.nav.platform}</Link>
           <Link to="/llm">{t.nav.llm}</Link>
           <Link to="/scenarios">{t.nav.scenarios}</Link>
-          <Link to="/dispatch">{t.nav.dispatch}</Link>
           <Link to="/sessions/debug">{t.nav.sessionDebug}</Link>
         </nav>
         <div className="sidebar-footer">
@@ -42,7 +40,7 @@ export default function App() {
           <Route path="/scenarios/new" element={<ScenarioEditor />} />
           <Route path="/scenarios/:id/orchestration" element={<OrchestrationSettings />} />
           <Route path="/scenarios/:id" element={<ScenarioEditor />} />
-          <Route path="/dispatch" element={<DispatchRules />} />
+          <Route path="/dispatch" element={<Navigate to="/scenarios" replace />} />
           <Route path="/sessions/debug" element={<SessionDebug />} />
         </Routes>
       </main>

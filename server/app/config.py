@@ -52,7 +52,9 @@ class Settings(BaseSettings):
     default_llm_provider: str = Field(default="", validation_alias="DEFAULT_LLM_PROVIDER")
     default_llm_model: str = Field(default="", validation_alias="DEFAULT_LLM_MODEL")
 
-    admin_secret: str = "roommind-admin-dev-secret"
+    admin_secret: str = Field(
+        default="roommind-stanford-admin-dev-secret", validation_alias="ADMIN_SECRET"
+    )
 
 
 @lru_cache

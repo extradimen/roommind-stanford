@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+import asyncio
 import json
 from typing import Any
 
@@ -21,6 +22,8 @@ class LLMClient:
     """Unified LLM client — OpenClaw-aligned Ollama Cloud + SiliconFlow."""
 
     PROVIDERS = ("ollama", "siliconflow")
+    RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+    MAX_RETRIES = 3
 
     @property
     def AVAILABLE_MODELS(self) -> dict[str, list[str]]:
@@ -110,11 +113,16 @@ class LLMClient:
         }
 
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            if resp.status_code >= 400:
+            for attempt in range(self.MAX_RETRIES):
+                resp = await client.post(url, json=payload, headers=headers)
+                if resp.status_code < 400:
+                    data = resp.json()
+                    return data["choices"][0]["message"]["content"]
+                if resp.status_code in self.RETRYABLE_STATUS and attempt < self.MAX_RETRIES - 1:
+                    await asyncio.sleep(1.0 * (attempt + 1))
+                    continue
                 raise RuntimeError(f"LLM API error {resp.status_code}: {resp.text[:500]}")
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
+            raise RuntimeError("LLM API request failed after retries")
 
     async def chat_completion_stream(
         self,
@@ -158,23 +166,29 @@ class LLMClient:
         }
 
         async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream("POST", url, json=payload, headers=headers) as resp:
-                if resp.status_code >= 400:
-                    body = await resp.aread()
-                    raise RuntimeError(f"LLM API error {resp.status_code}: {body.decode()[:500]}")
-                async for line in resp.aiter_lines():
-                    if not line or not line.startswith("data:"):
-                        continue
-                    data_str = line[5:].strip()
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data_str)
-                    except json.JSONDecodeError:
-                        continue
-                    delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
-                    if delta:
-                        yield delta
+            for attempt in range(self.MAX_RETRIES):
+                async with client.stream("POST", url, json=payload, headers=headers) as resp:
+                    if resp.status_code >= 400:
+                        body = await resp.aread()
+                        if resp.status_code in self.RETRYABLE_STATUS and attempt < self.MAX_RETRIES - 1:
+                            await asyncio.sleep(1.0 * (attempt + 1))
+                            break
+                        raise RuntimeError(f"LLM API error {resp.status_code}: {body.decode()[:500]}")
+                    async for line in resp.aiter_lines():
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data_str = line[5:].strip()
+                        if data_str == "[DONE]":
+                            return
+                        try:
+                            chunk = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+                        delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
+                        if delta:
+                            yield delta
+                    return
+            raise RuntimeError("LLM API stream failed after retries")
 
 
 llm_client = LLMClient()

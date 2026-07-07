@@ -1,0 +1,155 @@
+{
+  "template_meta": {
+    "id": "supply-chain-negotiation",
+    "version": 2,
+    "label": "Supply Chain Price Negotiation (default template)",
+    "description": "2 opponent NPCs + 1 player ally. Edit all fields in the admin scenario editor."
+  },
+  "slug": "supply-chain-negotiation",
+  "title": "Supply Chain Price Negotiation",
+  "description": "You represent the buyer in a meeting room, negotiating price and delivery terms with the supplier CEO and legal counsel.",
+  "player_side_goal": "Push unit price below 85 RMB, delivery within 30 days, and maintain a good working relationship",
+  "opponent_side_goal": "Keep unit price at 88 RMB or above, secure favorable payment terms, and lock in an annual purchase framework agreement",
+  "phases": ["opening", "discovery", "bargaining", "closing"],
+  "win_conditions": [
+    { "field": "price", "operator": "<=", "value": 85 },
+    { "field": "delivery_days", "operator": "<=", "value": 30 },
+    { "field": "relationship_score", "operator": ">=", "value": 60 }
+  ],
+  "scene_config": {
+    "environment": "meeting_room",
+    "lighting": "office_day",
+    "camera": "first_person",
+    "spawn": "seat_user",
+    "player_character": {
+      "character_name": "Alex Chen",
+      "job_title": "Chief Procurement Officer",
+      "avatar_manifest": {
+        "team": "buyer",
+        "suit": "#1e5631",
+        "accent": "#58a6ff",
+        "skin": "#e8b896",
+        "pattern": "global",
+        "accessory": "none",
+        "height": 1.72
+      }
+    }
+  },
+  "orchestration_config": {},
+  "is_published": true,
+  "characters": [
+    {
+      "character_id": "supplier_ceo",
+      "side": "opponent",
+      "character_name": "Mr. Wang",
+      "job_title": "Supplier CEO",
+      "persona": "Assertive but relationship-oriented; speaks directly and occasionally backs points with data",
+      "responsibility": "Defend the price floor and secure favorable payment terms",
+      "tendency": { "risk": "low", "aggression": "high", "cooperation": "medium" },
+      "private_state": {
+        "real_floor_price": 82,
+        "cost_pressure": "Raw material costs up 5%",
+        "negotiation_agenda": [
+          { "item": "Confirm order volume", "target": "Lock annual framework agreement for at least 100k units", "priority": 1 },
+          { "item": "Defend unit price floor", "target": "Unit price >= 88 RMB, ideally >= 95 RMB", "priority": 2 },
+          { "item": "Secure payment terms", "target": "30% upfront, balance within 30 days", "priority": 3 }
+        ],
+        "opening_move": "Open by confirming purchase volume before discussing price",
+        "redlines": ["Will not accept unit price below 82 RMB", "Will not accept uncapped penalty clauses"]
+      },
+      "spawn_point": "seat_opposite",
+      "avatar_manifest": {
+        "team": "supplier",
+        "suit": "#1a2744",
+        "accent": "#c9a227",
+        "skin": "#e8c4a0",
+        "pattern": "east",
+        "accessory": "fan",
+        "height": 1.75
+      },
+      "sort_order": 0
+    },
+    {
+      "character_id": "legal_counsel",
+      "side": "opponent",
+      "character_name": "Attorney Li",
+      "job_title": "Supplier Legal Counsel",
+      "persona": "Precise and detail-oriented; cautious when speaking",
+      "responsibility": "Review contract clauses and flag legal risks",
+      "tendency": { "risk": "very_low", "aggression": "low", "cooperation": "high" },
+      "private_state": {
+        "hidden_clause_risk": "Force majeure clause favors the supplier",
+        "negotiation_agenda": [
+          { "item": "Review breach clauses", "target": "Cap liquidated damages at 5% of contract value", "priority": 1 },
+          { "item": "Clarify delivery penalties", "target": "Late delivery penalty not to exceed 0.05% per day", "priority": 2 }
+        ],
+        "opening_move": "Wait until pricing is discussed, then raise contract terms",
+        "redlines": ["No joint and several liability", "No unlimited warranty period"]
+      },
+      "spawn_point": "seat_side",
+      "avatar_manifest": {
+        "team": "supplier",
+        "suit": "#1a2744",
+        "accent": "#c9a227",
+        "skin": "#e8c4a0",
+        "pattern": "east",
+        "accessory": "briefcase",
+        "height": 1.68
+      },
+      "sort_order": 1
+    },
+    {
+      "character_id": "procurement_ally",
+      "side": "player_ally",
+      "character_name": "Manager Zhang",
+      "job_title": "Procurement Ally",
+      "persona": "Data-driven, skilled at price pressure; your internal ally",
+      "responsibility": "Provide market benchmarks and support pricing strategy",
+      "tendency": { "risk": "medium", "aggression": "medium", "cooperation": "high" },
+      "private_state": { "market_benchmark": 83 },
+      "spawn_point": "seat_adjacent",
+      "avatar_manifest": {
+        "team": "buyer",
+        "suit": "#1e5631",
+        "accent": "#00a896",
+        "skin": "#d4a574",
+        "pattern": "global",
+        "accessory": "globe",
+        "height": 1.7
+      },
+      "sort_order": 2
+    }
+  ],
+  "dispatch_rules": [
+    {
+      "name": "Pricing topics",
+      "description": "When the user mentions price, quotes, or cost, supplier CEO and procurement ally speak first",
+      "trigger_keywords": ["price", "quote", "unit price", "cost", "how much", "discount"],
+      "priority_character_ids": ["supplier_ceo", "procurement_ally"],
+      "min_speakers": 1,
+      "max_speakers": 2,
+      "weights": { "relevance": 0.5, "responsibility": 0.4 },
+      "is_active": true
+    },
+    {
+      "name": "Contract terms",
+      "description": "When the user mentions contracts or legal terms, legal counsel speaks first",
+      "trigger_keywords": ["contract", "clause", "legal", "attorney", "breach", "damages", "agreement"],
+      "priority_character_ids": ["legal_counsel"],
+      "min_speakers": 1,
+      "max_speakers": 1,
+      "weights": {},
+      "is_active": true
+    },
+    {
+      "name": "Delivery and logistics",
+      "description": "Delivery schedule and logistics topics",
+      "trigger_keywords": ["delivery", "lead time", "logistics", "schedule", "delay", "shipment"],
+      "priority_character_ids": ["supplier_ceo", "procurement_ally"],
+      "min_speakers": 1,
+      "max_speakers": 2,
+      "weights": {},
+      "is_active": true
+    }
+  ]
+}

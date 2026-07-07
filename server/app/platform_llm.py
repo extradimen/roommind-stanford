@@ -212,10 +212,23 @@ def resolve_siliconflow_model_id(db_model: str | None = None) -> str:
 def resolve_active_model(db_provider: str | None = None, db_model: str | None = None) -> tuple[LlmProvider, str]:
     if db_provider == "ollama_cloud":
         db_provider = "ollama"
-    provider = resolve_llm_provider(db_provider)
+
+    explicit_provider = str(db_provider).strip() if db_provider and str(db_provider).strip() else None
+    explicit_model = str(db_model).strip() if db_model and str(db_model).strip() else None
+
+    # Per-scenario orchestration / DB llm_config overrides win over platform.json defaults.
+    if explicit_provider:
+        provider = _normalize_provider(explicit_provider)
+    else:
+        provider = resolve_llm_provider(None)
+
     if provider == "ollama":
-        return provider, resolve_ollama_model_id(db_model)
-    return provider, resolve_siliconflow_model_id(db_model)
+        if explicit_model:
+            return provider, explicit_model
+        return provider, resolve_ollama_model_id(None)
+    if explicit_model:
+        return provider, explicit_model
+    return provider, resolve_siliconflow_model_id(None)
 
 
 def llm_status_dict(db_provider: str | None = None, db_model: str | None = None) -> dict[str, Any]:

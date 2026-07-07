@@ -1,11 +1,13 @@
 import { Canvas } from "@react-three/fiber";
 import { useMemo } from "react";
-import { Character } from "../api";
-import { resolveNpcLabel } from "../characterNames";
+import type { AvatarManifest } from "../avatarManifest";
+import { Character, PlayerCharacter } from "../api";
+import { resolveNpcLabel, resolvePlayerLabel } from "../characterNames";
+import { buildCharacterSideMap, type CharacterSide } from "../characterSide";
 import { usePersistedRatio } from "../hooks/usePersistedRatio";
 import { useLocale } from "../i18n";
-import AnimatedAvatar, { CULTURAL_PROFILES, type CulturalProfile } from "./AnimatedAvatar";
 import MeetingOrbitControls from "./MeetingOrbitControls";
+import SceneAvatar, { buildSceneAvatarProfile } from "./SceneAvatar";
 
 const SPAWN_POSITIONS: Record<string, [number, number, number]> = {
   seat_opposite: [0, 0, -2.5],
@@ -14,22 +16,18 @@ const SPAWN_POSITIONS: Record<string, [number, number, number]> = {
   seat_user: [0, 0, 2],
 };
 
-const DEFAULT_PROFILE: CulturalProfile = {
-  skin: "#e8b896",
-  suit: "#444",
-  accent: "#58a6ff",
-  accessory: "none",
-  pattern: "global",
-  label: "Guest",
-};
-
 const CAMERA_LIMITS = {
   compact: { default: 5.5, min: 2.6, max: 9.5 },
   full: { default: 5.0, min: 2.2, max: 10 },
 };
 
+function asAvatarManifest(raw: Character["avatar_manifest"] | undefined): AvatarManifest | undefined {
+  return raw as AvatarManifest | undefined;
+}
+
 interface Props {
   characters: Character[];
+  playerCharacter?: PlayerCharacter | null;
   activeSpeaker: string | null;
   compact?: boolean;
 }
@@ -68,8 +66,13 @@ function MeetingRoom() {
   );
 }
 
-export default function MeetingScene({ characters, activeSpeaker, compact }: Props) {
+export default function MeetingScene({ characters, playerCharacter, activeSpeaker, compact }: Props) {
   const { t, locale } = useLocale();
+  const sideMap = buildCharacterSideMap(characters);
+  const sideLabels: Record<CharacterSide, string> = {
+    player_ally: t.game.sideAlly,
+    opponent: t.game.sideOpponent,
+  };
   const limits = compact ? CAMERA_LIMITS.compact : CAMERA_LIMITS.full;
   const storageKey = compact
     ? "roommind-stanford:scene-distance:compact"
@@ -90,37 +93,55 @@ export default function MeetingScene({ characters, activeSpeaker, compact }: Pro
   const avatars = useMemo(
     () =>
       characters.map((c) => {
-        const base = CULTURAL_PROFILES[c.character_id] || DEFAULT_PROFILE;
+        const manifest = asAvatarManifest(c.avatar_manifest);
         return {
           id: c.character_id,
           name: resolveNpcLabel(c.character_id, {}, c.display_name, locale),
-          profile: {
-            ...base,
-            label: patternLabels[base.pattern],
-          } as CulturalProfile,
+          side: sideMap[c.character_id] || "opponent",
+          sideLabel: sideLabels[sideMap[c.character_id] || "opponent"],
+          profile: buildSceneAvatarProfile(c.character_id, manifest, patternLabels),
+          manifest,
           position: SPAWN_POSITIONS[c.spawn_point || "seat_opposite"] || [0, 0, -2],
         };
       }),
-    [characters, patternLabels.east, patternLabels.west, patternLabels.global, locale],
+    [characters, patternLabels.east, patternLabels.west, patternLabels.global, locale, sideLabels.opponent, sideLabels.player_ally],
   );
+
+  const playerAvatar = useMemo(() => {
+    if (!playerCharacter) return null;
+    const manifest = asAvatarManifest(playerCharacter.avatar_manifest);
+    return {
+      id: "user",
+      name: resolvePlayerLabel(playerCharacter) || playerCharacter.character_name,
+      side: "user" as const,
+      sideLabel: t.game.sideYou,
+      profile: buildSceneAvatarProfile("user", manifest, patternLabels),
+      manifest,
+      position: SPAWN_POSITIONS.seat_user,
+    };
+  }, [playerCharacter, patternLabels.east, patternLabels.west, patternLabels.global, t.game.sideYou]);
 
   const camera = compact
     ? { position: [0, 2.4, 5.2] as [number, number, number], fov: 48 }
     : { position: [0, 2.2, 4.5] as [number, number, number], fov: 55 };
 
   const step = compact ? 0.45 : 0.55;
+  const allAvatars = playerAvatar ? [...avatars, playerAvatar] : avatars;
 
   return (
     <div className="meeting-scene-root">
       <Canvas shadows camera={camera} dpr={compact ? 1 : undefined}>
         <color attach="background" args={["#1a1f2e"]} />
         <MeetingRoom />
-        {avatars.map((a) => (
-          <AnimatedAvatar
+        {allAvatars.map((a) => (
+          <SceneAvatar
             key={a.id}
             position={a.position}
             profile={a.profile}
+            manifest={a.manifest}
             name={a.name}
+            sideLabel={a.sideLabel}
+            side={a.side}
             active={activeSpeaker === a.id}
           />
         ))}

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # --- LLM Config ---
@@ -49,6 +49,8 @@ class LLMKeysUpdate(BaseModel):
 class LLMModelOption(BaseModel):
     id: str
     name: str
+    kind: str | None = None  # "chat" | "reasoning"
+    recommended: bool = False
 
 
 class LLMProvidersOut(BaseModel):
@@ -62,7 +64,10 @@ class LLMProvidersOut(BaseModel):
 
 class CharacterTemplateIn(BaseModel):
     character_id: str
-    display_name: str
+    side: str = "opponent"
+    character_name: str = ""
+    job_title: str = ""
+    display_name: str | None = None
     persona: str
     responsibility: str
     tendency: dict[str, Any] = Field(default_factory=dict)
@@ -78,6 +83,29 @@ class CharacterTemplateIn(BaseModel):
 class CharacterTemplateOut(CharacterTemplateIn):
     id: int
     scenario_id: int
+    display_name: str
+
+    model_config = {"from_attributes": True}
+
+
+class ScenarioDispatchRuleIn(BaseModel):
+    name: str
+    description: str | None = None
+    trigger_keywords: list[str] = Field(default_factory=list)
+    priority_character_ids: list[str] = Field(default_factory=list)
+    min_speakers: int = 1
+    max_speakers: int = 2
+    weights: dict[str, float] = Field(default_factory=dict)
+    is_active: bool = True
+
+
+class DispatchRuleIn(ScenarioDispatchRuleIn):
+    scenario_id: int | None = None
+
+
+class DispatchRuleOut(DispatchRuleIn):
+    id: int
+    created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -89,13 +117,22 @@ class ScenarioTemplateIn(BaseModel):
     slug: str
     title: str
     description: str | None = None
-    business_goal: str
+    player_side_goal: str = ""
+    opponent_side_goal: str = ""
+    business_goal: str | None = None  # legacy input; maps to player_side_goal
     phases: list[str] = Field(default_factory=lambda: ["opening", "discovery", "bargaining", "closing"])
     win_conditions: list[dict[str, Any]] = Field(default_factory=list)
     scene_config: dict[str, Any] = Field(default_factory=dict)
-    orchestration_config: dict[str, Any] = Field(default_factory=dict)
+    orchestration_config: dict[str, Any] | None = None
     is_published: bool = False
     characters: list[CharacterTemplateIn] = Field(default_factory=list)
+    dispatch_rules: list[ScenarioDispatchRuleIn] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def normalize_goals(self) -> "ScenarioTemplateIn":
+        if not self.player_side_goal and self.business_goal:
+            self.player_side_goal = self.business_goal
+        return self
 
 
 class ScenarioTemplateOut(BaseModel):
@@ -103,6 +140,8 @@ class ScenarioTemplateOut(BaseModel):
     slug: str
     title: str
     description: str | None
+    player_side_goal: str = ""
+    opponent_side_goal: str = ""
     business_goal: str
     phases: list[str]
     win_conditions: list[dict[str, Any]]
@@ -110,10 +149,43 @@ class ScenarioTemplateOut(BaseModel):
     orchestration_config: dict[str, Any] = Field(default_factory=dict)
     is_published: bool
     characters: list[CharacterTemplateOut] = Field(default_factory=list)
+    dispatch_rules: list[DispatchRuleOut] = Field(default_factory=list)
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+    @model_validator(mode="before")
+    @classmethod
+    def fill_goal_fields(cls, data: Any) -> Any:
+        if hasattr(data, "business_goal"):
+            player = getattr(data, "player_side_goal", None) or data.business_goal or ""
+            opponent = getattr(data, "opponent_side_goal", None) or ""
+            return {
+                "id": data.id,
+                "slug": data.slug,
+                "title": data.title,
+                "description": data.description,
+                "player_side_goal": player,
+                "opponent_side_goal": opponent,
+                "business_goal": data.business_goal or player,
+                "phases": data.phases,
+                "win_conditions": data.win_conditions,
+                "scene_config": data.scene_config,
+                "orchestration_config": data.orchestration_config or {},
+                "is_published": data.is_published,
+                "characters": data.characters,
+                "dispatch_rules": [],
+                "created_at": getattr(data, "created_at", None),
+                "updated_at": getattr(data, "updated_at", None),
+            }
+        if isinstance(data, dict):
+            if not data.get("player_side_goal") and data.get("business_goal"):
+                data = {**data, "player_side_goal": data["business_goal"]}
+            if not data.get("business_goal") and data.get("player_side_goal"):
+                data = {**data, "business_goal": data["player_side_goal"]}
+        return data
 
 
 class ScenarioListItem(BaseModel):
@@ -123,28 +195,6 @@ class ScenarioListItem(BaseModel):
     description: str | None
     is_published: bool
     character_count: int = 0
-
-    model_config = {"from_attributes": True}
-
-
-# --- Dispatch Rules ---
-
-
-class DispatchRuleIn(BaseModel):
-    scenario_id: int | None = None
-    name: str
-    description: str | None = None
-    trigger_keywords: list[str] = Field(default_factory=list)
-    priority_character_ids: list[str] = Field(default_factory=list)
-    min_speakers: int = 1
-    max_speakers: int = 2
-    weights: dict[str, float] = Field(default_factory=dict)
-    is_active: bool = True
-
-
-class DispatchRuleOut(DispatchRuleIn):
-    id: int
-    created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

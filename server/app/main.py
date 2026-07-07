@@ -2,13 +2,24 @@ import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.admin import router as admin_router
 from app.api.game import router as game_router
+from app.avatar_assets import AVATAR_DIR, ensure_avatar_dir
 from app.config import get_settings, reload_settings
 from app.database import init_db
 from app.platform_llm import ensure_platform_llm_defaults
-from app.seed import seed_if_empty, sync_dispatch_rule_keywords, sync_llm_config_with_platform, sync_scenario_orchestration_config
+from app.seed import (
+    ensure_scenario_templates,
+    seed_if_empty,
+    sync_character_name_fields,
+    sync_dispatch_rule_keywords,
+    sync_llm_config_with_platform,
+    sync_scenario_orchestration_config,
+    sync_scenario_side_goals,
+    sync_scenario_player_characters,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,6 +42,9 @@ app.add_middleware(
 app.include_router(admin_router)
 app.include_router(game_router)
 
+ensure_avatar_dir()
+app.mount("/static/avatars", StaticFiles(directory=str(AVATAR_DIR)), name="avatar_assets")
+
 
 @app.on_event("startup")
 async def startup() -> None:
@@ -38,6 +52,10 @@ async def startup() -> None:
     ensure_platform_llm_defaults()
     await init_db()
     await seed_if_empty()
+    await ensure_scenario_templates()
+    await sync_character_name_fields()
+    await sync_scenario_side_goals()
+    await sync_scenario_player_characters()
     await sync_scenario_orchestration_config()
     await sync_dispatch_rule_keywords()
     await sync_llm_config_with_platform()

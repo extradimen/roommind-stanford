@@ -122,6 +122,14 @@ export const en = {
     refreshCatalog: "Refresh models",
     catalogFetchFailed: "Failed to fetch Ollama models",
     catalogCount: "{count} cloud models",
+    modelKindGuideTitle: "Chat vs reasoning models",
+    modelKindGuide: "★ = recommended RoomMind global default. Chat models suit NPC lines and short plans. Reasoning models think first and need higher max_tokens (≥1024 for opening plans). glm-5.1 is reasoning-type.",
+    kindChat: "Chat",
+    kindReasoning: "Reasoning",
+    recommendedBadge: "Recommended",
+    selectedChatHint: "Chat model selected: good global default; max_tokens 2048 is usually enough.",
+    selectedReasoningHint: "Reasoning model selected: set max_tokens ≥1024 (2048 recommended) or opening plans may be empty and fall back to boilerplate.",
+    dropdownLegend: "Dropdown: [Chat/Reasoning] = model type, ★ = recommended global default",
   },
   scenarios: {
     title: "Scenarios",
@@ -132,6 +140,64 @@ export const en = {
     published: "Published",
     agent: "Agent",
     confirmDelete: "Delete this scenario?",
+    aiGuideTitle: "Generate scenario JSON with AI (guide)",
+    aiGuideIntro:
+      "RoomMind scenario content (story, characters, dispatch rules) can be imported as JSON. Send the example JSON below plus the AI prompt to your model; paste the result on New/Edit Scenario → JSON import. Agent model/behavior is configured separately — do not put it in the JSON.",
+    aiGuideWorkflowTitle: "Suggested workflow",
+    aiGuideWorkflow: [
+      "Download the example JSON, or export from an existing scenario",
+      "Copy the AI prompt below, attach the example JSON, and describe your new scenario",
+      "Validate the output (must include slug, title, characters)",
+      "Import on New/Edit Scenario → JSON import",
+    ],
+    aiGuideIncludesTitle: "JSON should include",
+    aiGuideIncludes: [
+      "slug, title, description, player_side_goal, opponent_side_goal",
+      "phases, win_conditions, scene_config, is_published",
+      "characters[]: character_id, side, character_name, job_title, persona, responsibility, …",
+      "dispatch_rules[]: name, trigger_keywords, priority_character_ids",
+    ],
+    aiGuideExcludesTitle: "Do not include",
+    aiGuideExcludes: ["orchestration_config (Agent settings)", "export_meta (auto on export; optional on import)"],
+    aiGuidePromptTitle: "Prompt for AI (copy)",
+    aiGuidePrompt: `You are a RoomMind business role-play scenario authoring assistant. Generate a scenario JSON that can be imported into the RoomMind admin console.
+
+【Task】
+Mirror the structure and field names of the example JSON the user provides. Output only valid JSON — no markdown fences, no commentary.
+
+【Required top-level】
+- slug: unique English kebab-case id, e.g. retail-supplier-negotiation
+- title: scenario title
+
+【Recommended fields】
+- description, player_side_goal, opponent_side_goal
+- phases: string array, e.g. ["opening","discovery","bargaining","closing"]
+- win_conditions: array of objects, e.g. {"field":"price","operator":"<=","value":85}
+- scene_config: e.g. {"environment":"meeting_room","camera":"first_person"}
+- is_published: true/false
+- characters: array of NPC definitions
+- dispatch_rules: keyword-based speaker priority rules
+
+【Each character】
+- character_id, side ("opponent" | "player_ally")
+- character_name, job_title, persona, responsibility
+- tendency, private_state (hidden agenda, redlines, etc.)
+- avatar_manifest, spawn_point
+
+【Each dispatch rule】
+- name, description, trigger_keywords[], priority_character_ids[]
+- min_speakers, max_speakers, is_active
+
+【Do not output】
+- orchestration_config
+- export_meta
+
+【Typical layout】
+Multi-party negotiation: 2 opponents + 1 player_ally. priority_character_ids must reference existing character_id values.`,
+    copyPrompt: "Copy prompt",
+    copiedPrompt: "Copied",
+    downloadExample: "Download example JSON",
+    downloadExampleFailed: "No scenario to export yet",
   },
   scenarioEditor: {
     newTitle: "New Scenario",
@@ -141,7 +207,9 @@ export const en = {
     slug: "Slug",
     title: "Title",
     description: "Description",
-    businessGoal: "Business goal",
+    businessGoal: "Business goal (legacy — use player/opponent goals below)",
+    playerSideGoal: "Player-side goal (the trainee's team)",
+    opponentSideGoal: "Opponent-side goal (counterparty team)",
     publish: "Publish (visible to client)",
     phasesSection: "Phases & Scene Config",
     phasesJson: "Phases (JSON array)",
@@ -151,15 +219,47 @@ export const en = {
     addCharacter: "+ Add character",
     characterN: "Character #{n}",
     characterId: "Character ID",
-    displayName: "Display name",
+    characterName: "Name",
+    jobTitle: "Job title",
+    side: "Side",
+    sideOpponent: "Opponent",
+    sidePlayerAlly: "Player ally",
+    displayName: "Display name (legacy)",
     spawnPoint: "Spawn point",
     persona: "Persona",
     responsibility: "Responsibility",
     tendencyJson: "Tendency JSON",
     privateStateJson: "Private state JSON",
+    avatarManifestJson: "Avatar / uniform JSON",
+    playerCharacterSection: "Player character (you)",
+    playerCharacterHint: "Name, title, and avatar shown in chat and the 3D room. Agents use this name when referring to the user.",
+    avatarUpload: "Import avatar",
+    avatarUploading: "Uploading…",
+    avatarUploadHint: "PNG/JPG/WebP portrait or GLB/GLTF model (max 20MB). Sets avatar_manifest.image_url or model_url.",
+    avatarClearImport: "Clear import",
+    avatarModelReady: "3D model linked",
     systemPrompt: "Custom system prompt",
     llmConfigJson: "Per-character model JSON (provider / model; overrides npc_default)",
     saveScenario: "Save scenario",
+    dispatchRules: "Dispatch rules",
+    addDispatchRule: "+ Add dispatch rule",
+    dispatchRuleN: "Rule #{n}",
+    dispatchHint: "Keyword-based speaker priority for this scenario.",
+    ruleName: "Rule name",
+    ruleDescription: "Description",
+    triggerKeywords: "Trigger keywords (comma-separated)",
+    priorityCharacters: "Priority character IDs (comma-separated)",
+    keywordsPlaceholder: "price, quote, contract",
+    charsPlaceholder: "supplier_ceo, legal_counsel",
+    minSpeakers: "Min speakers",
+    maxSpeakers: "Max speakers",
+    ruleActive: "Active",
+    jsonSection: "JSON import / export",
+    jsonHint: "Scenario content only (characters, dispatch rules, etc.) — not Agent orchestration. Compatible with templates/scenarios/*.json for AI batch generation.",
+    exportJson: "Export JSON",
+    importJson: "Import from JSON",
+    importPlaceholder: "Paste AI-generated or exported scenario JSON…",
+    importConfirmReplace: "Import replaces characters, dispatch rules, and other scene fields. Agent config is unchanged. Continue?",
   },
   dispatch: {
     title: "Dispatch Rules",
@@ -206,6 +306,9 @@ export const en = {
     speakerType: "Type",
     content: "Content",
     emotionGesture: "Emotion / gesture",
+    exportSession: "Export session JSON",
+    exportScenarioSessions: "Export filtered scenario sessions",
+    exportFailed: "Export failed",
   },
   orchestration: {
     title: "Agent Config · {title}",

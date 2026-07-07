@@ -21,14 +21,20 @@ const CHARACTER_I18N: Record<
 };
 
 export function buildCharacterNameMap(
-  characters: Array<{ character_id: string; display_name: string }> | undefined,
+  characters: Array<{ character_id: string; display_name: string; character_name?: string; job_title?: string }> | undefined,
   locale: Locale = "zh",
 ): Record<string, string> {
   return Object.fromEntries(
-    (characters || []).map((c) => [
-      c.character_id,
-      resolveNpcFullName(c.character_id, {}, c.display_name, locale),
-    ]),
+    (characters || []).map((c) => {
+      const fromApi =
+        c.character_name && c.job_title
+          ? `${c.character_name} (${c.job_title})`
+          : c.character_name || c.display_name;
+      return [
+        c.character_id,
+        CHARACTER_I18N[c.character_id]?.[locale]?.full || fromApi || c.character_id,
+      ];
+    }),
   );
 }
 
@@ -39,6 +45,25 @@ export function npcShortName(name: string): string {
   const en = name.match(/^(.+?) \(/);
   if (en) return en[1];
   return name.length > 12 ? `${name.slice(0, 12)}…` : name;
+}
+
+export function resolvePlayerFullName(
+  player: { character_name?: string; job_title?: string; display_name?: string } | undefined,
+): string {
+  if (!player) return "";
+  if (player.display_name?.trim()) return player.display_name.trim();
+  const name = (player.character_name || "").trim();
+  const title = (player.job_title || "").trim();
+  if (name && title) return `${name} (${title})`;
+  return name || title;
+}
+
+export function resolvePlayerLabel(
+  player: { character_name?: string; job_title?: string; display_name?: string } | undefined,
+): string {
+  const full = resolvePlayerFullName(player);
+  if (!full) return "";
+  return npcShortName(full);
 }
 
 export function resolveNpcFullName(

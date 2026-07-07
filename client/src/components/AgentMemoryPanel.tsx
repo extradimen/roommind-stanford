@@ -17,6 +17,7 @@ export type AgentMemoriesData = {
   orchestration_mode: string;
   character_names: Record<string, string>;
   agents: Record<string, AgentMemoryNode[]>;
+  world_timeline?: Array<Record<string, unknown>>;
   last_agent_debug?: Record<string, Record<string, unknown>>;
   last_turn_id?: number;
 };

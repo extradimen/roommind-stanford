@@ -1,7 +1,7 @@
 const ADMIN_SECRET_KEY = "roommind_admin_secret";
 
 export function getAdminSecret(): string {
-  return localStorage.getItem(ADMIN_SECRET_KEY) || "roommind-admin-dev-secret";
+  return localStorage.getItem(ADMIN_SECRET_KEY) || "roommind-stanford-admin-dev-secret";
 }
 
 export function setAdminSecret(secret: string) {
@@ -27,7 +27,7 @@ export const api = {
   getProviders: () =>
     request<{
       providers: Record<string, string[]>;
-      catalogs: Record<string, { id: string; name: string }[]>;
+      catalogs: Record<string, LLMModelCatalogItem[]>;
       meta?: Record<string, unknown>;
     }>(`/api/admin/llm/providers?_=${Date.now()}`),
   getLLMConfig: () => request<LLMConfig | null>("/api/admin/llm/config"),
@@ -48,6 +48,11 @@ export const api = {
     request<Scenario>(`/api/admin/scenarios/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteScenario: (id: number) =>
     request<{ status: string }>(`/api/admin/scenarios/${id}`, { method: "DELETE" }),
+  exportScenario: (id: number) => request<Record<string, unknown>>(`/api/admin/scenarios/${id}/export`),
+  importScenarioNew: (data: Record<string, unknown>) =>
+    request<Scenario>("/api/admin/scenarios/import", { method: "POST", body: JSON.stringify(data) }),
+  importScenarioReplace: (id: number, data: Record<string, unknown>) =>
+    request<Scenario>(`/api/admin/scenarios/${id}/import`, { method: "PUT", body: JSON.stringify(data) }),
 
   listDispatchRules: (scenarioId?: number) =>
     request<DispatchRule[]>(
@@ -78,7 +83,35 @@ export const api = {
     ),
   getSessionDebug: (sessionUuid: string) =>
     request<SessionDebug>(`/api/admin/sessions/${sessionUuid}/debug`),
+  exportSession: (sessionUuid: string) =>
+    request<Record<string, unknown>>(`/api/admin/sessions/${sessionUuid}/export`),
+  exportSessionsBatch: (scenarioId?: number, limit = 50) =>
+    request<Record<string, unknown>>(
+      `/api/admin/sessions/export?limit=${limit}` + (scenarioId != null ? `&scenario_id=${scenarioId}` : ""),
+    ),
+
+  uploadAvatar: async (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch("/api/admin/assets/avatar", {
+      method: "POST",
+      headers: { "X-Admin-Secret": getAdminSecret() },
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+    return res.json() as Promise<{ url: string; filename: string }>;
+  },
 };
+
+export interface LLMModelCatalogItem {
+  id: string;
+  name: string;
+  kind?: "chat" | "reasoning";
+  recommended?: boolean;
+}
 
 export interface LLMConfig {
   id: number;
@@ -100,7 +133,10 @@ export interface LLMKeysStatus {
 export interface Character {
   id?: number;
   character_id: string;
-  display_name: string;
+  side?: "player_ally" | "opponent";
+  character_name: string;
+  job_title: string;
+  display_name?: string;
   persona: string;
   responsibility: string;
   tendency: Record<string, string>;
@@ -118,6 +154,8 @@ export interface Scenario {
   slug: string;
   title: string;
   description: string | null;
+  player_side_goal: string;
+  opponent_side_goal: string;
   business_goal: string;
   phases: string[];
   win_conditions: Record<string, unknown>[];
@@ -125,6 +163,18 @@ export interface Scenario {
   orchestration_config?: Record<string, unknown>;
   is_published: boolean;
   characters: Character[];
+  dispatch_rules: ScenarioDispatchRule[];
+}
+
+export interface ScenarioDispatchRule {
+  name: string;
+  description?: string | null;
+  trigger_keywords: string[];
+  priority_character_ids: string[];
+  min_speakers: number;
+  max_speakers: number;
+  weights: Record<string, number>;
+  is_active: boolean;
 }
 
 export type ScenarioInput = Omit<Scenario, "id">;

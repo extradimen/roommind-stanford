@@ -5,27 +5,49 @@ from typing import Any
 ORCHESTRATION_MODE = "generative"
 
 
+# Old baked-in defaults that were persisted into scenarios and overrode global LLM settings.
+LEGACY_LLM_ROLE_BINDINGS: dict[str, dict[str, str]] = {
+    "npc_default": {"provider": "siliconflow", "model": "moonshotai/Kimi-K2.5"},
+    "decision": {"provider": "siliconflow", "model": "Qwen/Qwen2.5-7B-Instruct"},
+    "reflection": {"provider": "siliconflow", "model": "Qwen/Qwen2.5-7B-Instruct"},
+}
+
+
 def default_llm_roles() -> dict[str, Any]:
+    """Role-specific generation params only; provider/model inherit global LLM config."""
     return {
-        "npc_default": {
-            "provider": "siliconflow",
-            "model": "moonshotai/Kimi-K2.5",
-            "temperature": 0.7,
-            "max_tokens": 512,
-        },
-        "decision": {
-            "provider": "siliconflow",
-            "model": "Qwen/Qwen2.5-7B-Instruct",
-            "temperature": 0.4,
-            "max_tokens": 512,
-        },
-        "reflection": {
-            "provider": "siliconflow",
-            "model": "Qwen/Qwen2.5-7B-Instruct",
-            "temperature": 0.3,
-            "max_tokens": 256,
-        },
+        "npc_default": {"temperature": 0.7, "max_tokens": 512},
+        "decision": {"temperature": 0.4, "max_tokens": 512},
+        "reflection": {"temperature": 0.3, "max_tokens": 256},
     }
+
+
+def strip_legacy_llm_role_bindings(llm_roles: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(llm_roles, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for role_id, cfg in llm_roles.items():
+        if not isinstance(cfg, dict):
+            out[role_id] = cfg
+            continue
+        cleaned = dict(cfg)
+        legacy = LEGACY_LLM_ROLE_BINDINGS.get(role_id, {})
+        if legacy.get("provider") and cleaned.get("provider") == legacy["provider"]:
+            cleaned.pop("provider", None)
+        if legacy.get("model") and cleaned.get("model") == legacy["model"]:
+            cleaned.pop("model", None)
+        prov = cleaned.get("provider")
+        if prov is None or (isinstance(prov, str) and not prov.strip()):
+            cleaned.pop("provider", None)
+        model = cleaned.get("model")
+        if model is None or (isinstance(model, str) and not model.strip()):
+            cleaned.pop("model", None)
+        out[role_id] = cleaned
+    return out
+
+
+def sanitize_llm_roles_storage(llm_roles: dict[str, Any] | None) -> dict[str, Any]:
+    return strip_legacy_llm_role_bindings(llm_roles)
 
 
 def merge_llm_roles(raw: dict[str, Any] | None) -> dict[str, Any]:
@@ -65,7 +87,7 @@ def merge_orchestration_config(raw: dict[str, Any] | None) -> dict[str, Any]:
 
     merged = dict(base)
     if isinstance(raw.get("llm_roles"), dict):
-        merged["llm_roles"] = merge_llm_roles(raw["llm_roles"])
+        merged["llm_roles"] = merge_llm_roles(sanitize_llm_roles_storage(raw["llm_roles"]))
 
     agent = dict(base["agent"])
     # Migrate legacy nested modes.generative

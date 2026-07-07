@@ -6,16 +6,43 @@ export interface Scenario {
   title: string;
   description: string | null;
   business_goal?: string;
+  player_side_goal?: string;
+  player_character?: PlayerCharacter;
   phases?: string[];
   scene_config?: Record<string, unknown>;
   characters?: Character[];
 }
 
+export interface PlayerCharacter {
+  character_id?: string;
+  character_name: string;
+  job_title: string;
+  display_name: string;
+  avatar_manifest?: AvatarManifestFields;
+}
+
+export interface AvatarManifestFields {
+  suit?: string;
+  skin?: string;
+  accent?: string;
+  pattern?: string;
+  accessory?: string;
+  height?: number;
+  image_url?: string;
+  model_url?: string;
+  label?: string;
+  team?: string;
+  color?: string;
+}
+
 export interface Character {
   character_id: string;
+  character_name?: string;
+  job_title?: string;
   display_name: string;
+  side?: "opponent" | "player_ally";
   spawn_point?: string;
-  avatar_manifest?: { color?: string; height?: number };
+  avatar_manifest?: AvatarManifestFields;
 }
 
 export interface ChatMessage {
@@ -165,6 +192,25 @@ export async function getSessionAgentMemories(sessionUuid: string): Promise<Sess
   const res = await fetch(`/api/game/sessions/${sessionUuid}/agent-memories`);
   if (!res.ok) throw new Error("Failed to load agent memories");
   return res.json();
+}
+
+export async function exportSessionBundle(sessionUuid: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`/api/game/sessions/${sessionUuid}/export`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to export session");
+  }
+  return res.json();
+}
+
+export function downloadJsonFile(filename: string, data: unknown) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 export async function updateAgentMemoryNode(

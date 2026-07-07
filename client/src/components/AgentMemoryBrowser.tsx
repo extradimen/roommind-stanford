@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { resolveNpcLabel } from "../characterNames";
+import { downloadJsonFile, exportSessionBundle } from "../api";
 import { useLocale } from "../i18n";
 import { localizeMemoryContent } from "../memoryDisplay";
 import type { AgentMemoriesData, AgentMemoryNode } from "./AgentMemoryPanel";
@@ -121,6 +122,16 @@ export default function AgentMemoryBrowser({
     window.open(url, "_blank", "noopener,noreferrer,width=960,height=720");
   }, [sessionUuid]);
 
+  const exportSession = useCallback(async () => {
+    if (!sessionUuid) return;
+    try {
+      const data = await exportSessionBundle(sessionUuid);
+      downloadJsonFile(`session-${sessionUuid.slice(0, 8)}.json`, data);
+    } catch (e) {
+      setSaveMsg(String(e));
+    }
+  }, [sessionUuid]);
+
   const handleSave = async () => {
     if (!selectedNode?.id || !onSaveNode || readonly) return;
     setSaving(true);
@@ -160,6 +171,11 @@ export default function AgentMemoryBrowser({
           </div>
           <div className="memory-browser-title">{b.title}</div>
           <div className="memory-browser-actions">
+            {sessionUuid && (
+              <button type="button" className="btn-debug" onClick={exportSession} title={b.exportSession}>
+                {b.exportSession}
+              </button>
+            )}
             {sessionUuid && (
               <button type="button" className="btn-debug" onClick={openInNewWindow} title={b.newWindow}>
                 {b.newWindow}

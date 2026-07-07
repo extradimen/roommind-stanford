@@ -7,10 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.agent.debug_payload import build_session_agent_memories_payload
+from app.session_export import build_session_export_bundle
 from app.database import async_session_factory, get_db
 from app.memory.service import memory_service
 from app.models.db import AgentMemoryNode, ScenarioTemplate, SessionMessage
 from app.orchestrator.defaults import ORCHESTRATION_MODE, merge_orchestration_config
+from app.player_character import resolve_player_character
+from app.scenario_side import resolve_player_side_goal
 from app.schemas import (
     AgentMemoryNodeOut,
     AgentMemoryNodeUpdate,
@@ -62,20 +65,26 @@ async def get_published_scenario(scenario_id: int, db: DbDep) -> dict:
     if not scenario:
         raise HTTPException(404, "Scenario not found")
     cfg = merge_orchestration_config(scenario.orchestration_config)
+    player = resolve_player_character(scenario)
     return {
         "id": scenario.id,
         "slug": scenario.slug,
         "title": scenario.title,
         "description": scenario.description,
-        "business_goal": scenario.business_goal,
+        "player_side_goal": resolve_player_side_goal(scenario),
+        "business_goal": resolve_player_side_goal(scenario),
         "phases": scenario.phases,
         "scene_config": scenario.scene_config,
+        "player_character": player,
         "orchestration_mode": ORCHESTRATION_MODE,
         "agent_config": cfg.get("agent", {}),
         "characters": [
             {
                 "character_id": c.character_id,
+                "character_name": c.character_name,
+                "job_title": c.job_title,
                 "display_name": c.display_name,
+                "side": c.side or "opponent",
                 "spawn_point": c.spawn_point,
                 "avatar_manifest": c.avatar_manifest,
             }
@@ -140,6 +149,14 @@ async def get_session_agent_memories(session_uuid: str, db: DbDep) -> SessionAge
         raise HTTPException(404, "Session not found")
     payload = await build_session_agent_memories_payload(db, session)
     return SessionAgentMemoriesOut(**payload)
+
+
+@router.get("/sessions/{session_uuid}/export")
+async def export_session(session_uuid: str, db: DbDep) -> dict:
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    return await build_session_export_bundle(db, session)
 
 
 @router.patch("/sessions/{session_uuid}/agent-memories/{node_id}", response_model=AgentMemoryNodeOut)

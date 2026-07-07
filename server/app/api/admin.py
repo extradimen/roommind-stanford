@@ -1,12 +1,14 @@
+from datetime import datetime, timezone
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, Response, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings, reload_settings
 from app.database import get_db
+from app.model_catalog_meta import enrich_provider_catalog, model_guidance_meta
 from app.ollama_catalog import fetch_ollama_cloud_catalog
 from app.platform_llm import (
     get_llm_keys_status,
@@ -25,8 +27,13 @@ from app.models.db import (
     ScenarioTemplate,
     SessionMessage,
 )
-from app.orchestrator.defaults import ORCHESTRATION_MODE, merge_orchestration_config
+from app.orchestrator.defaults import ORCHESTRATION_MODE, merge_orchestration_config, sanitize_llm_roles_storage
+from app.scenario_bundle import apply_scenario_bundle, export_scenario_bundle, validate_scenario_bundle
+from app.session_export import build_session_export_bundle
 from app.platform_config import CONFIG_PATH, ENV_PATH, PlatformConfig, load_platform_config, resolve_client_host, resolve_public_host, save_platform_config, urls_for_host
+from app.avatar_assets import ensure_avatar_dir, public_avatar_url, sanitize_upload_filename
+from app.character_display import normalize_character_fields
+from app.scenario_side import normalize_side, sync_legacy_business_goal
 from app.schemas import (
     CharacterTemplateIn,
     CharacterTemplateOut,
@@ -40,6 +47,7 @@ from app.schemas import (
     OrchestrationConfigIn,
     PlatformConfigIn,
     PlatformConfigOut,
+    ScenarioDispatchRuleIn,
     ScenarioListItem,
     ScenarioTemplateIn,
     ScenarioTemplateOut,
@@ -57,6 +65,51 @@ def verify_admin(x_admin_secret: Annotated[str | None, Header()] = None) -> None
 
 AdminDep = Annotated[None, Depends(verify_admin)]
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+
+
+def _character_payload(c: CharacterTemplateIn, sort_order: int) -> dict[str, Any]:
+    name, title, display = normalize_character_fields(
+        character_name=c.character_name,
+        job_title=c.job_title,
+        display_name=c.display_name,
+    )
+    data = c.model_dump(exclude={"display_name"})
+    data["character_name"] = name
+    data["job_title"] = title
+    data["display_name"] = display
+    data["side"] = normalize_side(data.get("side"))
+    data["sort_order"] = c.sort_order or sort_order
+    return data
+
+
+async def _load_dispatch_rules(db: AsyncSession, scenario_id: int) -> list[DispatchRule]:
+    result = await db.execute(
+        select(DispatchRule)
+        .where(DispatchRule.scenario_id == scenario_id)
+        .order_by(DispatchRule.id)
+    )
+    return list(result.scalars().all())
+
+
+async def _sync_dispatch_rules(
+    db: AsyncSession, scenario_id: int, rules: list[ScenarioDispatchRuleIn]
+) -> None:
+    existing = await db.execute(select(DispatchRule).where(DispatchRule.scenario_id == scenario_id))
+    for rule in existing.scalars().all():
+        await db.delete(rule)
+    for raw in rules:
+        db.add(
+            DispatchRule(
+                scenario_id=scenario_id,
+                **raw.model_dump(),
+            )
+        )
+
+
+async def _scenario_to_out(db: AsyncSession, scenario: ScenarioTemplate) -> ScenarioTemplateOut:
+    rules = await _load_dispatch_rules(db, scenario.id)
+    base = ScenarioTemplateOut.model_validate(scenario)
+    return base.model_copy(update={"dispatch_rules": [DispatchRuleOut.model_validate(r) for r in rules]})
 
 
 @router.get("/llm/status")
@@ -83,16 +136,18 @@ async def list_llm_providers(db: DbDep, _: AdminDep, response: Response) -> LLMP
         extra.append(active.model)
     ollama_catalog, ollama_meta = await fetch_ollama_cloud_catalog(extra_model_ids=extra)
     sf_catalog = load_siliconflow_catalog()
+    ollama_enriched = enrich_provider_catalog(ollama_catalog, "ollama")
+    sf_enriched = enrich_provider_catalog(sf_catalog, "siliconflow")
     return LLMProvidersOut(
         providers={
-            "ollama": [m["id"] for m in ollama_catalog],
-            "siliconflow": [m["id"] for m in sf_catalog],
+            "ollama": [m["id"] for m in ollama_enriched],
+            "siliconflow": [m["id"] for m in sf_enriched],
         },
         catalogs={
-            "ollama": ollama_catalog,
-            "siliconflow": sf_catalog,
+            "ollama": ollama_enriched,
+            "siliconflow": sf_enriched,
         },
-        meta={"ollama": ollama_meta},
+        meta={"ollama": ollama_meta, "model_guidance": model_guidance_meta()},
     )
 
 
@@ -166,7 +221,7 @@ async def list_scenarios(db: DbDep, _: AdminDep) -> list[ScenarioListItem]:
 
 
 @router.get("/scenarios/{scenario_id}", response_model=ScenarioTemplateOut)
-async def get_scenario(scenario_id: int, db: DbDep, _: AdminDep) -> ScenarioTemplate:
+async def get_scenario(scenario_id: int, db: DbDep, _: AdminDep) -> ScenarioTemplateOut:
     result = await db.execute(
         select(ScenarioTemplate)
         .where(ScenarioTemplate.id == scenario_id)
@@ -175,40 +230,48 @@ async def get_scenario(scenario_id: int, db: DbDep, _: AdminDep) -> ScenarioTemp
     scenario = result.scalar_one_or_none()
     if not scenario:
         raise HTTPException(404, "Scenario not found")
-    return scenario
+    return await _scenario_to_out(db, scenario)
 
 
 @router.post("/scenarios", response_model=ScenarioTemplateOut)
-async def create_scenario(body: ScenarioTemplateIn, db: DbDep, _: AdminDep) -> ScenarioTemplate:
+async def create_scenario(body: ScenarioTemplateIn, db: DbDep, _: AdminDep) -> ScenarioTemplateOut:
+    player_goal = body.player_side_goal or body.business_goal or ""
+    orch = (
+        merge_orchestration_config(body.orchestration_config)
+        if body.orchestration_config is not None
+        else merge_orchestration_config({})
+    )
     scenario = ScenarioTemplate(
         slug=body.slug,
         title=body.title,
         description=body.description,
-        business_goal=body.business_goal,
+        business_goal=player_goal,
+        player_side_goal=player_goal,
+        opponent_side_goal=body.opponent_side_goal,
         phases=body.phases,
         win_conditions=body.win_conditions,
         scene_config=body.scene_config,
-        orchestration_config=body.orchestration_config,
+        orchestration_config=orch,
         is_published=body.is_published,
     )
     db.add(scenario)
     await db.flush()
 
     for idx, c in enumerate(body.characters):
-        char = CharacterTemplate(scenario_id=scenario.id, sort_order=c.sort_order or idx, **c.model_dump())
-        db.add(char)
+        db.add(CharacterTemplate(scenario_id=scenario.id, **_character_payload(c, idx)))
 
+    await _sync_dispatch_rules(db, scenario.id, body.dispatch_rules)
     await db.flush()
     result = await db.execute(
         select(ScenarioTemplate)
         .where(ScenarioTemplate.id == scenario.id)
         .options(selectinload(ScenarioTemplate.characters))
     )
-    return result.scalar_one()
+    return await _scenario_to_out(db, result.scalar_one())
 
 
 @router.put("/scenarios/{scenario_id}", response_model=ScenarioTemplateOut)
-async def update_scenario(scenario_id: int, body: ScenarioTemplateIn, db: DbDep, _: AdminDep) -> ScenarioTemplate:
+async def update_scenario(scenario_id: int, body: ScenarioTemplateIn, db: DbDep, _: AdminDep) -> ScenarioTemplateOut:
     result = await db.execute(
         select(ScenarioTemplate)
         .where(ScenarioTemplate.id == scenario_id)
@@ -218,18 +281,22 @@ async def update_scenario(scenario_id: int, body: ScenarioTemplateIn, db: DbDep,
     if not scenario:
         raise HTTPException(404, "Scenario not found")
 
+    player_goal = body.player_side_goal or body.business_goal or ""
     for field in (
         "slug",
         "title",
         "description",
-        "business_goal",
         "phases",
         "win_conditions",
         "scene_config",
-        "orchestration_config",
         "is_published",
     ):
         setattr(scenario, field, getattr(body, field))
+    if body.orchestration_config is not None:
+        scenario.orchestration_config = merge_orchestration_config(body.orchestration_config)
+    scenario.player_side_goal = player_goal
+    scenario.opponent_side_goal = body.opponent_side_goal
+    sync_legacy_business_goal(scenario)
 
     existing_ids = {c.character_id: c for c in scenario.characters}
     incoming_ids = {c.character_id for c in body.characters}
@@ -239,21 +306,96 @@ async def update_scenario(scenario_id: int, body: ScenarioTemplateIn, db: DbDep,
             await db.delete(c)
 
     for idx, c in enumerate(body.characters):
+        data = _character_payload(c, idx)
         if c.character_id in existing_ids:
             char = existing_ids[c.character_id]
-            for k, v in c.model_dump().items():
+            for k, v in data.items():
                 setattr(char, k, v)
-            char.sort_order = c.sort_order or idx
         else:
-            db.add(CharacterTemplate(scenario_id=scenario.id, sort_order=c.sort_order or idx, **c.model_dump()))
+            db.add(CharacterTemplate(scenario_id=scenario.id, **data))
 
+    await _sync_dispatch_rules(db, scenario.id, body.dispatch_rules)
     await db.flush()
     result = await db.execute(
         select(ScenarioTemplate)
         .where(ScenarioTemplate.id == scenario.id)
         .options(selectinload(ScenarioTemplate.characters))
     )
-    return result.scalar_one()
+    return await _scenario_to_out(db, result.scalar_one())
+
+
+@router.get("/scenarios/{scenario_id}/export")
+async def export_scenario(scenario_id: int, db: DbDep, _: AdminDep) -> dict[str, Any]:
+    result = await db.execute(
+        select(ScenarioTemplate)
+        .where(ScenarioTemplate.id == scenario_id)
+        .options(selectinload(ScenarioTemplate.characters))
+    )
+    scenario = result.scalar_one_or_none()
+    if not scenario:
+        raise HTTPException(404, "Scenario not found")
+    rules = await _load_dispatch_rules(db, scenario.id)
+    return export_scenario_bundle(scenario, list(scenario.characters), rules)
+
+
+@router.post("/scenarios/import", response_model=ScenarioTemplateOut)
+async def import_scenario_new(body: dict[str, Any], db: DbDep, _: AdminDep) -> ScenarioTemplateOut:
+    try:
+        data = validate_scenario_bundle(body)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    slug = data["slug"]
+    existing = await db.execute(select(ScenarioTemplate.id).where(ScenarioTemplate.slug == slug))
+    if existing.scalar_one_or_none():
+        raise HTTPException(409, f"Scenario slug already exists: {slug}")
+    player_goal = data.get("player_side_goal") or data.get("business_goal") or ""
+    scenario = ScenarioTemplate(
+        slug=slug,
+        title=data["title"],
+        description=data.get("description"),
+        business_goal=player_goal,
+        player_side_goal=player_goal,
+        opponent_side_goal=data.get("opponent_side_goal") or "",
+        orchestration_config=merge_orchestration_config({}),
+    )
+    db.add(scenario)
+    await db.flush()
+    try:
+        scenario = await apply_scenario_bundle(db, scenario, data, update_slug=False)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return await _scenario_to_out(db, scenario)
+
+
+@router.put("/scenarios/{scenario_id}/import", response_model=ScenarioTemplateOut)
+async def import_scenario_replace(scenario_id: int, body: dict[str, Any], db: DbDep, _: AdminDep) -> ScenarioTemplateOut:
+    result = await db.execute(
+        select(ScenarioTemplate)
+        .where(ScenarioTemplate.id == scenario_id)
+        .options(selectinload(ScenarioTemplate.characters))
+    )
+    scenario = result.scalar_one_or_none()
+    if not scenario:
+        raise HTTPException(404, "Scenario not found")
+    try:
+        data = validate_scenario_bundle(body)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    new_slug = data.get("slug")
+    if new_slug and new_slug != scenario.slug:
+        clash = await db.execute(
+            select(ScenarioTemplate.id).where(
+                ScenarioTemplate.slug == new_slug,
+                ScenarioTemplate.id != scenario_id,
+            )
+        )
+        if clash.scalar_one_or_none():
+            raise HTTPException(409, f"Scenario slug already exists: {new_slug}")
+    try:
+        scenario = await apply_scenario_bundle(db, scenario, data)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return await _scenario_to_out(db, scenario)
 
 
 @router.delete("/scenarios/{scenario_id}")
@@ -330,6 +472,10 @@ async def update_scenario_orchestration(
     if not scenario:
         raise HTTPException(404, "Scenario not found")
     scenario.orchestration_config = merge_orchestration_config(body.orchestration_config)
+    if isinstance(scenario.orchestration_config.get("llm_roles"), dict):
+        scenario.orchestration_config["llm_roles"] = sanitize_llm_roles_storage(
+            scenario.orchestration_config["llm_roles"]
+        )
     await db.flush()
     cfg = scenario.orchestration_config
     return {
@@ -394,6 +540,41 @@ async def get_session_debug(session_uuid: str, db: DbDep, _: AdminDep) -> Sessio
     )
 
 
+@router.get("/sessions/{session_uuid}/export")
+async def export_session(session_uuid: str, db: DbDep, _: AdminDep) -> dict[str, Any]:
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    return await build_session_export_bundle(db, session)
+
+
+@router.get("/sessions/export")
+async def export_sessions_batch(
+    db: DbDep,
+    _: AdminDep,
+    scenario_id: int | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    q = select(GameSession).order_by(GameSession.id.desc()).limit(min(limit, 200))
+    if scenario_id is not None:
+        q = q.where(GameSession.scenario_id == scenario_id)
+    result = await db.execute(q)
+    sessions = list(result.scalars().all())
+    bundles = []
+    for session in reversed(sessions):
+        bundles.append(await build_session_export_bundle(db, session))
+    return {
+        "export_meta": {
+            "format": "roommind-session-bundle-batch",
+            "version": 1,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "count": len(bundles),
+            "scenario_id": scenario_id,
+        },
+        "sessions": bundles,
+    }
+
+
 RESTART_NOTE = (
     "端口已写入 config/platform.json 与 .env。"
     "API / 管理后台 / 学员端 / Docker 需重启后完全生效。"
@@ -431,3 +612,23 @@ async def update_platform_config(body: PlatformConfigIn, request: Request, _: Ad
         config_path=str(CONFIG_PATH),
         restart_note=RESTART_NOTE,
     )
+
+
+@router.post("/assets/avatar")
+async def upload_avatar(_: AdminDep, file: UploadFile = File(...)) -> dict[str, str]:
+    if not file.filename:
+        raise HTTPException(400, "Missing filename")
+    try:
+        filename = sanitize_upload_filename(file.filename)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty file")
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(400, "File too large (max 20MB)")
+
+    target = ensure_avatar_dir() / filename
+    target.write_bytes(data)
+    return {"url": public_avatar_url(filename), "filename": filename}

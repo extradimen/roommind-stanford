@@ -21,7 +21,7 @@
   "ollama": {
     "apiKey": "",
     "baseUrl": "https://ollama.com",
-    "modelId": "glm-5.1",
+    "modelId": "deepseek-v3.1:671b",
     "apiKeyConfigured": true
   },
   "siliconflow": {

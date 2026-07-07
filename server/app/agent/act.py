@@ -69,7 +69,7 @@ async def render_npc_speech(
     emotion: str = "neutral",
     gesture: str = "talking",
     active_plan_text: str = "",
-    reply_language: str = "zh",
+    reply_language: str = "en",
 ) -> tuple[str, str, str]:
     """
     Stanford: NPC speech is grounded in the agent's active plan.
@@ -80,25 +80,25 @@ async def render_npc_speech(
     if not draft:
         return idle_ack(reply_language), emotion, gesture
 
-    plan_hint = f"你当前的行动计划：{active_plan_text}\n" if active_plan_text else ""
+    plan_hint = f"Your current action plan: {active_plan_text}\n" if active_plan_text else ""
     lang_rule = speech_language_rule(reply_language)
 
-    npc_prompt = f"""你扮演 {character.display_name}（{character.persona}）。
-你在会议室里，根据自己的计划和意图自然开口，说 1-2 句符合你身份的口语。
+    npc_prompt = f"""You are playing {character.display_name} ({character.persona}).
+You are in a meeting room. Speak naturally in 1-2 sentences based on your plan and intent.
 
-{plan_hint}本次发言的意图（来自你的决策）：{reasoning}
-要说的核心内容：{draft}
+{plan_hint}Intent for this turn (from your decision): {reasoning}
+Core content to convey: {draft}
 
-近期对话：
+Recent dialogue:
 {conversation_context[-600:]}
 
-对方刚说：{user_input}
+The user just said: {user_input}
 
-要求：
-- 像真人谈判那样说话，不要复述提示词
-- 体现你的性格：{character.persona}
+Requirements:
+- Speak like a real negotiator; do not repeat the prompt
+- Reflect your persona: {character.persona}
 {lang_rule}
-- 只输出你要说的话，不要 JSON 或解释
+- Output only what you say aloud; no JSON or explanation
 
 """
 
@@ -176,7 +176,7 @@ async def _apply_speak(
     turn_id: int,
     tick: int,
     timeline: WorldTimeline | None,
-    reply_language: str = "zh",
+    reply_language: str = "en",
 ) -> ActionResult:
     plan = active_plan(nodes)
     content, emotion, gesture = await render_npc_speech(
@@ -247,7 +247,7 @@ async def execute_decision(
     speak_quota_remaining: int,
     mentioned: bool,
     timeline: WorldTimeline | None = None,
-    reply_language: str = "zh",
+    reply_language: str = "en",
 ) -> ActionResult:
     """Execute a structured decision: memory writes + optional speech on world line."""
 
@@ -261,7 +261,7 @@ async def execute_decision(
     if action == "speak" and speak_quota_remaining <= 0:
         action = "wait"
         result.action = "wait"
-        result.reasoning = decision.reasoning + " [发言名额已满，改为等待]"
+        result.reasoning = decision.reasoning + " [speaking quota full; waiting instead]"
 
     if action == "update_plan":
         plan_text = (decision.plan_update or "").strip()
@@ -303,7 +303,7 @@ async def execute_decision(
                 fallback=decision.reasoning or user_input,
             )
             result.action = "update_plan+speak"
-            result.reasoning = decision.reasoning + " → 更新计划并发言"
+            result.reasoning = decision.reasoning + " → updated plan and spoke"
             return await _apply_speak(
                 result,
                 db=db,
@@ -312,7 +312,7 @@ async def execute_decision(
                 character=character,
                 conversation_context=conversation_context,
                 user_input=user_input,
-                reasoning=decision.reasoning + "（更新计划后执行）",
+                reasoning=decision.reasoning + " (after plan update)",
                 draft=draft,
                 npc_llm=npc_llm,
                 decision=decision,
@@ -362,7 +362,7 @@ async def execute_decision(
                 character=character,
                 conversation_context=conversation_context,
                 user_input=user_input,
-                reasoning=decision.reasoning + "（内心整理后回应）",
+                reasoning=decision.reasoning + " (after internal note)",
                 draft=draft,
                 npc_llm=npc_llm,
                 decision=decision,
@@ -409,7 +409,7 @@ async def execute_decision(
     if action == "wait" and speak_quota_remaining > 0 and mentioned:
         draft = plan_speak_draft(nodes, plan_update=None, decision=decision, fallback=user_input)
         result.action = "wait→speak"
-        result.reasoning = decision.reasoning + " → 被点名，改为发言"
+        result.reasoning = decision.reasoning + " → mentioned; speaking instead"
         return await _apply_speak(
             result,
             db=db,
@@ -418,7 +418,7 @@ async def execute_decision(
             character=character,
             conversation_context=conversation_context,
             user_input=user_input,
-            reasoning=decision.reasoning + "（被点名，按当前计划回应）",
+            reasoning=decision.reasoning + " (mentioned; responding from plan)",
             draft=draft,
             npc_llm=npc_llm,
             decision=decision,
@@ -472,15 +472,15 @@ async def execute_plan_fallback_speak(
     current_phase: str,
     npc_llm: ResolvedLlm,
     timeline: WorldTimeline,
-    reply_language: str = "zh",
+    reply_language: str = "en",
 ) -> ActionResult | None:
     """When no NPC spoke this turn, force one reply from the active plan."""
     plan = active_plan(nodes)
     if not plan and not user_input.strip():
         return None
 
-    draft = plan.content if plan else f"回应：{user_input}"
-    reasoning = f"按当前计划回应用户（{scenario.title} / {current_phase}）"
+    draft = plan.content if plan else f"Respond to: {user_input}"
+    reasoning = f"Respond from current plan ({scenario.title} / {current_phase})"
     decision = AgentDecision(action="speak", reasoning=reasoning, speak_draft=draft)
     result = ActionResult(
         character_id=character.character_id,

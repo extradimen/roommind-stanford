@@ -90,12 +90,18 @@ export default function AnimatedAvatar({
   position,
   profile,
   name,
+  sideLabel,
+  side,
   active,
+  scale = 1,
 }: {
   position: [number, number, number];
   profile: CulturalProfile;
   name: string;
+  sideLabel?: string;
+  side?: "opponent" | "player_ally" | "user";
   active: boolean;
+  scale?: number;
 }) {
   const group = useRef<THREE.Group>(null);
   const torso = useRef<THREE.Mesh>(null);
@@ -139,7 +145,7 @@ export default function AnimatedAvatar({
   });
 
   return (
-    <group ref={group} position={position}>
+    <group ref={group} position={position} scale={[scale, scale, scale]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
         <circleGeometry args={[0.4, 24]} />
         <meshBasicMaterial color="#000000" transparent opacity={0.28} />
@@ -242,7 +248,18 @@ export default function AnimatedAvatar({
       <Text position={[0, 2.12, 0]} fontSize={0.15} color="#ffffff" anchorX="center" maxWidth={1.4}>
         {name}
       </Text>
-      <Text position={[0, 1.92, 0]} fontSize={0.085} color={profile.accent} anchorX="center" maxWidth={1.4}>
+      {sideLabel && (
+        <Text
+          position={[0, 1.98, 0]}
+          fontSize={0.075}
+          color={side === "player_ally" || side === "user" ? "#3fb950" : "#f85149"}
+          anchorX="center"
+          maxWidth={1.4}
+        >
+          [{sideLabel}]
+        </Text>
+      )}
+      <Text position={[0, sideLabel ? 1.84 : 1.92, 0]} fontSize={0.085} color={profile.accent} anchorX="center" maxWidth={1.4}>
         {profile.label}
       </Text>
     </group>

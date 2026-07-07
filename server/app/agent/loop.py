@@ -27,8 +27,9 @@ from app.agent.memory_stream import (
 )
 from app.llm.client import llm_client
 from app.models.db import CharacterTemplate, ScenarioTemplate
-from app.orchestrator.common import orch_support
+from app.scenario_side import initial_plan_goal_block, user_speaker_label
 from app.i18n.reply_language import decision_language_rule
+from app.orchestrator.common import orch_support
 from app.orchestrator.llm_binding import ResolvedLlm
 from app.world.perception import perceive_events
 from app.world.timeline import WorldEvent, WorldTimeline
@@ -79,15 +80,15 @@ def _loop_result_from_action(
 def _format_retrieved_block(retrieved_scored: list[tuple[MemoryNode, float]]) -> str:
     """Format retrieved memories for the decision prompt, grouped by type."""
     if not retrieved_scored:
-        return "（暂无相关记忆）"
+        return "(no relevant memories yet)"
 
     lines: list[str] = []
     for node, score in retrieved_scored:
         tag = {
-            "observation": "观察",
-            "reflection": "反思",
-            "plan": "计划",
-            "action": "行动",
+            "observation": "observation",
+            "reflection": "reflection",
+            "plan": "plan",
+            "action": "action",
         }.get(node.node_type, node.node_type)
         imp_bar = "█" * int(node.importance) + "░" * (10 - int(node.importance))
         lines.append(f"[{tag} imp={node.importance:.0f} {imp_bar}] {node.content}")
@@ -116,7 +117,7 @@ async def run_agent_tick(
     speak_quota_remaining: int = 1,
     mentioned: bool = False,
     timeline: WorldTimeline | None = None,
-    reply_language: str = "zh",
+    reply_language: str = "en",
 ) -> AgentLoopResult:
     """
     Stanford Generative Agent perceive → retrieve → react → act loop.
@@ -193,72 +194,77 @@ async def run_agent_tick(
     new_obs_text = (
         "\n".join(f"• {o.content}" for o in new_obs_nodes)
         if new_obs_nodes
-        else "（本轮无新观察）"
+        else "(no new observations this turn)"
     )
 
-    # Determine what "wait" means in context
     wait_guidance = (
-        "你被点名，禁止只 wait；必须开口回应。"
+        "You were mentioned — you must not wait; respond verbally."
         if mentioned
-        else "你未被点名，可以选择 wait 等待更好时机（若计划不要求你此刻发言）。"
+        else "You were not mentioned — waiting is allowed if your plan does not require speaking now."
     )
     quota_guidance = (
-        f"本轮剩余发言名额：{speak_quota_remaining}（还可发言）"
+        f"Speaking slots remaining this turn: {speak_quota_remaining}"
         if speak_quota_remaining > 0
-        else "本轮发言名额已满，只能 wait 或 update_plan（不会显示在对话里）。"
+        else "Speaking quota is full — only wait or update_plan (not shown in dialogue)."
     )
+    goal_block = initial_plan_goal_block(character, scenario)
+    user_label = user_speaker_label(character)
 
-    decision_prompt = f"""你是生成式谈判 Agent「{character.display_name}」。
-你的每一个决策都来自你自己的目标和计划，而非单纯响应用户。
-
-━━━━━━━━━━━━━━━━━━━━
-【身份 · 种子记忆】
-性格：{character.persona}
-职责：{character.responsibility}
-行为倾向：{json.dumps(character.tendency, ensure_ascii=False)}
-私密认知（只有你知道）：{json.dumps(private, ensure_ascii=False)}
+    decision_prompt = f"""You are generative negotiation agent "{character.display_name}".
+Every decision must follow your own goals and plan, not react blindly to the user.
 
 ━━━━━━━━━━━━━━━━━━━━
-【当前计划】（你进入会议室时制定，指导你的所有行动）
-{plan.content if plan else "（尚未制定计划）"}
+[Identity · seed memory]
+Persona: {character.persona}
+Responsibility: {character.responsibility}
+Behavior tendency: {json.dumps(character.tendency, ensure_ascii=False)}
+Private knowledge (only you know): {json.dumps(private, ensure_ascii=False)}
 
 ━━━━━━━━━━━━━━━━━━━━
-【检索到的记忆】（按时效×重要性×相关性排序，最相关的在前）
+[Negotiation goals]
+{goal_block}
+
+━━━━━━━━━━━━━━━━━━━━
+[Current plan] (set when you entered the room; guides all actions)
+{plan.content if plan else "(no plan yet)"}
+
+━━━━━━━━━━━━━━━━━━━━
+[Retrieved memories] (recency × importance × relevance)
 {memory_block}
 
 ━━━━━━━━━━━━━━━━━━━━
-【刚感知到的新事件】（本轮刚发生）
+[New observations this turn]
 {new_obs_text}
 
 ━━━━━━━━━━━━━━━━━━━━
-【对话上下文】（最近几轮）
+[Dialogue context]
 {conversation_context[-800:]}
 
 ━━━━━━━━━━━━━━━━━━━━
-【当前局面】
-场景：{scenario.title} | 阶段：{current_phase}
-用户刚说：「{user_input}」
+[Situation]
+Scenario: {scenario.title} | Phase: {current_phase}
+{user_label}: "{user_input}"
 {wait_guidance}
 {quota_guidance}
 
 ━━━━━━━━━━━━━━━━━━━━
-【决策指引】
-你的决策优先级：
-1. 计划驱动：你的行动首先服务于「当前计划」，而不是单纯回应用户。
-2. 机会识别：用户的话是否给了你推进某个议题的机会？把握它。
-3. 策略等待：如果此刻发言对你不利，选择 wait 是合理的。
-4. 不重复：不要重复刚说过的内容。
+[Decision guidance]
+Priority:
+1. Plan-driven: serve your current plan, not just the latest user message.
+2. Opportunity: did the user open a topic you can advance?
+3. Strategic wait: if speaking now hurts you, wait is valid.
+4. No repetition: do not repeat what you just said.
 
 {decision_language_rule(reply_language)}
 
-输出严格 JSON（无其他文字）：
+Output strict JSON only:
 {{
   "action": "speak|wait|update_plan|internal_note",
-  "reasoning": "简短说明：你的计划如何驱动这个决策（≤50字）",
-  "speak": {{"content": "要说的话（action=speak时填写）", "emotion": "neutral|concerned|confident|firm", "gesture": "talking|nodding|thinking|leaning"}},
-  "plan_update": "若 action=update_plan 则新计划内容，否则 null",
-  "internal_note": "若 action=internal_note 则内心独白，否则 null",
-  "moment_importance": 1到10的整数（这一刻对你的重要程度）
+  "reasoning": "Brief: how your plan drives this decision (≤50 words, English)",
+  "speak": {{"content": "What to say when action=speak", "emotion": "neutral|concerned|confident|firm", "gesture": "talking|nodding|thinking|leaning"}},
+  "plan_update": "New plan text if action=update_plan, else null",
+  "internal_note": "Inner monologue if action=internal_note, else null",
+  "moment_importance": integer 1-10
 }}"""
 
     decision_raw = await llm_client.chat_completion(

@@ -29,7 +29,7 @@ def serialize_memory_node(row: AgentMemoryNode) -> dict[str, Any]:
 def _action_nodes_from_timeline(
     world_timeline: list[Any],
     character_id: str,
-    reply_language: str = "zh",
+    reply_language: str = "en",
 ) -> list[dict[str, Any]]:
     """Backfill action entries from world line for sessions before action memory nodes."""
     actions: list[dict[str, Any]] = []
@@ -117,7 +117,7 @@ async def load_agent_memories_grouped(
     db: AsyncSession,
     session_id: int,
     world_timeline: list[Any] | None = None,
-    reply_language: str = "zh",
+    reply_language: str = "en",
 ) -> dict[str, list[dict[str, Any]]]:
     result = await db.execute(
         select(AgentMemoryNode)
@@ -166,11 +166,7 @@ async def build_session_agent_memories_payload(
     if not isinstance(world_timeline, list):
         world_timeline = []
 
-    reply_language = "zh"
-    if isinstance(shared, dict):
-        lang = shared.get("_reply_language")
-        if lang in ("en", "zh"):
-            reply_language = lang
+    reply_language = "en"
 
     agents = await load_agent_memories_grouped(db, session.id, world_timeline, reply_language)
 

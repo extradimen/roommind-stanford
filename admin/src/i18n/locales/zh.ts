@@ -120,6 +120,14 @@ export const zh = {
     refreshCatalog: "刷新模型列表",
     catalogFetchFailed: "拉取 Ollama 模型失败",
     catalogCount: "共 {count} 个 Cloud 模型",
+    modelKindGuideTitle: "Chat 与推理（Reasoning）模型",
+    modelKindGuide: "★ = 推荐作为 RoomMind 全局默认。对话型（Chat）适合 NPC 台词与短计划；推理型会先内部思考，需更高 max_tokens（开局计划建议 ≥1024）。当前 glm-5.1 等为推理型。",
+    kindChat: "Chat 对话型",
+    kindReasoning: "Reasoning 推理型",
+    recommendedBadge: "推荐",
+    selectedChatHint: "当前为对话型模型：适合全局默认，max_tokens 2048 通常足够。",
+    selectedReasoningHint: "当前为推理型模型：请把 max_tokens 设为 ≥1024（建议 2048），否则开局计划可能为空并触发兜底模板。",
+    dropdownLegend: "下拉选项：[Chat/Reasoning] 为模型类型，★ 为推荐全局默认",
   },
   scenarios: {
     title: "剧情场景",
@@ -130,6 +138,71 @@ export const zh = {
     published: "发布",
     agent: "Agent",
     confirmDelete: "确定删除此场景？",
+    aiGuideTitle: "用 AI 批量生成场景 JSON（说明）",
+    aiGuideIntro:
+      "RoomMind 的场景内容（剧情、角色、调度规则）可用 JSON 导入。把下方「示范 JSON」和「给 AI 的说明」一起发给 AI，让它按相同结构生成新场景，再在「新建场景」或「编辑场景」页粘贴导入即可。Agent 模型/行为在单独页面配置，JSON 里不需要写。",
+    aiGuideWorkflowTitle: "推荐流程",
+    aiGuideWorkflow: [
+      "点击「下载示范 JSON」，或从已有场景编辑页导出",
+      "复制「给 AI 的说明」，连同示范 JSON 和你的需求一起发给 AI",
+      "检查 AI 输出的 JSON（必须有 slug、title、characters）",
+      "在新建/编辑场景页 → JSON 导入，或本页新建后导入",
+    ],
+    aiGuideIncludesTitle: "JSON 应包含",
+    aiGuideIncludes: [
+      "slug、title、description、player_side_goal、opponent_side_goal",
+      "phases、win_conditions、scene_config、is_published",
+      "characters[]：character_id、side、character_name、job_title、persona、responsibility 等",
+      "dispatch_rules[]：name、trigger_keywords、priority_character_ids",
+    ],
+    aiGuideExcludesTitle: "JSON 不要包含",
+    aiGuideExcludes: ["orchestration_config（Agent 配置）", "export_meta（导出时自动生成，导入可省略）"],
+    aiGuidePromptTitle: "给 AI 的说明（可复制）",
+    aiGuidePrompt: `你是 RoomMind 商务对练场景配置助手。请根据用户需求，生成一份可直接导入 RoomMind 管理后台的场景 JSON。
+
+【你的任务】
+模仿用户提供的示范 JSON 的结构与字段名，生成一个全新的培训场景（谈判、沟通、协作等）。只输出 JSON，不要 markdown 代码块，不要额外解释。
+
+【顶层必填】
+- slug：英文 kebab-case，全局唯一，如 retail-supplier-negotiation
+- title：场景标题
+
+【建议包含的字段】
+- description：场景背景（学员扮演谁、在什么场合）
+- player_side_goal：本方（学员）目标
+- opponent_side_goal：对方阵营总体目标
+- phases：字符串数组，如 ["opening","discovery","bargaining","closing"]
+- win_conditions：对象数组，如 {"field":"price","operator":"<=","value":85}
+- scene_config：如 {"environment":"meeting_room","camera":"first_person"}
+- is_published：true/false
+- characters：角色数组
+- dispatch_rules：关键词调度规则数组
+
+【characters 每个角色】
+- character_id：英文 ID，全局在本场景内唯一
+- side："opponent"（对方）或 "player_ally"（本方盟友）
+- character_name、job_title、persona、responsibility
+- tendency：如 {"risk":"low","aggression":"medium","cooperation":"high"}
+- private_state：Agent 私密信息（谈判议程、底线、隐藏信息等）
+- avatar_manifest：外观 JSON（可参考示范）
+- spawn_point：如 seat_opposite
+
+【dispatch_rules 每条规则】
+- name、description
+- trigger_keywords：字符串数组（中英文均可）
+- priority_character_ids：对应 characters 的 character_id
+- min_speakers、max_speakers、is_active
+
+【不要输出】
+- orchestration_config
+- export_meta
+
+【常见结构】
+多方谈判：2 个 opponent + 1 个 player_ally。确保 dispatch_rules 的 priority_character_ids 引用存在的 character_id。`,
+    copyPrompt: "复制说明",
+    copiedPrompt: "已复制",
+    downloadExample: "下载示范 JSON",
+    downloadExampleFailed: "暂无场景可导出，请先保留至少一个场景",
   },
   scenarioEditor: {
     newTitle: "新建场景",
@@ -139,7 +212,9 @@ export const zh = {
     slug: "Slug",
     title: "标题",
     description: "描述",
-    businessGoal: "商业目标",
+    businessGoal: "商业目标（已废弃，请用下方本方/对方目标）",
+    playerSideGoal: "本方目标（学员代表的一方）",
+    opponentSideGoal: "对方目标（对手阵营总体目标）",
     publish: "发布（学员端可见）",
     phasesSection: "阶段与场景配置",
     phasesJson: "阶段 (JSON 数组)",
@@ -149,15 +224,47 @@ export const zh = {
     addCharacter: "+ 添加角色",
     characterN: "角色 #{n}",
     characterId: "Character ID",
-    displayName: "显示名",
+    characterName: "人名",
+    jobTitle: "职位",
+    side: "阵营",
+    sideOpponent: "对方",
+    sidePlayerAlly: "本方盟友",
+    displayName: "显示名（兼容旧数据）",
     spawnPoint: "出生点",
     persona: "性格 Persona",
     responsibility: "职责",
     tendencyJson: "倾向 JSON",
     privateStateJson: "私密状态 JSON",
+    avatarManifestJson: "形象/制服 JSON",
+    playerCharacterSection: "学员角色（你）",
+    playerCharacterHint: "设置学员在对话与 3D 场景中显示的姓名、职务与形象。AI 提及「你」时会使用这里的姓名。",
+    avatarUpload: "导入形象",
+    avatarUploading: "上传中…",
+    avatarUploadHint: "支持 PNG/JPG/WebP 立绘，或 GLB/GLTF 3D 模型（≤20MB）。上传后会写入 avatar_manifest 的 image_url / model_url。",
+    avatarClearImport: "清除导入",
+    avatarModelReady: "已绑定 3D 模型",
     systemPrompt: "自定义 System Prompt",
     llmConfigJson: "专属模型 JSON（provider / model，覆盖编排里的 npc_default）",
     saveScenario: "保存场景",
+    dispatchRules: "调度规则",
+    addDispatchRule: "+ 添加调度规则",
+    dispatchRuleN: "规则 #{n}",
+    dispatchHint: "根据关键词决定本场景中哪些角色优先发言。",
+    ruleName: "规则名称",
+    ruleDescription: "描述",
+    triggerKeywords: "触发关键词（逗号分隔）",
+    priorityCharacters: "优先角色 ID（逗号分隔）",
+    keywordsPlaceholder: "price, quote, contract",
+    charsPlaceholder: "supplier_ceo, legal_counsel",
+    minSpeakers: "最少发言",
+    maxSpeakers: "最多发言",
+    ruleActive: "启用",
+    jsonSection: "JSON 导入 / 导出",
+    jsonHint: "仅包含场景内容（角色、调度规则等），不含 Agent 编排配置。格式与 templates/scenarios/*.json 兼容，便于 AI 批量生成。",
+    exportJson: "导出 JSON",
+    importJson: "从 JSON 导入",
+    importPlaceholder: "粘贴 AI 生成或导出的场景 JSON…",
+    importConfirmReplace: "导入将覆盖当前场景的角色与调度规则等内容（Agent 配置不变）。继续？",
   },
   dispatch: {
     title: "调度规则",
@@ -204,6 +311,9 @@ export const zh = {
     speakerType: "类型",
     content: "内容",
     emotionGesture: "情绪/动作",
+    exportSession: "导出本会话 JSON",
+    exportScenarioSessions: "导出筛选场景全部会话",
+    exportFailed: "导出失败",
   },
   orchestration: {
     title: "Agent 配置 · {title}",

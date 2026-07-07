@@ -32,6 +32,7 @@ from app.orchestrator.defaults import ORCHESTRATION_MODE, agent_config
 from app.orchestrator.llm_binding import resolve_llm
 from app.world.timeline import WorldTimeline
 from app.i18n.reply_language import processing_message
+from app.player_character import resolve_player_character
 
 
 class GenerativeOrchestrator:
@@ -54,7 +55,7 @@ class GenerativeOrchestrator:
         shared_state: dict[str, Any],
         orchestration_config: dict[str, Any] | None,
         user_turn_count: int,
-        reply_language: str = "zh",
+        reply_language: str = "en",
     ) -> AsyncIterator[dict[str, Any]]:
 
         llm_cfg = await orch_support.get_llm_config(db)
@@ -78,6 +79,7 @@ class GenerativeOrchestrator:
 
         turn_id = user_turn_count
         tick = len([e for e in timeline.events if e.turn_id == turn_id])
+        player = resolve_player_character(scenario)
 
         timeline.append(
             turn_id=turn_id,
@@ -85,6 +87,11 @@ class GenerativeOrchestrator:
             event_type="user_speech",
             actor_id="user",
             content=user_input,
+            meta={
+                "display_name": player["display_name"],
+                "character_name": player["character_name"],
+                "job_title": player["job_title"],
+            },
         )
         tick += 1
 
@@ -127,8 +134,7 @@ class GenerativeOrchestrator:
                 db,
                 store,
                 character=char,
-                scenario_title=scenario.title,
-                business_goal=scenario.business_goal,
+                scenario=scenario,
                 decision_llm=decision_llm,
                 nodes=nodes,
             )

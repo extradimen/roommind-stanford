@@ -46,8 +46,15 @@ def resolve_llm(
 
     combined = {**layer, **char_layer}
 
-    provider = combined.get("provider") or global_prov
-    model = combined.get("model") or global_model
+    def _inherit(val: Any, fallback: str | None) -> str | None:
+        if val is None:
+            return fallback
+        if isinstance(val, str) and not val.strip():
+            return fallback
+        return str(val).strip()
+
+    provider = _inherit(combined.get("provider"), global_prov)
+    model = _inherit(combined.get("model"), global_model)
     temperature = float(combined.get("temperature", global_temp))
     max_tokens = int(combined.get("max_tokens", global_max))
 

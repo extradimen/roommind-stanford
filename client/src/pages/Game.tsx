@@ -18,9 +18,13 @@ import AgentMemoryBrowser from "../components/AgentMemoryBrowser";
 import AgentMemoryStrip from "../components/AgentMemoryStrip";
 import type { AgentMemoriesData } from "../components/AgentMemoryPanel";
 import GameDebugPanel, { type DebugLine } from "../components/GameDebugPanel";
+import CharacterSideLegend from "../components/CharacterSideLegend";
+import CharacterSideBadge from "../components/CharacterSideBadge";
 import MeetingScene from "../components/MeetingScene";
 import ResizeHandle from "../components/ResizeHandle";
 import { buildCharacterNameMap, resolveNpcFullName, resolveNpcLabel, resolveScenarioText } from "../characterNames";
+import { buildCharacterSideMap, resolveCharacterSide } from "../characterSide";
+import { resolvePlayerCharacter, resolvePlayerChatLabel } from "../playerCharacter";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import { useLocale, type Locale } from "../i18n";
 import { bindDragResize, usePersistedRatio } from "../hooks/usePersistedRatio";
@@ -181,6 +185,7 @@ export default function Game() {
             ...(data.character_names || {}),
           },
           agents: data.agents || {},
+          world_timeline: data.world_timeline || [],
           last_agent_debug,
           last_turn_id:
             data.last_turn_id ??
@@ -650,6 +655,18 @@ export default function Game() {
     () => buildCharacterNameMap(scenario?.characters, locale),
     [scenario, locale],
   );
+  const playerCharacter = useMemo(() => resolvePlayerCharacter(scenario), [scenario]);
+  const characterSideMap = useMemo(
+    () => buildCharacterSideMap(scenario?.characters),
+    [scenario],
+  );
+  const characterJobTitles = useMemo(
+    () =>
+      Object.fromEntries(
+        (scenario?.characters || []).map((c) => [c.character_id, c.job_title || ""]),
+      ),
+    [scenario],
+  );
 
   if (!scenario) {
     return <div className="loading-screen">{error || t.game.loadingScenario}</div>;
@@ -669,7 +686,7 @@ export default function Game() {
   const scenarioGoal = resolveScenarioText(
     scenario.slug,
     "goal",
-    scenario.business_goal || "",
+    scenario.player_side_goal || scenario.business_goal || "",
     t.scenarios as Record<string, Record<string, string>>,
   );
 
@@ -710,6 +727,7 @@ export default function Game() {
           </div>
         </div>
         <p className="game-goal">🎯 {t.game.goal}: {scenarioGoal}</p>
+        <CharacterSideLegend characters={scenario.characters || []} scenario={scenario} />
         <div className="game-header-debug">
           <GameDebugPanel
             corner
@@ -748,6 +766,7 @@ export default function Game() {
             >
               <MeetingScene
                 characters={scenario.characters || []}
+                playerCharacter={playerCharacter}
                 activeSpeaker={activeSpeaker}
                 compact
               />
@@ -773,13 +792,25 @@ export default function Game() {
               )}
 
               <div className="chat-messages">
-                {messages.map((m, i) => (
-                  <div key={i} className={`msg ${m.speaker_type}${m.streaming ? " streaming" : ""}`}>
+                {messages.map((m, i) => {
+                  const side = resolveCharacterSide(m.speaker_id, characterSideMap);
+                  return (
+                  <div
+                    key={i}
+                    className={`msg ${m.speaker_type} side-${side}${m.streaming ? " streaming" : ""}`}
+                  >
                     <span className="speaker">
+                      <CharacterSideBadge side={side} compact />
                       {m.speaker_id === "user"
-                        ? t.game.you
+                        ? resolvePlayerChatLabel(scenario, t.game.you)
                         : resolveNpcLabel(m.speaker_id, characterNames, m.display_name, locale)}
                     </span>
+                    {m.speaker_id === "user" && playerCharacter?.job_title && (
+                      <span className="speaker-title">{playerCharacter.job_title}</span>
+                    )}
+                    {m.speaker_id !== "user" && characterJobTitles[m.speaker_id] && (
+                      <span className="speaker-title">{characterJobTitles[m.speaker_id]}</span>
+                    )}
                     <p>
                       {m.content || (m.streaming ? "" : t.game.emptyContent)}
                       {m.streaming && <span className="stream-cursor">▍</span>}
@@ -788,7 +819,8 @@ export default function Game() {
                       <span className="meta">{m.emotion} · {m.gesture}</span>
                     )}
                   </div>
-                ))}
+                  );
+                })}
                 {loading && !messages.some((m) => m.streaming) && (
                   <div className="msg system">{loadingHint || t.game.thinking}</div>
                 )}
@@ -824,6 +856,9 @@ export default function Game() {
             error={agentMemoryError}
             characterOrder={characterOrder}
             characterNames={characterNames}
+            characterSideMap={characterSideMap}
+            playerCharacter={playerCharacter}
+            sessionUuid={sessionUuid}
             onOpenBrowser={() => setMemoryBrowserOpen(true)}
             onRefresh={() => {
               if (sessionUuid) refreshAgentMemories(sessionUuid).catch(() => {});

@@ -1,6 +1,10 @@
 import { useMemo, useState } from "react";
-import { resolveNpcFullName, resolveNpcLabel } from "../characterNames";
+import { resolveNpcFullName, resolveNpcLabel, resolvePlayerFullName, resolvePlayerLabel } from "../characterNames";
+import { resolveCharacterSide, type CharacterSide } from "../characterSide";
+import type { PlayerCharacter } from "../api";
+import { downloadJsonFile, exportSessionBundle } from "../api";
 import { useLocale } from "../i18n";
+import CharacterSideBadge from "./CharacterSideBadge";
 import { localizeMemoryContent } from "../memoryDisplay";
 import type { AgentMemoriesData, AgentMemoryNode } from "./AgentMemoryPanel";
 
@@ -13,12 +17,39 @@ type Props = {
   error?: string;
   characterOrder?: string[];
   characterNames?: Record<string, string>;
+  characterSideMap?: Record<string, CharacterSide>;
+  playerCharacter?: PlayerCharacter | null;
+  sessionUuid?: string | null;
   onRefresh?: () => void;
   onOpenBrowser?: () => void;
 };
 
 function countByType(nodes: AgentMemoryNode[], type: string) {
   return nodes.filter((n) => n.node_type === type).length;
+}
+
+function userSpeechForTurn(
+  timeline: Array<Record<string, unknown>> | undefined,
+  turnId: number | null | undefined,
+): string | null {
+  if (turnId == null || !timeline?.length) return null;
+  const events = timeline.filter(
+    (e) => e.event_type === "user_speech" && Number(e.turn_id) === turnId,
+  );
+  const last = events[events.length - 1];
+  return last ? String(last.content || "").trim() || null : null;
+}
+
+function userTimelineEntries(
+  timeline: Array<Record<string, unknown>> | undefined,
+  turnId: number | null | undefined,
+): Array<Record<string, unknown>> {
+  if (!timeline?.length) return [];
+  return timeline.filter((e) => {
+    if (e.event_type !== "user_speech") return false;
+    if (turnId == null) return true;
+    return Number(e.turn_id) === turnId;
+  });
 }
 
 export default function AgentMemoryStrip({
@@ -28,11 +59,26 @@ export default function AgentMemoryStrip({
   error,
   characterOrder = [],
   characterNames = {},
+  characterSideMap = {},
+  playerCharacter = null,
+  sessionUuid = null,
   onRefresh,
   onOpenBrowser,
 }: Props) {
   const { t, locale } = useLocale();
   const [filter, setFilter] = useState<FilterType>("all");
+  const [exportMsg, setExportMsg] = useState("");
+
+  const exportSession = async () => {
+    if (!sessionUuid) return;
+    try {
+      setExportMsg("");
+      const data = await exportSessionBundle(sessionUuid);
+      downloadJsonFile(`session-${sessionUuid.slice(0, 8)}.json`, data);
+    } catch (e) {
+      setExportMsg(String(e));
+    }
+  };
 
   const nodeLabels: Record<string, string> = {
     observation: t.agent.filters.observation,
@@ -54,7 +100,7 @@ export default function AgentMemoryStrip({
   };
 
   const agentIds = useMemo(() => {
-    if (!data) return characterOrder;
+    if (!data) return [...characterOrder, "user"];
     const ids = new Set([
       ...characterOrder,
       ...Object.keys(data.character_names || {}),
@@ -62,8 +108,10 @@ export default function AgentMemoryStrip({
     ]);
     const ordered = characterOrder.filter((id) => ids.has(id));
     for (const id of ids) {
+      if (id === "user") continue;
       if (!ordered.includes(id)) ordered.push(id);
     }
+    if (!ordered.includes("user")) ordered.push("user");
     return ordered;
   }, [data, characterOrder]);
 
@@ -94,6 +142,11 @@ export default function AgentMemoryStrip({
             </button>
           ))}
         </div>
+        {sessionUuid && (
+          <button type="button" className="btn-debug strip-open-browser" onClick={exportSession}>
+            {t.agent.exportSession}
+          </button>
+        )}
         {onOpenBrowser && (
           <button type="button" className="btn-debug strip-open-browser" onClick={onOpenBrowser}>
             {t.agent.openBrowser}
@@ -107,6 +160,7 @@ export default function AgentMemoryStrip({
       </div>
 
       {error && <div className="agent-memory-error strip-error">{error}</div>}
+      {exportMsg && <div className="agent-memory-error strip-error">{exportMsg}</div>}
 
       <div className="agent-columns">
         {agentIds.map((id) => {
@@ -133,15 +187,39 @@ export default function AgentMemoryStrip({
             (latestAction?.meta?.action_label as string | undefined) || latestActionKind;
           const isProcessing = turnLoading && debug?.action === "processing";
 
+          const isUserColumn = id === "user";
+          const userSpeech = isUserColumn
+            ? userSpeechForTurn(data?.world_timeline, currentTurnId)
+            : null;
+          const userEntries = isUserColumn
+            ? userTimelineEntries(data?.world_timeline, currentTurnId)
+            : [];
+
+          const side = resolveCharacterSide(id, characterSideMap);
+          const columnTitle = isUserColumn
+            ? resolvePlayerFullName(playerCharacter || undefined) || t.game.you
+            : name;
+          const columnLabel = isUserColumn
+            ? resolvePlayerLabel(playerCharacter || undefined) || t.game.you
+            : resolveNpcLabel(id, { ...characterNames, ...(data?.character_names || {}) }, name, locale);
+
           return (
-            <section key={id} className="agent-column">
+            <section key={id} className={`agent-column${isUserColumn ? " agent-column-user" : ""}`}>
               <header className="agent-column-head">
-                <h3 title={name}>{resolveNpcLabel(id, { ...characterNames, ...(data?.character_names || {}) }, name, locale)}</h3>
+                <h3 title={columnTitle}>
+                  <CharacterSideBadge side={side} compact />
+                  {columnLabel}
+                </h3>
+                {!isUserColumn && (
                 <div className="agent-column-stats">
                   <span title={t.agent.filters.observation}>👁 {countByType(nodes, "observation")}</span>
                   <span title={t.agent.filters.plan}>📋 {countByType(nodes, "plan")}</span>
                   <span title={t.agent.filters.action} className="stat-action">⚡ {countByType(nodes, "action")}</span>
                 </div>
+                )}
+                {isUserColumn && playerCharacter?.job_title && (
+                  <span className="agent-column-role">{playerCharacter.job_title}</span>
+                )}
               </header>
 
               <div className="agent-column-status">
@@ -151,7 +229,21 @@ export default function AgentMemoryStrip({
                     <code>T{currentTurnId}</code>
                   </div>
                 )}
-                {isProcessing ? (
+                {isUserColumn ? (
+                  userSpeech ? (
+                    <>
+                      <div className="status-line">
+                        <span className="status-label">{t.agent.action}</span>
+                        <code>{t.agent.actions.speak}</code>
+                      </div>
+                      <p className="status-spoke">「{userSpeech}」</p>
+                    </>
+                  ) : turnLoading ? (
+                    <p className="status-idle muted">{t.agent.waiting}</p>
+                  ) : (
+                    <p className="status-idle muted">{t.agent.userIdle}</p>
+                  )
+                ) : isProcessing ? (
                   <p className="status-idle muted">{t.agent.thinking}</p>
                 ) : debug ? (
                   <>
@@ -194,12 +286,29 @@ export default function AgentMemoryStrip({
               </div>
 
               <div className="agent-column-list">
-                {filtered.length === 0 && (
+                {isUserColumn ? (
+                  userEntries.length === 0 ? (
+                    <div className="agent-memory-empty">
+                      {turnLoading ? t.agent.thinking : currentTurnId != null ? t.agent.userIdle : t.agent.empty}
+                    </div>
+                  ) : (
+                    [...userEntries].reverse().map((evt, i) => (
+                      <article key={`user-${evt.event_id || i}`} className="agent-memory-item compact type-action">
+                        <header>
+                          <span className="node-badge action">{t.agent.filters.action}</span>
+                          <span className="node-action-kind">{t.agent.actions.speak}</span>
+                          <span className="node-turn">T{Number(evt.turn_id || 0)}</span>
+                        </header>
+                        <p className="node-content">{String(evt.content || "")}</p>
+                      </article>
+                    ))
+                  )
+                ) : filtered.length === 0 ? (
                   <div className="agent-memory-empty">
                     {turnLoading ? t.agent.thinking : currentTurnId != null ? t.agent.emptyRound : t.agent.empty}
                   </div>
-                )}
-                {filtered.slice(-8).reverse().map((node, i) => {
+                ) : null}
+                {!isUserColumn && filtered.slice(-8).reverse().map((node, i) => {
                   const actionKind =
                     (node.meta?.action_label as string | undefined) ||
                     (node.meta?.action_kind as string | undefined);

@@ -139,11 +139,12 @@ def format_observation(
     agent: CharacterTemplate,
     event: WorldEvent,
     *,
-    lang: str = "zh",
+    lang: str = "en",
 ) -> str:
     """Natural-language observation from this agent's POV (no redundant name prefix)."""
     if event.event_type == "user_speech":
-        return observation_user_speech(event.content, lang)
+        speaker = str(event.meta.get("display_name") or event.meta.get("character_name") or "Buyer lead")
+        return observation_user_speech(event.content, lang, speaker_name=speaker)
     if event.event_type == "npc_speech":
         if event.actor_id == agent.character_id:
             return observation_self_speech(event.content, lang)
@@ -166,7 +167,7 @@ def perceive_events(
     events: list[WorldEvent],
     *,
     private_only_self: bool = True,
-    reply_language: str = "zh",
+    reply_language: str = "en",
 ) -> list[dict[str, Any]]:
     """
     Filter world events → per-agent observations.

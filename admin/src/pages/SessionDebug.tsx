@@ -47,6 +47,42 @@ export default function SessionDebugPage() {
       .finally(() => setMemoryLoading(false));
   }, [selectedUuid]);
 
+  const downloadJson = (filename: string, data: unknown) => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportCurrentSession = async () => {
+    if (!selectedUuid) return;
+    try {
+      setMsg("");
+      const data = await api.exportSession(selectedUuid);
+      downloadJson(`session-${selectedUuid.slice(0, 8)}.json`, data);
+    } catch (e) {
+      setMsg(String(e));
+    }
+  };
+
+  const exportScenarioSessions = async () => {
+    const sid = scenarioFilter ? parseInt(scenarioFilter) : undefined;
+    if (!sid || Number.isNaN(sid)) {
+      setMsg(t.sessionDebug.filterPlaceholder);
+      return;
+    }
+    try {
+      setMsg("");
+      const data = await api.exportSessionsBatch(sid, 100);
+      downloadJson(`sessions-scenario-${sid}.json`, data);
+    } catch (e) {
+      setMsg(String(e));
+    }
+  };
+
   const memoryData: AgentMemoriesData | null = debug
     ? {
         orchestration_mode: debug.orchestration_mode,
@@ -60,7 +96,15 @@ export default function SessionDebugPage() {
     <div>
       <div className="page-header">
         <h1>{t.sessionDebug.title}</h1>
-        <button type="button" className="btn small" onClick={loadSessions}>{t.sessionDebug.refreshList}</button>
+        <div className="row" style={{ gap: "0.5rem" }}>
+          <button type="button" className="btn small" onClick={loadSessions}>{t.sessionDebug.refreshList}</button>
+          <button type="button" className="btn small" disabled={!selectedUuid} onClick={exportCurrentSession}>
+            {t.sessionDebug.exportSession}
+          </button>
+          <button type="button" className="btn small" onClick={exportScenarioSessions}>
+            {t.sessionDebug.exportScenarioSessions}
+          </button>
+        </div>
       </div>
 
       <p className="muted">{t.sessionDebug.subtitle}</p>

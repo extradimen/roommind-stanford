@@ -34,26 +34,50 @@ export default function OrchestrationSettings() {
   const [scenarioTitle, setScenarioTitle] = useState("");
   const [config, setConfig] = useState<OrchestrationConfig | null>(null);
   const [catalogs, setCatalogs] = useState<Record<string, { id: string; name: string }[]>>({});
+  const [globalLlm, setGlobalLlm] = useState<{ provider?: string; model?: string }>({});
   const [msg, setMsg] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!scenarioId) return;
-    Promise.all([api.getScenario(scenarioId), api.getOrchestration(scenarioId), api.getProviders()])
-      .then(([scenario, orch, prov]) => {
+    Promise.all([api.getScenario(scenarioId), api.getOrchestration(scenarioId), api.getProviders(), api.getLLMStatus()])
+      .then(([scenario, orch, prov, status]) => {
         setScenarioTitle(scenario.title);
         setConfig(orch.orchestration_config as OrchestrationConfig);
         setCatalogs(prov.catalogs || {});
+        setGlobalLlm({
+          provider: String(status.provider || ""),
+          model: String(status.model || ""),
+        });
       })
       .catch((e) => setMsg(String(e)));
   }, [scenarioId]);
 
-  const updateLlmRole = (roleId: string, patch: Partial<LlmRoleConfig>) => {
+  const updateLlmRole = (roleId: string, patch: Partial<LlmRoleConfig>, removeKeys: string[] = []) => {
     if (!config) return;
+    const current = { ...(config.llm_roles?.[roleId] || {}) };
+    Object.assign(current, patch);
+    for (const key of removeKeys) {
+      delete current[key as keyof LlmRoleConfig];
+    }
     setConfig({
       ...config,
-      llm_roles: { ...config.llm_roles, [roleId]: { ...config.llm_roles?.[roleId], ...patch } },
+      llm_roles: { ...config.llm_roles, [roleId]: current },
     });
+  };
+
+  const sanitizeForSave = (cfg: OrchestrationConfig): OrchestrationConfig => {
+    const llm_roles: Record<string, LlmRoleConfig> = {};
+    for (const roleId of LLM_ROLE_IDS) {
+      const r = cfg.llm_roles?.[roleId] || {};
+      const next: LlmRoleConfig = {};
+      if (r.provider?.trim()) next.provider = r.provider.trim();
+      if (r.model?.trim()) next.model = r.model.trim();
+      if (r.temperature != null) next.temperature = r.temperature;
+      if (r.max_tokens != null) next.max_tokens = r.max_tokens;
+      llm_roles[roleId] = next;
+    }
+    return { ...cfg, llm_roles };
   };
 
   const updateAgent = (patch: Partial<AgentConfig>) => {
@@ -67,7 +91,7 @@ export default function OrchestrationSettings() {
     setSaving(true);
     setMsg("");
     try {
-      await api.updateOrchestration(scenarioId, config);
+      await api.updateOrchestration(scenarioId, sanitizeForSave(config));
       setMsg(t.orchestration.configSaved);
     } catch (err) {
       setMsg(String(err));
@@ -96,9 +120,13 @@ export default function OrchestrationSettings() {
           <h3>{t.orchestration.modelBinding}</h3>
           {LLM_ROLE_IDS.map((roleId) => {
             const r = config.llm_roles?.[roleId] || {};
-            const provKey = r.provider === "ollama_cloud" ? "ollama" : r.provider || "siliconflow";
+            const effectiveProvider = r.provider?.trim() || globalLlm.provider || "ollama";
+            const provKey = effectiveProvider === "ollama_cloud" ? "ollama" : effectiveProvider;
             const models = catalogs[provKey] || [];
             const roleLabel = t.orchestration.roles[roleId as keyof typeof t.orchestration.roles];
+            const globalLabel = globalLlm.provider && globalLlm.model
+              ? `${globalLlm.provider}/${globalLlm.model}`
+              : t.orchestration.followGlobal;
             return (
               <div key={roleId} style={{ marginBottom: "1rem", borderTop: "1px solid #30363d", paddingTop: "0.75rem" }}>
                 <strong>{roleLabel}</strong>
@@ -106,9 +134,17 @@ export default function OrchestrationSettings() {
                   <label>
                     Provider
                     <select
-                      value={r.provider || "siliconflow"}
-                      onChange={(e) => updateLlmRole(roleId, { provider: e.target.value })}
+                      value={r.provider || ""}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (!v) {
+                          updateLlmRole(roleId, {}, ["provider", "model"]);
+                        } else {
+                          updateLlmRole(roleId, { provider: v }, ["model"]);
+                        }
+                      }}
                     >
+                      <option value="">{globalLabel}</option>
                       <option value="siliconflow">siliconflow</option>
                       <option value="ollama">ollama</option>
                     </select>
@@ -117,7 +153,12 @@ export default function OrchestrationSettings() {
                     Model
                     <select
                       value={r.model || ""}
-                      onChange={(e) => updateLlmRole(roleId, { model: e.target.value })}
+                      disabled={!r.provider}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (!v) updateLlmRole(roleId, {}, ["model"]);
+                        else updateLlmRole(roleId, { model: v });
+                      }}
                     >
                       <option value="">{t.orchestration.followGlobal}</option>
                       {models.map((m) => (

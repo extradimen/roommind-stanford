@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, LLMConfig, LLMKeysStatus } from "../api";
+import { api, LLMConfig, LLMKeysStatus, LLMModelCatalogItem } from "../api";
 import { useLocale } from "../i18n";
 
 export default function LLMSettings() {
@@ -7,7 +7,7 @@ export default function LLMSettings() {
   const [config, setConfig] = useState<LLMConfig | null>(null);
   const [keys, setKeys] = useState<LLMKeysStatus | null>(null);
   const [providers, setProviders] = useState<Record<string, string[]>>({});
-  const [catalogs, setCatalogs] = useState<Record<string, { id: string; name: string }[]>>({});
+  const [catalogs, setCatalogs] = useState<Record<string, LLMModelCatalogItem[]>>({});
   const [status, setStatus] = useState<Record<string, unknown> | null>(null);
   const [sfKeyInput, setSfKeyInput] = useState("");
   const [ollamaKeyInput, setOllamaKeyInput] = useState("");
@@ -19,7 +19,11 @@ export default function LLMSettings() {
   const [catalogMeta, setCatalogMeta] = useState<Record<string, unknown> | null>(null);
 
   const applyProviders = (
-    prov: { providers: Record<string, string[]>; catalogs: Record<string, { id: string; name: string }[]>; meta?: Record<string, unknown> },
+    prov: {
+      providers: Record<string, string[]>;
+      catalogs: Record<string, LLMModelCatalogItem[]>;
+      meta?: Record<string, unknown>;
+    },
     providerKey: string,
     currentModel?: string,
   ) => {
@@ -168,6 +172,14 @@ export default function LLMSettings() {
   const models = providers[provKey] || providers[config.provider] || [];
   const modelCatalog = catalogs[provKey] || models.map((id) => ({ id, name: id }));
 
+  const formatModelLabel = (m: LLMModelCatalogItem) => {
+    const kindLabel = m.kind === "reasoning" ? t.llm.kindReasoning : t.llm.kindChat;
+    const star = m.recommended ? "★ " : "";
+    return `${star}[${kindLabel}] ${m.name} — ${m.id}`;
+  };
+
+  const selectedModelMeta = modelCatalog.find((m) => m.id === config.model);
+
   return (
     <div>
       <h1>{t.llm.title}</h1>
@@ -242,6 +254,12 @@ export default function LLMSettings() {
       <div className="form-panel">
         <h2 style={{ marginTop: 0, fontSize: "1.1rem" }}>{t.llm.modelParams}</h2>
 
+        <div className="card" style={{ marginBottom: "1rem", padding: "0.75rem 1rem" }}>
+          <strong>{t.llm.modelKindGuideTitle}</strong>
+          <p className="hint" style={{ margin: "0.5rem 0 0" }}>{t.llm.modelKindGuide}</p>
+          <p className="hint" style={{ margin: "0.35rem 0 0" }}>{t.llm.dropdownLegend}</p>
+        </div>
+
         <label>
           {t.llm.provider}
           <select
@@ -271,7 +289,7 @@ export default function LLMSettings() {
             >
               {modelCatalog.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.name} — {m.id}
+                  {formatModelLabel(m)}
                 </option>
               ))}
             </select>
@@ -295,6 +313,11 @@ export default function LLMSettings() {
           {provKey === "ollama" && catalogMeta?.error ? (
             <p className="error">{t.llm.catalogFetchFailed}: {String(catalogMeta.error)}</p>
           ) : null}
+          {selectedModelMeta && (
+            <p className="hint">
+              {selectedModelMeta.kind === "reasoning" ? t.llm.selectedReasoningHint : t.llm.selectedChatHint}
+            </p>
+          )}
         </label>
 
         <div className="row">
