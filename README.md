@@ -1,8 +1,8 @@
 # RoomMind Stanford
 
-基于 [RoomMind](../roommind) 的 **Stanford Generative Agents（小镇）架构对齐版**。
+基于 upstream RoomMind 的 **Stanford Generative Agents（小镇）架构对齐版**。
 
-Server 核心已按论文逻辑优化（Seed Memory → Plan → Perceive → Retrieve → React → Act → Reflection），并补齐完整前端、管理后台与运维脚本，可与原版 **并行部署**（端口不同）。
+Server 核心已按论文逻辑优化（Seed Memory → Plan → Perceive → Retrieve → React → Act → Reflection），并补齐完整前端、管理后台与运维脚本，可与其它 RoomMind 实例 **并行部署**（端口独立）。
 
 ## 与原版 roommind 的差异（Server）
 
@@ -28,21 +28,27 @@ Server 核心已按论文逻辑优化（Seed Memory → Plan → Perceive → Re
 | PostgreSQL | 5432（库名 `roommind_stanford`） |
 | Redis | 6379（db **1**） |
 
-原版 roommind 仍使用 8800 / 5180 / 5181。
-
-## 快速开始
+## 快速开始（从零安装）
 
 ```bash
+git clone https://github.com/extradimen/roommind-stanford.git
 cd roommind-stanford
-cp .env.example .env
-# 编辑 .env：填入 SILICONFLOW_API_KEY 等
+cp .env.example .env   # 可选：编辑 LLM Key；也可稍后在管理后台 /llm 填写
 
-# 首次：创建数据库（若尚未存在）
-# sudo -u postgres createdb roommind_stanford  # 或 psql 手动创建
-
-./start.sh
+./start.sh   # 自动：apt 依赖 → PostgreSQL/Redis → Python venv → npm → 启动服务
 ./status.sh
 ```
+
+`./start.sh` 会自动检测并安装缺失项（Ubuntu/Debian）：
+
+| 类别 | 自动处理 |
+|------|----------|
+| 系统包 | python3、nodejs、npm、postgresql、redis-server、curl |
+| 服务 | 启动 postgresql / redis-server（本机模式） |
+| 数据库 | 创建用户 `roommind`、库 `roommind_stanford`（不存在时） |
+| Python | 创建 `.venv`、pip install |
+| 前端 | admin/client 的 `npm install` |
+| Docker | 若已安装 docker，优先用 compose 起 PG/Redis |
 
 访问：
 
@@ -60,6 +66,7 @@ roommind-stanford/
 ├── client/          # 学员端（会议对话 + Agent 进度）
 ├── admin/           # 管理后台
 ├── config/          # platform.json
+├── scripts/         # _lib.sh 环境/bootstrap 逻辑
 ├── start.sh         # 后台启动
 ├── stop.sh / status.sh
 └── requirements.txt

@@ -12,6 +12,73 @@ roommind_need_cmd() {
   fi
 }
 
+roommind_using_docker_postgres() {
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^roommind-postgres$'
+}
+
+roommind_using_docker_redis() {
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^roommind-redis$'
+}
+
+roommind_load_env() {
+  local root="$1"
+  if [[ -f "$root/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$root/.env"
+    set +a
+  fi
+}
+
+# 检测并安装系统级依赖（Ubuntu/Debian apt）；缺什么装什么，已存在则跳过
+roommind_install_system_deps() {
+  if ! command -v apt-get >/dev/null 2>&1; then
+    roommind_warn "非 apt 系统，请手动安装: python3 python3-venv nodejs npm postgresql redis-server curl"
+    return 0
+  fi
+
+  if ! command -v sudo >/dev/null 2>&1; then
+    roommind_warn "未找到 sudo，无法自动安装系统依赖"
+    return 0
+  fi
+
+  local packages=()
+  local pkg
+  for pkg in \
+    python3 python3-venv python3-pip \
+    curl ca-certificates git \
+    postgresql postgresql-client \
+    redis-server redis-tools \
+    nodejs npm; do
+    if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+      packages+=("$pkg")
+    fi
+  done
+
+  if [[ ${#packages[@]} -gt 0 ]]; then
+    roommind_info "安装系统依赖: ${packages[*]}"
+    sudo apt-get update -qq
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${packages[@]}"
+  else
+    roommind_info "系统依赖已就绪，跳过 apt 安装"
+  fi
+
+  if command -v systemctl >/dev/null 2>&1; then
+    if command -v pg_isready >/dev/null 2>&1; then
+      if ! pg_isready -q 2>/dev/null; then
+        roommind_info "启动 PostgreSQL 服务..."
+        sudo systemctl enable --now postgresql >/dev/null 2>&1 || true
+      fi
+    fi
+    if command -v redis-cli >/dev/null 2>&1; then
+      if ! redis-cli ping >/dev/null 2>&1; then
+        roommind_info "启动 Redis 服务..."
+        sudo systemctl enable --now redis-server >/dev/null 2>&1 || true
+      fi
+    fi
+  fi
+}
+
 roommind_venv() {
   echo "$1/.venv"
 }
@@ -120,7 +187,114 @@ roommind_try_docker_services() {
       i=$((i + 1))
       [[ "$i" -lt 60 ]] || { roommind_err "PostgreSQL 启动超时"; exit 1; }
     done
+    return 0
   fi
+}
+
+# 本机 Redis：未运行则尝试启动并等待就绪（Docker 模式由 compose 负责）
+roommind_ensure_redis() {
+  local root="$1"
+
+  if roommind_using_docker_redis; then
+    roommind_info "Docker Redis 已运行，跳过本机 Redis 检查"
+    return 0
+  fi
+
+  roommind_load_env "$root"
+  local redis_port="${REDIS_PORT:-6379}"
+  local redis_db
+  redis_db="$(echo "${REDIS_URL:-redis://127.0.0.1:6379/0}" | sed -n 's|.*/\([0-9]*\)$|\1|p')"
+  redis_db="${redis_db:-0}"
+
+  if ! command -v redis-cli >/dev/null 2>&1; then
+    roommind_warn "未安装 redis-cli；请安装 redis-server 或启用 Docker Redis"
+    return 0
+  fi
+
+  if ! redis-cli -p "$redis_port" ping >/dev/null 2>&1; then
+    roommind_info "Redis 未响应，尝试启动 redis-server..."
+    if command -v systemctl >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+      sudo systemctl enable --now redis-server >/dev/null 2>&1 || true
+    fi
+    sleep 1
+  fi
+
+  local i=0
+  until redis-cli -p "$redis_port" ping >/dev/null 2>&1; do
+    sleep 1
+    i=$((i + 1))
+    if [[ "$i" -ge 15 ]]; then
+      roommind_warn "Redis :${redis_port} 未就绪；请检查 redis-server 或 .env 中 REDIS_URL"
+      return 0
+    fi
+  done
+  roommind_info "Redis 已就绪 (:${redis_port}, db ${redis_db})"
+}
+
+# 本机 PostgreSQL：用户/库不存在则自动创建（Docker 模式由 compose 负责，跳过）
+roommind_ensure_postgres_db() {
+  local root="$1"
+
+  if roommind_using_docker_postgres; then
+    roommind_info "Docker PostgreSQL 已运行，跳过本机 createdb"
+    return 0
+  fi
+
+  roommind_load_env "$root"
+
+  local db_user="${POSTGRES_USER:-roommind}"
+  local db_name="${POSTGRES_DB:-roommind}"
+  local db_pass="${POSTGRES_PASSWORD:-roommind_dev}"
+
+  if ! command -v psql >/dev/null 2>&1; then
+    roommind_err "未安装 psql；请先运行 ./start.sh 自动安装 postgresql-client，或手动 apt install postgresql"
+    exit 1
+  fi
+
+  if command -v pg_isready >/dev/null 2>&1 && ! pg_isready -q 2>/dev/null; then
+    roommind_info "等待 PostgreSQL 服务就绪..."
+    if command -v systemctl >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+      sudo systemctl enable --now postgresql >/dev/null 2>&1 || true
+    fi
+    local i=0
+    until pg_isready -q 2>/dev/null; do
+      sleep 1
+      i=$((i + 1))
+      [[ "$i" -lt 30 ]] || { roommind_err "PostgreSQL 服务未启动"; exit 1; }
+    done
+  fi
+
+  if ! command -v sudo >/dev/null 2>&1; then
+    roommind_err "需要 sudo 以 postgres 用户建库: sudo -u postgres createdb -O ${db_user} ${db_name}"
+    exit 1
+  fi
+
+  if ! sudo -u postgres psql -tAc "SELECT 1" >/dev/null 2>&1; then
+    roommind_err "无法连接本机 PostgreSQL；请检查 postgresql 是否已安装并运行"
+    exit 1
+  fi
+
+  if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${db_user}'" | grep -q 1; then
+    roommind_info "创建 PostgreSQL 用户: ${db_user}"
+    sudo -u postgres psql -v ON_ERROR_STOP=1 -c \
+      "CREATE USER \"${db_user}\" WITH LOGIN PASSWORD '${db_pass//\'/''}';" \
+      || { roommind_err "创建用户 ${db_user} 失败"; exit 1; }
+  else
+    sudo -u postgres psql -v ON_ERROR_STOP=1 -c \
+      "ALTER USER \"${db_user}\" WITH LOGIN PASSWORD '${db_pass//\'/''}';" >/dev/null 2>&1 || true
+  fi
+
+  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${db_name}'" | grep -q 1; then
+    roommind_info "PostgreSQL 数据库已就绪: ${db_name}"
+  else
+    roommind_info "创建 PostgreSQL 数据库: ${db_name} (owner: ${db_user})"
+    sudo -u postgres createdb -O "${db_user}" "${db_name}" \
+      || { roommind_err "createdb 失败"; exit 1; }
+    roommind_info "数据库 ${db_name} 创建完成"
+  fi
+
+  sudo -u postgres psql -v ON_ERROR_STOP=1 -c \
+    "GRANT ALL PRIVILEGES ON DATABASE \"${db_name}\" TO \"${db_user}\";" >/dev/null 2>&1 || true
 }
 
 # 启动前检查 venv 与前端依赖（start.sh 每次启动前调用，内部会跳过已完成的步骤）
@@ -148,12 +322,17 @@ roommind_resolve_public_host() {
 
 roommind_bootstrap() {
   local root="$1"
+  roommind_info "=== 环境检查与依赖安装 ==="
   roommind_ensure_env "$root"
+  roommind_install_system_deps
+  roommind_try_docker_services "$root"
+  roommind_ensure_postgres_db "$root"
+  roommind_ensure_redis "$root"
   roommind_install_python_deps "$root"
   roommind_sync_platform_config "$root"
   roommind_install_npm_deps "$root" admin
   roommind_install_npm_deps "$root" client
-  roommind_try_docker_services "$root"
+  roommind_info "=== 依赖就绪，启动服务 ==="
 }
 
 # 后台守护启动（新会话 + nohup，终端关闭不影响）
