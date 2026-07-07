@@ -1,0 +1,51 @@
+{
+  "ports": {
+    "api": 8810,
+    "admin": 5182,
+    "client": 5183,
+    "postgres": 5432,
+    "redis": 6379
+  },
+  "hosts": {
+    "api_bind": "0.0.0.0",
+    "public_host": "auto"
+  },
+  "database": {
+    "user": "roommind",
+    "password": "roommind_dev",
+    "name": "roommind_stanford"
+  },
+  "llm": {
+    "provider": "ollama"
+  },
+  "ollama": {
+    "apiKey": "",
+    "baseUrl": "https://ollama.com",
+    "modelId": "glm-5.1",
+    "apiKeyConfigured": true
+  },
+  "siliconflow": {
+    "apiKey": "",
+    "baseUrl": "https://api.siliconflow.com/v1",
+    "modelId": "Qwen/Qwen2.5-7B-Instruct",
+    "models": [
+      {
+        "id": "Qwen/Qwen2.5-7B-Instruct",
+        "name": "Qwen2.5 7B（最小/速度测试）"
+      },
+      {
+        "id": "Qwen/Qwen3-8B",
+        "name": "Qwen3 8B"
+      },
+      {
+        "id": "deepseek-ai/DeepSeek-V4-Flash",
+        "name": "DeepSeek V4 Flash"
+      },
+      {
+        "id": "moonshotai/Kimi-K2.5",
+        "name": "Kimi K2.5"
+      }
+    ],
+    "apiKeyConfigured": true
+  }
+}

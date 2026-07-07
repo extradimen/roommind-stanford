@@ -1,0 +1,290 @@
+<svg width="680" height="920" viewBox="0 0 680 920" xmlns="http://www.w3.org/2000/svg" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif">
+<defs>
+  <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#a8a29e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arr-purple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arr-teal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#0d9488" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arr-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#d97706" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<!-- Background -->
+<rect width="680" height="920" fill="#ffffff"/>
+
+<!-- ── Color palette (hardcoded for print) ──
+     gray nodes:   fill #f5f5f4  stroke #a8a29e
+     purple nodes: fill #ede9fe  stroke #7c3aed
+     teal nodes:   fill #ccfbf1  stroke #0d9488
+     amber nodes:  fill #fef3c7  stroke #d97706
+     blue nodes:   fill #dbeafe  stroke #2563eb
+     text primary: #1c1917
+     text secondary: #78716c
+     border dashed: #d6d3d1
+-->
+
+<!-- ── Title ── -->
+<text x="340" y="26" text-anchor="middle" font-size="14" font-weight="500" fill="#1c1917">RoomMind — system architecture</text>
+<text x="340" y="44" text-anchor="middle" font-size="11" fill="#78716c">Stanford generative agents · multi-NPC negotiation simulation</text>
+
+<!-- ══════════════════════════
+     A  Infrastructure
+══════════════════════════ -->
+<rect x="30" y="58" width="620" height="90" rx="6" fill="none" stroke="#d6d3d1" stroke-width="0.75" stroke-dasharray="5 3"/>
+<text x="42" y="74" font-size="11" fill="#78716c">A  Infrastructure</text>
+
+<!-- Client -->
+<rect x="46" y="82" width="112" height="52" rx="4" fill="#f5f5f4" stroke="#a8a29e" stroke-width="0.75"/>
+<text x="102" y="104" text-anchor="middle" font-size="12" font-weight="500" fill="#1c1917">React + Three.js</text>
+<text x="102" y="120" text-anchor="middle" font-size="10" fill="#78716c">client · :5181</text>
+
+<line x1="158" y1="108" x2="186" y2="108" stroke="#a8a29e" stroke-width="0.75" marker-end="url(#arr)"/>
+
+<!-- WebSocket -->
+<rect x="188" y="82" width="120" height="52" rx="4" fill="#f5f5f4" stroke="#a8a29e" stroke-width="0.75"/>
+<text x="248" y="104" text-anchor="middle" font-size="12" font-weight="500" fill="#1c1917">WebSocket / REST</text>
+<text x="248" y="120" text-anchor="middle" font-size="10" fill="#78716c">bidirectional</text>
+
+<line x1="308" y1="108" x2="336" y2="108" stroke="#a8a29e" stroke-width="0.75" marker-end="url(#arr)"/>
+
+<!-- Orchestrator -->
+<rect x="338" y="82" width="132" height="52" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="0.75"/>
+<text x="404" y="104" text-anchor="middle" font-size="12" font-weight="500" fill="#3730a3">FastAPI orchestrator</text>
+<text x="404" y="120" text-anchor="middle" font-size="10" fill="#5b21b6">:8800 · generative mode</text>
+
+<line x1="470" y1="108" x2="496" y2="108" stroke="#a8a29e" stroke-width="0.75" marker-end="url(#arr)"/>
+
+<!-- PG -->
+<rect x="498" y="82" width="52" height="52" rx="4" fill="#f5f5f4" stroke="#a8a29e" stroke-width="0.75"/>
+<text x="524" y="104" text-anchor="middle" font-size="11" font-weight="500" fill="#1c1917">PG</text>
+<text x="524" y="120" text-anchor="middle" font-size="10" fill="#78716c">:5432</text>
+
+<!-- Redis -->
+<rect x="556" y="82" width="56" height="52" rx="4" fill="#f5f5f4" stroke="#a8a29e" stroke-width="0.75"/>
+<text x="584" y="104" text-anchor="middle" font-size="11" font-weight="500" fill="#1c1917">Redis</text>
+<text x="584" y="120" text-anchor="middle" font-size="10" fill="#78716c">:6379</text>
+
+<!-- LLM -->
+<rect x="618" y="82" width="28" height="52" rx="4" fill="#f5f5f4" stroke="#a8a29e" stroke-width="0.75"/>
+<text x="632" y="108" text-anchor="middle" font-size="10" font-weight="500" fill="#1c1917" transform="rotate(-90 632 108)">LLM</text>
+
+<!-- ══════════════════════════
+     B  Agent loop
+══════════════════════════ -->
+<rect x="30" y="166" width="620" height="388" rx="6" fill="none" stroke="#d6d3d1" stroke-width="0.75" stroke-dasharray="5 3"/>
+<text x="42" y="182" font-size="11" fill="#78716c">B  Agent loop — per NPC, per turn</text>
+
+<!-- B1 session start row -->
+<text x="46" y="200" font-size="10" fill="#78716c">① session start (once per session, idempotent)</text>
+
+<!-- Session start -->
+<rect x="46" y="208" width="98" height="40" rx="4" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.25"/>
+<text x="95" y="232" text-anchor="middle" font-size="12" font-weight="500" fill="#134e4a">Session start</text>
+
+<line x1="144" y1="228" x2="168" y2="228" stroke="#0d9488" stroke-width="0.75" marker-end="url(#arr-teal)"/>
+
+<!-- Seed memory -->
+<rect x="170" y="208" width="136" height="40" rx="4" fill="#ccfbf1" stroke="#0d9488" stroke-width="0.75"/>
+<text x="238" y="224" text-anchor="middle" font-size="12" font-weight="500" fill="#134e4a">Seed memory</text>
+<text x="238" y="240" text-anchor="middle" font-size="10" fill="#0f766e">identity · role · redlines</text>
+
+<line x1="306" y1="228" x2="330" y2="228" stroke="#0d9488" stroke-width="0.75" marker-end="url(#arr-teal)"/>
+
+<!-- Initial plan -->
+<rect x="332" y="208" width="136" height="40" rx="4" fill="#ccfbf1" stroke="#0d9488" stroke-width="0.75"/>
+<text x="400" y="224" text-anchor="middle" font-size="12" font-weight="500" fill="#134e4a">Initial plan</text>
+<text x="400" y="240" text-anchor="middle" font-size="10" fill="#0f766e">LLM · from seed · imp 8.5</text>
+
+<!-- annotation -->
+<line x1="468" y1="228" x2="490" y2="228" stroke="#d6d3d1" stroke-width="0.75" stroke-dasharray="3 2"/>
+<text x="494" y="224" font-size="10" fill="#78716c">drives all</text>
+<text x="494" y="237" font-size="10" fill="#78716c">future acts</text>
+
+<!-- B2 per-turn inner box -->
+<rect x="46" y="262" width="608" height="278" rx="5" fill="none" stroke="#e7e5e4" stroke-width="0.75"/>
+<text x="58" y="278" font-size="10" fill="#78716c">② per-turn cycle</text>
+
+<!-- Perceive -->
+<rect x="60" y="286" width="108" height="52" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="0.75"/>
+<text x="114" y="308" text-anchor="middle" font-size="12" font-weight="500" fill="#3730a3">Perceive</text>
+<text x="114" y="324" text-anchor="middle" font-size="10" fill="#5b21b6">world-line events</text>
+
+<line x1="168" y1="312" x2="192" y2="312" stroke="#7c3aed" stroke-width="0.75" marker-end="url(#arr-purple)"/>
+
+<!-- Retrieve -->
+<rect x="194" y="286" width="108" height="52" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="0.75"/>
+<text x="248" y="308" text-anchor="middle" font-size="12" font-weight="500" fill="#3730a3">Retrieve</text>
+<text x="248" y="324" text-anchor="middle" font-size="10" fill="#5b21b6">3-factor scoring</text>
+
+<line x1="302" y1="312" x2="326" y2="312" stroke="#7c3aed" stroke-width="0.75" marker-end="url(#arr-purple)"/>
+
+<!-- React -->
+<rect x="328" y="286" width="108" height="52" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="0.75"/>
+<text x="382" y="308" text-anchor="middle" font-size="12" font-weight="500" fill="#3730a3">React</text>
+<text x="382" y="324" text-anchor="middle" font-size="10" fill="#5b21b6">decision LLM (JSON)</text>
+
+<line x1="436" y1="312" x2="460" y2="312" stroke="#7c3aed" stroke-width="0.75" marker-end="url(#arr-purple)"/>
+
+<!-- Act -->
+<rect x="462" y="286" width="108" height="52" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="0.75"/>
+<text x="516" y="308" text-anchor="middle" font-size="12" font-weight="500" fill="#3730a3">Act</text>
+<text x="516" y="324" text-anchor="middle" font-size="10" fill="#5b21b6">speak / wait / plan</text>
+
+<!-- Act → right → down to Reflect diamond -->
+<path d="M570 312 L600 312 L600 390" fill="none" stroke="#a8a29e" stroke-width="0.75" marker-end="url(#arr)"/>
+
+<!-- Reflect? diamond -->
+<rect x="576" y="394" width="48" height="48" rx="3" fill="#fef3c7" stroke="#d97706" stroke-width="1" transform="rotate(45 600 418)"/>
+<text x="600" y="415" text-anchor="middle" font-size="11" font-weight="500" fill="#92400e">Reflect</text>
+<text x="600" y="428" text-anchor="middle" font-size="10" fill="#92400e">?</text>
+
+<!-- No label -->
+<text x="616" y="388" font-size="10" fill="#78716c">No</text>
+
+<!-- Yes → Reflection box -->
+<line x1="600" y1="442" x2="600" y2="464" stroke="#d97706" stroke-width="0.75" marker-end="url(#arr-amber)"/>
+<text x="604" y="458" font-size="10" fill="#78716c">Yes</text>
+
+<!-- Reflection box -->
+<rect x="534" y="466" width="132" height="52" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="0.75"/>
+<text x="600" y="486" text-anchor="middle" font-size="12" font-weight="500" fill="#92400e">Reflection</text>
+<text x="600" y="502" text-anchor="middle" font-size="10" fill="#b45309">higher-order inference</text>
+
+<!-- Reflection → feedback to memory (left arc) -->
+<path d="M534 492 L510 492 L510 312 L460 312" fill="none" stroke="#d97706" stroke-width="0.75" stroke-dasharray="4 2" marker-end="url(#arr-amber)"/>
+<text x="514" y="308" font-size="10" fill="#b45309">→ memory stream</text>
+
+<!-- Plan-update dashed feedback React←Act -->
+<path d="M516 338 L516 356 L382 356 L382 338" fill="none" stroke="#a8a29e" stroke-width="0.75" stroke-dasharray="3 2" marker-end="url(#arr)"/>
+<text x="450" y="372" text-anchor="middle" font-size="10" fill="#78716c">plan update feeds next decision</text>
+
+<!-- threshold note -->
+<text x="58" y="498" font-size="10" fill="#78716c">Σ importance ≥ 18 triggers reflection</text>
+
+<!-- ══════════════════════════
+     C  Memory retrieval
+══════════════════════════ -->
+<rect x="30" y="572" width="620" height="162" rx="6" fill="none" stroke="#d6d3d1" stroke-width="0.75" stroke-dasharray="5 3"/>
+<text x="42" y="588" font-size="11" fill="#78716c">C  Memory retrieval — retrieve detail</text>
+
+<!-- Memory stream -->
+<rect x="46" y="596" width="110" height="126" rx="4" fill="#f5f5f4" stroke="#a8a29e" stroke-width="0.75"/>
+<text x="101" y="614" text-anchor="middle" font-size="11" font-weight="500" fill="#1c1917">Memory stream</text>
+<text x="101" y="630" text-anchor="middle" font-size="10" fill="#78716c">seed  imp 7–9</text>
+<text x="101" y="645" text-anchor="middle" font-size="10" fill="#78716c">observation  3–8</text>
+<text x="101" y="660" text-anchor="middle" font-size="10" fill="#78716c">reflection  7–9</text>
+<text x="101" y="675" text-anchor="middle" font-size="10" fill="#78716c">plan  8.5 (pinned)</text>
+<text x="101" y="690" text-anchor="middle" font-size="10" fill="#78716c">action  3–7</text>
+<text x="101" y="708" text-anchor="middle" font-size="10" fill="#a8a29e">all nodes, turn-indexed</text>
+
+<line x1="156" y1="659" x2="180" y2="659" stroke="#a8a29e" stroke-width="0.75" marker-end="url(#arr)"/>
+
+<!-- R -->
+<rect x="182" y="614" width="88" height="90" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="0.75"/>
+<text x="226" y="642" text-anchor="middle" font-size="16" font-weight="500" fill="#1e40af">R</text>
+<text x="226" y="658" text-anchor="middle" font-size="11" font-weight="500" fill="#1e3a8a">Recency</text>
+<text x="226" y="673" text-anchor="middle" font-size="10" fill="#1e40af">e^(−Δturn/8)</text>
+<text x="226" y="688" text-anchor="middle" font-size="10" fill="#3b82f6">last-access decay</text>
+
+<text x="280" y="663" text-anchor="middle" font-size="14" font-weight="500" fill="#78716c">+</text>
+
+<!-- I -->
+<rect x="292" y="614" width="88" height="90" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="0.75"/>
+<text x="336" y="642" text-anchor="middle" font-size="16" font-weight="500" fill="#1e40af">I</text>
+<text x="336" y="658" text-anchor="middle" font-size="11" font-weight="500" fill="#1e3a8a">Importance</text>
+<text x="336" y="673" text-anchor="middle" font-size="10" fill="#1e40af">1–10, write-time</text>
+<text x="336" y="688" text-anchor="middle" font-size="10" fill="#3b82f6">never recomputed</text>
+
+<text x="390" y="663" text-anchor="middle" font-size="14" font-weight="500" fill="#78716c">+</text>
+
+<!-- Rel -->
+<rect x="402" y="614" width="88" height="90" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="0.75"/>
+<text x="446" y="642" text-anchor="middle" font-size="16" font-weight="500" fill="#1e40af">Rel</text>
+<text x="446" y="658" text-anchor="middle" font-size="11" font-weight="500" fill="#1e3a8a">Relevance</text>
+<text x="446" y="673" text-anchor="middle" font-size="10" fill="#1e40af">synonym-expanded</text>
+<text x="446" y="688" text-anchor="middle" font-size="10" fill="#3b82f6">token overlap</text>
+
+<line x1="490" y1="659" x2="514" y2="659" stroke="#a8a29e" stroke-width="0.75" marker-end="url(#arr)"/>
+
+<!-- Formula -->
+<rect x="516" y="614" width="120" height="44" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="0.75"/>
+<text x="576" y="632" text-anchor="middle" font-size="12" font-weight="500" fill="#3730a3">α·R + β·I + γ·Rel</text>
+<text x="576" y="649" text-anchor="middle" font-size="10" fill="#5b21b6">min-max normalised</text>
+
+<line x1="576" y1="658" x2="576" y2="674" stroke="#7c3aed" stroke-width="0.75" marker-end="url(#arr-purple)"/>
+
+<!-- top-K -->
+<rect x="516" y="676" width="120" height="40" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="0.75"/>
+<text x="576" y="692" text-anchor="middle" font-size="12" font-weight="500" fill="#3730a3">Weighted top-K</text>
+<text x="576" y="708" text-anchor="middle" font-size="10" fill="#5b21b6">k=10 · plan pinned</text>
+
+<!-- top-K feedback to React -->
+<path d="M576 716 L576 736 L36 736 L36 312 L58 312" fill="none" stroke="#a8a29e" stroke-width="0.75" stroke-dasharray="4 2" marker-end="url(#arr)"/>
+<text x="40" y="732" font-size="10" fill="#78716c">top-K → React context</text>
+
+<!-- ══════════════════════════
+     D  World line
+══════════════════════════ -->
+<rect x="30" y="754" width="620" height="140" rx="6" fill="none" stroke="#d6d3d1" stroke-width="0.75" stroke-dasharray="5 3"/>
+<text x="42" y="770" font-size="11" fill="#78716c">D  World line and session flow</text>
+
+<!-- User speaks -->
+<rect x="46" y="780" width="82" height="44" rx="4" fill="#f5f5f4" stroke="#a8a29e" stroke-width="0.75"/>
+<text x="87" y="798" text-anchor="middle" font-size="11" font-weight="500" fill="#1c1917">User speaks</text>
+<text x="87" y="814" text-anchor="middle" font-size="10" fill="#78716c">user_speech</text>
+
+<line x1="128" y1="802" x2="148" y2="802" stroke="#a8a29e" stroke-width="0.75" marker-end="url(#arr)"/>
+
+<!-- Write timeline -->
+<rect x="150" y="780" width="90" height="44" rx="4" fill="#f5f5f4" stroke="#a8a29e" stroke-width="0.75"/>
+<text x="195" y="798" text-anchor="middle" font-size="11" font-weight="500" fill="#1c1917">Write timeline</text>
+<text x="195" y="814" text-anchor="middle" font-size="10" fill="#78716c">turn_id · tick</text>
+
+<line x1="240" y1="802" x2="260" y2="802" stroke="#a8a29e" stroke-width="0.75" marker-end="url(#arr)"/>
+
+<!-- NPC-1 -->
+<rect x="262" y="780" width="92" height="44" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="0.75"/>
+<text x="308" y="798" text-anchor="middle" font-size="11" font-weight="500" fill="#3730a3">NPC-1 decide</text>
+<text x="308" y="814" text-anchor="middle" font-size="10" fill="#5b21b6">tick &lt; own tick</text>
+
+<line x1="354" y1="802" x2="374" y2="802" stroke="#7c3aed" stroke-width="0.75" marker-end="url(#arr-purple)"/>
+
+<!-- NPC-2 -->
+<rect x="376" y="780" width="92" height="44" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="0.75"/>
+<text x="422" y="798" text-anchor="middle" font-size="11" font-weight="500" fill="#3730a3">NPC-2 decide</text>
+<text x="422" y="814" text-anchor="middle" font-size="10" fill="#5b21b6">sees NPC-1 action</text>
+
+<line x1="468" y1="802" x2="488" y2="802" stroke="#a8a29e" stroke-width="0.75" marker-end="url(#arr)"/>
+
+<!-- Fallback -->
+<rect x="490" y="780" width="82" height="44" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="0.75"/>
+<text x="531" y="798" text-anchor="middle" font-size="11" font-weight="500" fill="#92400e">Fallback</text>
+<text x="531" y="814" text-anchor="middle" font-size="10" fill="#b45309">force if empty</text>
+
+<line x1="572" y1="802" x2="592" y2="802" stroke="#d97706" stroke-width="0.75" marker-end="url(#arr-amber)"/>
+
+<!-- Chat UI -->
+<rect x="594" y="780" width="50" height="44" rx="4" fill="#ccfbf1" stroke="#0d9488" stroke-width="0.75"/>
+<text x="619" y="798" text-anchor="middle" font-size="11" font-weight="500" fill="#134e4a">Chat UI</text>
+<text x="619" y="814" text-anchor="middle" font-size="10" fill="#0f766e">npc_delta</text>
+
+<!-- D annotation row -->
+<text x="46" y="842" font-size="10" fill="#78716c">speak quota: max 2/turn</text>
+<text x="188" y="842" font-size="10" fill="#78716c">order: mentioned → dispatch_rule → sort_order</text>
+<text x="456" y="842" font-size="10" fill="#78716c">transport: WebSocket / REST fallback</text>
+
+<!-- ── Footer legend ── -->
+<line x1="30" y1="858" x2="650" y2="858" stroke="#e7e5e4" stroke-width="0.75"/>
+<text x="40" y="873" font-size="10" fill="#78716c">LLM roles —</text>
+<text x="112" y="873" font-size="10" fill="#78716c">decision: Qwen2.5-7B (agent JSON)</text>
+<text x="318" y="873" font-size="10" fill="#78716c">npc: Kimi-K2.5 (speech render)</text>
+<text x="496" y="873" font-size="10" fill="#78716c">reflection: Qwen2.5-7B</text>
+<text x="40" y="890" font-size="10" fill="#a8a29e">phases: opening → discovery → bargaining → closing  ·  provider: SiliconFlow / Ollama  ·  © RoomMind</text>
+
+
+</svg>
