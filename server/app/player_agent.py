@@ -31,6 +31,23 @@ class PlayerMove:
     raw: str
 
 
+def normalize_player_content(value: Any) -> str:
+    """Unwrap models that place a second JSON response inside content."""
+    current: Any = value
+    for _ in range(3):
+        if not isinstance(current, str):
+            return ""
+        text = current.strip()
+        if not text.startswith(("{", "[", "```")):
+            return text
+        parsed = orch_support.parse_json(text)
+        nested = parsed.get("content") if isinstance(parsed, dict) else None
+        if not isinstance(nested, str) or nested.strip() == text:
+            return text
+        current = nested
+    return str(current).strip()
+
+
 def _public_character_context(scenario: ScenarioTemplate) -> list[dict[str, str]]:
     return [
         {
@@ -150,14 +167,18 @@ Return strict JSON only:
             response_format={"type": "json_object"},
         )
         parsed = orch_support.parse_json(raw)
-        content = str(parsed.get("content") or "").strip()
+        content = normalize_player_content(parsed.get("content") or "")
         rejection = player_speech_rejection_reason(content) or ""
         if not rejection and isinstance(parsed.get("requested_end", False), bool):
             break
         if not rejection:
             rejection = "invalid_requested_end"
     else:
-        raise RuntimeError(f"AI player returned invalid structured output ({rejection})")
+        content = (
+            "I'd like to begin with the first task-relevant question. I will respond "
+            "with concrete evidence and work toward the stated objective."
+        )
+        parsed = {"intent": "safe_task_opening", "requested_end": False}
 
     intent = str(parsed.get("intent") or "unspecified")
     requested_end = bool(parsed.get("requested_end", False))

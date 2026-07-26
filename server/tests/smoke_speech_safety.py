@@ -6,6 +6,7 @@ from app.agent.speech_safety import (
     speech_rejection_reason,
 )
 from app.task_state import evaluate_conditions, initial_task_state
+from app.player_agent import normalize_player_content
 
 
 def main() -> None:
@@ -30,6 +31,12 @@ def main() -> None:
     assert player_speech_rejection_reason(
         "Let’s review the complete package before deciding."
     ) is None
+    assert normalize_player_content(
+        '{"content":"I will answer with a concrete example.","intent":"opening"}'
+    ) == "I will answer with a concrete example."
+    assert normalize_player_content(
+        '{"content":"{\\"content\\":\\"I am ready for the first question.\\"}"}'
+    ) == "I am ready for the first question."
     assert "bottom line" not in PUBLIC_RESPONSE_DRAFT.casefold()
     assert "active plan" not in PUBLIC_RESPONSE_DRAFT.casefold()
     config = {
