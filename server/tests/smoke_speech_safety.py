@@ -13,6 +13,12 @@ spec.loader.exec_module(speech_safety)
 PUBLIC_RESPONSE_DRAFT = speech_safety.PUBLIC_RESPONSE_DRAFT
 speech_rejection_reason = speech_safety.speech_rejection_reason
 
+progress_path = Path(__file__).parents[1] / "app" / "session_progress.py"
+progress_spec = spec_from_file_location("session_progress", progress_path)
+assert progress_spec and progress_spec.loader
+session_progress = module_from_spec(progress_spec)
+progress_spec.loader.exec_module(session_progress)
+
 
 def main() -> None:
     leaked_plan = (
@@ -32,6 +38,18 @@ def main() -> None:
     ) is None
     assert "bottom line" not in PUBLIC_RESPONSE_DRAFT.casefold()
     assert "active plan" not in PUBLIC_RESPONSE_DRAFT.casefold()
+    phases = ["opening", "discovery", "bargaining", "closing"]
+    assert session_progress.infer_session_phase(
+        phases,
+        turn_id=3,
+        player_text="We propose 86 RMB with payment terms.",
+        npc_texts=["Our price is 88 RMB."],
+    ) == "bargaining"
+    assert session_progress.has_mutual_agreement(
+        "This is our final offer; can we agree?",
+        ["That works. We have a deal."],
+        turn_id=4,
+    )
     print("NPC speech safety smoke test: ok")
 
 

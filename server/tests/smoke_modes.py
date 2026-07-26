@@ -9,7 +9,12 @@ from sqlalchemy import select
 from app.database import async_session_factory, init_db
 from app.memory.service import memory_service
 from app.models.db import GameSession, ScenarioTemplate, SessionMessage
-from app.session_export import build_session_export_bundle, transcript_csv, transcript_jsonl
+from app.session_export import (
+    build_public_session_export_bundle,
+    build_session_export_bundle,
+    transcript_csv,
+    transcript_jsonl,
+)
 
 
 async def main() -> None:
@@ -85,6 +90,15 @@ async def main() -> None:
         assert bundle["dialogue_turns"][0]["turn_id"] == 1
         assert "AI player move" in transcript_csv(bundle)
         assert '"speaker_source": "ai"' in transcript_jsonl(bundle)
+
+        public_bundle = build_public_session_export_bundle(bundle)
+        assert public_bundle["export_meta"]["format"] == "roommind-public-session-transcript"
+        assert "agent_memories" not in public_bundle
+        assert "last_debug" not in public_bundle
+        assert "shared_state" not in public_bundle
+        assert "orchestration_config" not in public_bundle
+        assert "meta" not in public_bundle["messages"][0]
+        assert public_bundle["messages"][0]["speaker_source"] == "ai"
 
         modes = set((await db.execute(select(GameSession.session_mode))).scalars().all())
         assert modes == {"participation", "test"}

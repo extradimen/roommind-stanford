@@ -12,6 +12,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent.memory_stream import AgentMemoryStore, active_plan
 from app.llm.client import llm_client
 from app.models.db import GameSession, ScenarioTemplate
 from app.orchestrator.common import orch_support
@@ -53,6 +54,42 @@ async def generate_player_move(
     llm_cfg = await orch_support.get_llm_config(db)
     player_llm = resolve_llm(llm_cfg, scenario.orchestration_config, "player")
     strategy = str(config.get("player_strategy") or "balanced")
+    turn_id = sum(1 for message in messages if message.get("speaker_type") == "user") + 1
+    player_store = AgentMemoryStore(session.id, "user")
+    player_nodes = await player_store.load_all(db)
+    player_plan = active_plan(player_nodes)
+    if player_plan is None:
+        player_plan = await player_store.append(
+            db,
+            node_type="plan",
+            content=(
+                f"Pursue the public player goal using a {strategy} strategy: "
+                f"{resolve_player_side_goal(scenario)}"
+            ),
+            importance=8.0,
+            turn_id=0,
+            tick=0,
+            is_active=True,
+            meta={"visibility": "private", "source": "ai_player"},
+        )
+        player_nodes.append(player_plan)
+
+    if turn_id > 1 and messages:
+        public_observation = " | ".join(
+            f"{m.get('speaker_id', 'unknown')}: {m.get('content', '')}"
+            for m in messages[-6:]
+        )
+        await player_store.append(
+            db,
+            node_type="observation",
+            content=f"Public dialogue reviewed before player turn {turn_id}: {public_observation}",
+            importance=6.0,
+            turn_id=turn_id,
+            tick=0,
+            source_event_ids=[],
+            is_active=True,
+            meta={"visibility": "private", "source": "ai_player"},
+        )
     recent = messages[-int(config.get("working_message_limit", 30)) :]
     dialogue = "\n".join(
         f"[{m.get('speaker_id', 'unknown')}]: {m.get('content', '')}" for m in recent
@@ -64,6 +101,7 @@ async def generate_player_move(
 Name: {player['display_name']}
 Goal: {resolve_player_side_goal(scenario)}
 Strategy profile: {strategy}
+Current private action plan: {player_plan.content}
 
 [Public scenario]
 Title: {scenario.title}
@@ -100,10 +138,29 @@ Return strict JSON only:
     content = str(parsed.get("content") or "").strip()
     if not content:
         raise RuntimeError("AI player returned an empty move")
+    intent = str(parsed.get("intent") or "unspecified")
+    requested_end = bool(parsed.get("requested_end", False))
+    await player_store.append(
+        db,
+        node_type="action",
+        content=f'Spoke: "{content}"',
+        importance=6.5,
+        turn_id=turn_id,
+        tick=0,
+        source_event_ids=[],
+        is_active=False,
+        meta={
+            "action_kind": "speak",
+            "intent": intent,
+            "requested_end": requested_end,
+            "generation_model": player_llm.label(),
+            "visibility": "public_action",
+        },
+    )
     return PlayerMove(
         content=content,
-        intent=str(parsed.get("intent") or "unspecified"),
-        requested_end=bool(parsed.get("requested_end", False)),
+        intent=intent,
+        requested_end=requested_end,
         model_label=player_llm.label(),
         raw=raw,
     )

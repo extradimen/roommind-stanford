@@ -8,7 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.agent.debug_payload import build_session_agent_memories_payload
-from app.session_export import build_session_export_bundle, transcript_csv, transcript_jsonl
+from app.session_export import (
+    build_public_session_export_bundle,
+    build_session_export_bundle,
+    transcript_csv,
+    transcript_jsonl,
+)
 from app.database import async_session_factory, get_db
 from app.memory.service import memory_service
 from app.models.db import AgentMemoryNode, ScenarioTemplate, SessionMessage
@@ -75,7 +80,10 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
     completed_turns = sum(1 for m in rows if m.speaker_type == "user") + 1
     max_turns = max(1, min(int((session.run_config or {}).get("max_turns", 20)), 100))
     stop_reason = None
-    if move.requested_end:
+    agreement_reached = bool((session.shared_state or {}).get("_agreement_reached"))
+    if agreement_reached:
+        stop_reason = "mutual_agreement"
+    elif move.requested_end:
         stop_reason = "player_requested_end"
     elif completed_turns >= max_turns:
         stop_reason = "max_turns_reached"
@@ -244,7 +252,8 @@ async def export_session(session_uuid: str, db: DbDep) -> dict:
     session = await memory_service.get_session(db, session_uuid)
     if not session:
         raise HTTPException(404, "Session not found")
-    return await build_session_export_bundle(db, session)
+    full = await build_session_export_bundle(db, session)
+    return build_public_session_export_bundle(full)
 
 
 @router.get("/sessions/{session_uuid}/export.csv", response_class=PlainTextResponse)
@@ -252,7 +261,7 @@ async def export_session_csv(session_uuid: str, db: DbDep) -> PlainTextResponse:
     session = await memory_service.get_session(db, session_uuid)
     if not session:
         raise HTTPException(404, "Session not found")
-    bundle = await build_session_export_bundle(db, session)
+    bundle = build_public_session_export_bundle(await build_session_export_bundle(db, session))
     return PlainTextResponse(
         transcript_csv(bundle),
         media_type="text/csv; charset=utf-8",
@@ -265,7 +274,7 @@ async def export_session_jsonl(session_uuid: str, db: DbDep) -> PlainTextRespons
     session = await memory_service.get_session(db, session_uuid)
     if not session:
         raise HTTPException(404, "Session not found")
-    bundle = await build_session_export_bundle(db, session)
+    bundle = build_public_session_export_bundle(await build_session_export_bundle(db, session))
     return PlainTextResponse(
         transcript_jsonl(bundle),
         media_type="application/x-ndjson; charset=utf-8",

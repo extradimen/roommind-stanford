@@ -1,6 +1,7 @@
 import json
 import uuid
 from collections.abc import AsyncIterator
+from datetime import datetime, timezone
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -13,6 +14,7 @@ from app.models.db import GameSession, SessionMessage
 from app.orchestrator.common import orch_support
 from app.orchestrator.defaults import ORCHESTRATION_MODE
 from app.orchestrator.generative import generative_orchestrator
+from app.session_progress import has_mutual_agreement, infer_session_phase
 
 settings = get_settings()
 
@@ -175,6 +177,7 @@ class MemoryService:
             sequence_no=next_sequence,
             content=user_input,
             meta=message_meta or {},
+            created_at=datetime.now(timezone.utc),
         )
         db.add(user_msg)
         messages.append({
@@ -216,8 +219,21 @@ class MemoryService:
         if result is None:
             raise RuntimeError("Stream ended without turn_result")
 
-        session.current_phase = result.phase
-        session.shared_state = result.shared_state
+        npc_texts = [reply.content for reply in result.replies]
+        requested_end = bool((message_meta or {}).get("requested_end", False))
+        session.current_phase = infer_session_phase(
+            list(scenario.phases or []),
+            turn_id=turn_id,
+            player_text=user_input,
+            npc_texts=npc_texts,
+            requested_end=requested_end,
+        )
+        updated_shared_state = dict(result.shared_state or {})
+        agreement_reached = has_mutual_agreement(user_input, npc_texts, turn_id=turn_id)
+        if agreement_reached:
+            updated_shared_state["_agreement_reached"] = True
+            session.status = "completed"
+        session.shared_state = updated_shared_state
         session.orchestration_mode = ORCHESTRATION_MODE
 
         npc_records = []
@@ -233,6 +249,7 @@ class MemoryService:
                 emotion=reply.emotion,
                 gesture=reply.gesture,
                 meta={"reasoning": reply.reasoning},
+                created_at=datetime.now(timezone.utc),
             )
             db.add(msg)
             npc_records.append(reply)

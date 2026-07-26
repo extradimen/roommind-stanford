@@ -304,3 +304,48 @@ async def build_session_export_bundle(db: AsyncSession, session: GameSession) ->
         "episode_memories": episode_memories,
         "shared_state": shared,
     }
+
+
+def build_public_session_export_bundle(full: dict[str, Any]) -> dict[str, Any]:
+    """Return the learner-safe transcript without private cognition or debug state."""
+    messages: list[dict[str, Any]] = []
+    for raw in full.get("messages") or []:
+        message = {
+            key: raw.get(key)
+            for key in (
+                "id", "speaker_id", "speaker_type", "speaker_source", "turn_id",
+                "sequence_no", "content", "emotion", "gesture", "created_at", "speaker",
+            )
+        }
+        messages.append(message)
+
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    for message in messages:
+        turn_id = int(message.get("turn_id") or 0)
+        if turn_id > 0:
+            grouped.setdefault(turn_id, []).append(message)
+    dialogue_turns = []
+    for turn_id in sorted(grouped):
+        ordered = sorted(grouped[turn_id], key=lambda m: (int(m.get("sequence_no") or 0), int(m.get("id") or 0)))
+        player = [m for m in ordered if m.get("speaker_type") == "user"]
+        dialogue_turns.append({
+            "turn_id": turn_id,
+            "user_message": player[0] if player else None,
+            "messages": ordered,
+            "npc_replies": [m for m in ordered if m.get("speaker_type") == "npc"],
+        })
+
+    export_meta = dict(full.get("export_meta") or {})
+    export_meta["format"] = "roommind-public-session-transcript"
+    export_meta["note"] = (
+        "Learner-safe public transcript. Private state, agent cognition, memory, "
+        "reasoning, orchestration configuration, and debug data are excluded."
+    )
+    return {
+        "export_meta": export_meta,
+        "session": full.get("session") or {},
+        "scenario": full.get("scenario") or {},
+        "speaker_directory": full.get("speaker_directory") or {},
+        "messages": messages,
+        "dialogue_turns": dialogue_turns,
+    }
