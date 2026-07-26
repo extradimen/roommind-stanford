@@ -325,21 +325,23 @@ export default function Game() {
     setLoading(true);
     setError("");
     try {
-      const result = await runTestStep(sessionUuid, steps, locale, untilComplete);
-      const lastStep = Array.isArray(result.steps) && result.steps.length
-        ? result.steps[result.steps.length - 1]
-        : undefined;
-      const status = String(result.status || lastStep?.status || "active");
-      setTestStatus(status);
-      const history = await getSessionMessages(sessionUuid);
-      const nameMap = buildCharacterNameMap(scenarioRef.current?.characters, locale);
-      setMessages(history.map((m) => ({
-        ...m,
-        display_name: m.speaker_type === "npc"
-          ? resolveNpcFullName(m.speaker_id, nameMap, m.display_name, locale)
-          : undefined,
-      })));
-      await refreshAgentMemories(sessionUuid);
+      const limit = untilComplete ? 50 : steps;
+      for (let index = 0; index < limit; index += 1) {
+        // Keep each turn in its own request so it is committed and visible immediately.
+        const result = await runTestStep(sessionUuid, 1, locale, false);
+        const status = String(result.status || "active");
+        setTestStatus(status);
+        const history = await getSessionMessages(sessionUuid);
+        const nameMap = buildCharacterNameMap(scenarioRef.current?.characters, locale);
+        setMessages(history.map((m) => ({
+          ...m,
+          display_name: m.speaker_type === "npc"
+            ? resolveNpcFullName(m.speaker_id, nameMap, m.display_name, locale)
+            : undefined,
+        })));
+        await refreshAgentMemories(sessionUuid);
+        if (status !== "active") break;
+      }
     } catch (e) {
       setError(String(e));
     } finally {

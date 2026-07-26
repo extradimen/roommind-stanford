@@ -373,6 +373,9 @@ async def run_test_session(session_uuid: str, body: TestRunIn, db: DbDep) -> dic
         for _ in range(iterations):
             step = await _run_test_step(db, session_uuid, body.locale)
             steps.append(step)
+            # Multi-turn API clients can observe/export every completed turn even
+            # while a longer autonomous run is still in progress.
+            await db.commit()
             if step["status"] != "active":
                 break
     except RuntimeError as exc:
