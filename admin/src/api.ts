@@ -220,6 +220,7 @@ export interface SessionListItem {
   session_uuid: string;
   scenario_id: number;
   orchestration_mode: string;
+  session_mode: "participation" | "test";
   current_phase: string;
   status: string;
   created_at?: string;
@@ -229,6 +230,8 @@ export interface SessionDebug {
   session_uuid: string;
   scenario_id: number;
   orchestration_mode: string;
+  session_mode: "participation" | "test";
+  run_config: Record<string, unknown>;
   current_phase: string;
   shared_state: Record<string, unknown>;
   orchestration_config: Record<string, unknown>;
@@ -236,6 +239,9 @@ export interface SessionDebug {
   messages: Array<{
     speaker_id: string;
     speaker_type: string;
+    speaker_source?: "human" | "ai" | "system";
+    turn_id?: number;
+    sequence_no?: number;
     content: string;
     emotion?: string | null;
     gesture?: string | null;

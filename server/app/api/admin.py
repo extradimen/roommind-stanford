@@ -582,7 +582,7 @@ async def get_session_debug(session_uuid: str, db: DbDep, _: AdminDep) -> Sessio
     msg_result = await db.execute(
         select(SessionMessage)
         .where(SessionMessage.session_id == session.id)
-        .order_by(SessionMessage.created_at)
+        .order_by(SessionMessage.sequence_no, SessionMessage.id)
     )
     messages = list(msg_result.scalars().all())
 
@@ -598,6 +598,8 @@ async def get_session_debug(session_uuid: str, db: DbDep, _: AdminDep) -> Sessio
         session_uuid=session.session_uuid,
         scenario_id=session.scenario_id,
         orchestration_mode=session.orchestration_mode,
+        session_mode=session.session_mode,
+        run_config=session.run_config or {},
         current_phase=session.current_phase,
         shared_state=shared,
         orchestration_config=orch_cfg,

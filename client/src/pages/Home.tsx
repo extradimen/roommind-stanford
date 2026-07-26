@@ -57,7 +57,10 @@ export default function Home() {
               <h2>{title}</h2>
               <p>{description}</p>
               <Link to={`/play/${s.id}`} className="play-btn">
-                {t.home.enter}
+                {t.home.enter} · Participation
+              </Link>
+              <Link to={`/play/${s.id}?mode=test`} className="play-btn" style={{ marginLeft: "0.5rem" }}>
+                AI Test
               </Link>
             </div>
             );

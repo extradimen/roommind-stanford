@@ -1,8 +1,9 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   ChatMessage,
   connectGameWSWithRetry,
+  controlTestSession,
   createSession,
   getScenario,
   getSessionAgentMemories,
@@ -11,6 +12,7 @@ import {
   resolveServiceUrls,
   Scenario,
   sendMessageREST,
+  runTestStep,
   SessionAgentMemories,
   updateAgentMemoryNode,
 } from "../api";
@@ -34,12 +36,12 @@ const MAX_DEBUG_LINES = 60;
 
 /** StrictMode 双挂载时避免重复 createSession */
 const sessionCreateInflight = new Map<
-  number,
+  string,
   Promise<{ session_uuid: string; current_phase: string }>
 >();
 
-function sessionCacheKey(scenarioId: number) {
-  return `roommind-stanford:v1:session:${scenarioId}`;
+function sessionCacheKey(scenarioId: number, mode: string) {
+  return `roommind-stanford:v2:session:${scenarioId}:${mode}`;
 }
 
 function ts(locale: Locale) {
@@ -53,11 +55,14 @@ function fill(template: string, vars: Record<string, string | number>) {
 export default function Game() {
   const { t, locale } = useLocale();
   const { scenarioId } = useParams();
+  const [searchParams] = useSearchParams();
+  const sessionMode = searchParams.get("mode") === "test" ? "test" : "participation";
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [sessionUuid, setSessionUuid] = useState<string | null>(null);
   const [phase, setPhase] = useState("opening");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  const [testStatus, setTestStatus] = useState("active");
   const [loading, setLoading] = useState(false);
   const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -260,7 +265,7 @@ export default function Game() {
         setScenario(s);
         scenarioRef.current = s;
 
-        const cacheKey = sessionCacheKey(id);
+        const cacheKey = sessionCacheKey(id, sessionMode);
         const cached = sessionStorage.getItem(cacheKey);
         let uuid: string;
 
@@ -286,11 +291,12 @@ export default function Game() {
           uuid = cached;
         } else {
           pushDebug("session", `创建会话 scenario=${id}`);
-          let inflight = sessionCreateInflight.get(id);
+          const inflightKey = `${id}:${sessionMode}`;
+          let inflight = sessionCreateInflight.get(inflightKey);
           if (!inflight) {
-            inflight = createSession(id);
-            sessionCreateInflight.set(id, inflight);
-            inflight.finally(() => sessionCreateInflight.delete(id));
+            inflight = createSession(id, sessionMode);
+            sessionCreateInflight.set(inflightKey, inflight);
+            inflight.finally(() => sessionCreateInflight.delete(inflightKey));
           }
           const session = await inflight;
           if (cancelled) return;
@@ -312,7 +318,48 @@ export default function Game() {
     return () => {
       cancelled = true;
     };
-  }, [scenarioId, pushDebug]);
+  }, [scenarioId, sessionMode, pushDebug]);
+
+  const runAiTurns = async (steps: number) => {
+    if (!sessionUuid || loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      const result = await runTestStep(sessionUuid, steps, locale);
+      const lastStep = Array.isArray(result.steps) && result.steps.length
+        ? result.steps[result.steps.length - 1]
+        : undefined;
+      const status = String(result.status || lastStep?.status || "active");
+      setTestStatus(status);
+      const history = await getSessionMessages(sessionUuid);
+      const nameMap = buildCharacterNameMap(scenarioRef.current?.characters, locale);
+      setMessages(history.map((m) => ({
+        ...m,
+        display_name: m.speaker_type === "npc"
+          ? resolveNpcFullName(m.speaker_id, nameMap, m.display_name, locale)
+          : undefined,
+      })));
+      await refreshAgentMemories(sessionUuid);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const controlAiTest = async (action: "pause" | "resume" | "stop") => {
+    if (!sessionUuid || loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      const result = await controlTestSession(sessionUuid, action);
+      setTestStatus(String(result.status));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     const id = parseInt(scenarioId || "0");
@@ -746,6 +793,7 @@ export default function Game() {
           <div className="game-header-meta">
             <span className="phase">{t.game.phase}: {phase}</span>
             <span className="orchestration-badge">{t.game.stanfordBadge}</span>
+            <span className="orchestration-badge">{sessionMode === "test" ? "AI Test" : "Participation"}</span>
             <span className={`ws-badge ws-${wsMode}`}>{wsBadge}</span>
             <LanguageSwitcher className="inline-lang" />
           </div>
@@ -827,7 +875,9 @@ export default function Game() {
                     <span className="speaker">
                       <CharacterSideBadge side={side} compact />
                       {m.speaker_id === "user"
-                        ? resolvePlayerChatLabel(scenario, t.game.you)
+                        ? (m.speaker_source === "ai"
+                            ? `${resolvePlayerChatLabel(scenario, t.game.you)} · AI Player`
+                            : resolvePlayerChatLabel(scenario, t.game.you))
                         : resolveNpcLabel(m.speaker_id, characterNames, m.display_name, locale)}
                     </span>
                     {m.speaker_id === "user" && playerCharacter?.job_title && (
@@ -854,6 +904,23 @@ export default function Game() {
 
               {error && <div className="error-banner">{error}</div>}
 
+              {sessionMode === "test" ? (
+                <div className="chat-input">
+                  <button type="button" disabled={loading || testStatus !== "active"} onClick={() => runAiTurns(1)}>
+                    Run 1 AI turn
+                  </button>
+                  <button type="button" disabled={loading || testStatus !== "active"} onClick={() => runAiTurns(5)}>
+                    Run 5 AI turns
+                  </button>
+                  {testStatus === "paused" ? (
+                    <button type="button" disabled={loading} onClick={() => controlAiTest("resume")}>Resume</button>
+                  ) : (
+                    <button type="button" disabled={loading || testStatus !== "active"} onClick={() => controlAiTest("pause")}>Pause</button>
+                  )}
+                  <button type="button" disabled={loading || ["completed", "stopped"].includes(testStatus)} onClick={() => controlAiTest("stop")}>Stop</button>
+                  <span className="muted">Status: {testStatus}</span>
+                </div>
+              ) : (
               <form onSubmit={send} className="chat-input">
                 <input
                   value={input}
@@ -863,6 +930,7 @@ export default function Game() {
                 />
                 <button type="submit" disabled={loading || !input.trim()}>{t.game.send}</button>
               </form>
+              )}
             </div>
           </section>
         </div>

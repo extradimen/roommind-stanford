@@ -48,6 +48,9 @@ export interface Character {
 export interface ChatMessage {
   speaker_id: string;
   speaker_type: string;
+  speaker_source?: "human" | "ai" | "system";
+  turn_id?: number;
+  sequence_no?: number;
   content: string;
   display_name?: string;
   emotion?: string;
@@ -156,9 +159,12 @@ export async function getSessionMessages(sessionUuid: string): Promise<ChatMessa
   const res = await fetch(`/api/game/sessions/${sessionUuid}/messages`);
   if (!res.ok) throw new Error("Failed to load messages");
   const rows = await res.json();
-  return rows.map((m: { speaker_id: string; speaker_type: string; content: string; emotion?: string; gesture?: string }) => ({
+  return rows.map((m: ChatMessage) => ({
     speaker_id: m.speaker_id,
     speaker_type: m.speaker_type,
+    speaker_source: m.speaker_source,
+    turn_id: m.turn_id,
+    sequence_no: m.sequence_no,
     content: m.content,
     emotion: m.emotion,
     gesture: m.gesture,
@@ -232,13 +238,41 @@ export async function updateAgentMemoryNode(
 
 export async function createSession(
   scenarioId: number,
-): Promise<{ session_uuid: string; current_phase: string; orchestration_mode?: string }> {
+  sessionMode: "participation" | "test" = "participation",
+): Promise<{ session_uuid: string; current_phase: string; orchestration_mode?: string; session_mode: string }> {
   const res = await fetch("/api/game/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ scenario_id: scenarioId }),
+    body: JSON.stringify({
+      scenario_id: scenarioId,
+      session_mode: sessionMode,
+      run_config: sessionMode === "test" ? { max_turns: 20, player_strategy: "balanced" } : {},
+    }),
   });
   if (!res.ok) throw new Error("Failed to create session");
+  return res.json();
+}
+
+export async function runTestStep(sessionUuid: string, maxSteps = 1, locale?: string) {
+  const path = maxSteps === 1 ? "step" : "run";
+  const res = await fetch(`/api/game/sessions/${sessionUuid}/test/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ max_steps: maxSteps, locale }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to run AI test turn");
+  }
+  return res.json();
+}
+
+export async function controlTestSession(sessionUuid: string, action: "pause" | "resume" | "stop") {
+  const res = await fetch(`/api/game/sessions/${sessionUuid}/test/${action}`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to ${action} test session`);
+  }
   return res.json();
 }
 

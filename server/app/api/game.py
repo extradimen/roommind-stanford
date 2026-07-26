@@ -2,18 +2,21 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.agent.debug_payload import build_session_agent_memories_payload
-from app.session_export import build_session_export_bundle
+from app.session_export import build_session_export_bundle, transcript_csv, transcript_jsonl
 from app.database import async_session_factory, get_db
 from app.memory.service import memory_service
 from app.models.db import AgentMemoryNode, ScenarioTemplate, SessionMessage
 from app.orchestrator.defaults import ORCHESTRATION_MODE, merge_orchestration_config
+from app.orchestrator.common import orch_support
 from app.avatar_manifest import client_avatar_manifest
 from app.player_character import resolve_player_character
+from app.player_agent import generate_player_move
 from app.scenario_side import resolve_player_side_goal
 from app.schemas import (
     AgentMemoryNodeOut,
@@ -23,12 +26,81 @@ from app.schemas import (
     SessionAgentMemoriesOut,
     SessionCreate,
     SessionOut,
+    TestRunIn,
     UserMessageIn,
 )
 
 router = APIRouter(prefix="/api/game", tags=["game"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 logger = logging.getLogger(__name__)
+
+
+async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None = None) -> dict:
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if session.session_mode != "test":
+        raise HTTPException(409, "This operation requires a test session")
+    if session.status not in {"active", "paused"}:
+        raise HTTPException(409, f"Session is {session.status}")
+
+    scenario = await orch_support.load_scenario(db, session.scenario_id)
+    result = await db.execute(
+        select(SessionMessage)
+        .where(SessionMessage.session_id == session.id)
+        .order_by(SessionMessage.sequence_no, SessionMessage.id)
+    )
+    rows = list(result.scalars().all())
+    messages = [
+        {"speaker_id": m.speaker_id, "speaker_type": m.speaker_type, "content": m.content}
+        for m in rows
+    ]
+    move = await generate_player_move(db, session, scenario, messages)
+    turn_result: dict = {}
+    async for event in memory_service.process_player_message_stream(
+        db,
+        session_uuid,
+        move.content,
+        ui_locale=locale,
+        speaker_source="ai",
+        message_meta={
+            "intent": move.intent,
+            "generation_model": move.model_label,
+            "requested_end": move.requested_end,
+        },
+    ):
+        if event.get("type") == "turn_result":
+            turn_result = {k: v for k, v in event.items() if k != "_result"}
+
+    completed_turns = sum(1 for m in rows if m.speaker_type == "user") + 1
+    max_turns = max(1, min(int((session.run_config or {}).get("max_turns", 20)), 100))
+    stop_reason = None
+    if move.requested_end:
+        stop_reason = "player_requested_end"
+    elif completed_turns >= max_turns:
+        stop_reason = "max_turns_reached"
+    if stop_reason:
+        session.status = "completed"
+    shared = dict(session.shared_state or {})
+    shared["_test_state"] = {
+        "completed_turns": completed_turns,
+        "max_turns": max_turns,
+        "stop_reason": stop_reason,
+        "last_player_intent": move.intent,
+    }
+    session.shared_state = shared
+    await db.flush()
+    return {
+        "player_move": {
+            "content": move.content,
+            "intent": move.intent,
+            "requested_end": move.requested_end,
+            "model": move.model_label,
+        },
+        "turn_result": turn_result,
+        "status": session.status,
+        "test_state": shared["_test_state"],
+    }
 
 
 @router.get("/scenarios", response_model=list[ScenarioListItem])
@@ -105,13 +177,24 @@ async def create_session(body: SessionCreate, db: DbDep) -> SessionOut:
     if not result.scalar_one_or_none():
         raise HTTPException(404, "Scenario not found or not published")
 
-    session = await memory_service.create_session(db, body.scenario_id, body.user_id)
+    try:
+        session = await memory_service.create_session(
+            db,
+            body.scenario_id,
+            body.user_id,
+            session_mode=body.session_mode,
+            run_config=body.run_config,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     await db.flush()
     return SessionOut(
         session_uuid=session.session_uuid,
         scenario_id=session.scenario_id,
         current_phase=session.current_phase,
         orchestration_mode=session.orchestration_mode,
+        session_mode=session.session_mode,
+        run_config=session.run_config or {},
         shared_state=session.shared_state or {},
         status=session.status,
     )
@@ -127,6 +210,8 @@ async def get_session(session_uuid: str, db: DbDep) -> SessionOut:
         scenario_id=session.scenario_id,
         current_phase=session.current_phase,
         orchestration_mode=session.orchestration_mode,
+        session_mode=session.session_mode,
+        run_config=session.run_config or {},
         shared_state=session.shared_state or {},
         status=session.status,
     )
@@ -138,7 +223,9 @@ async def get_messages(session_uuid: str, db: DbDep) -> list[ChatMessageOut]:
     if not session:
         raise HTTPException(404, "Session not found")
     result = await db.execute(
-        select(SessionMessage).where(SessionMessage.session_id == session.id).order_by(SessionMessage.created_at)
+        select(SessionMessage)
+        .where(SessionMessage.session_id == session.id)
+        .order_by(SessionMessage.sequence_no, SessionMessage.id)
     )
     return list(result.scalars().all())
 
@@ -158,6 +245,32 @@ async def export_session(session_uuid: str, db: DbDep) -> dict:
     if not session:
         raise HTTPException(404, "Session not found")
     return await build_session_export_bundle(db, session)
+
+
+@router.get("/sessions/{session_uuid}/export.csv", response_class=PlainTextResponse)
+async def export_session_csv(session_uuid: str, db: DbDep) -> PlainTextResponse:
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    bundle = await build_session_export_bundle(db, session)
+    return PlainTextResponse(
+        transcript_csv(bundle),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="session-{session_uuid}.csv"'},
+    )
+
+
+@router.get("/sessions/{session_uuid}/export.jsonl", response_class=PlainTextResponse)
+async def export_session_jsonl(session_uuid: str, db: DbDep) -> PlainTextResponse:
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    bundle = await build_session_export_bundle(db, session)
+    return PlainTextResponse(
+        transcript_jsonl(bundle),
+        media_type="application/x-ndjson; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="session-{session_uuid}.jsonl"'},
+    )
 
 
 @router.patch("/sessions/{session_uuid}/agent-memories/{node_id}", response_model=AgentMemoryNodeOut)
@@ -223,6 +336,64 @@ async def send_message(session_uuid: str, body: UserMessageIn, db: DbDep) -> dic
         raise HTTPException(404, str(e)) from e
     except RuntimeError as e:
         raise HTTPException(502, str(e)) from e
+
+
+@router.post("/sessions/{session_uuid}/test/step")
+async def run_test_step(session_uuid: str, body: TestRunIn, db: DbDep) -> dict:
+    """Generate exactly one AI-player move and the corresponding NPC turn."""
+    try:
+        return await _run_test_step(db, session_uuid, body.locale)
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@router.post("/sessions/{session_uuid}/test/run")
+async def run_test_session(session_uuid: str, body: TestRunIn, db: DbDep) -> dict:
+    """Run a bounded number of autonomous turns; callers may invoke again to resume."""
+    steps: list[dict] = []
+    for _ in range(body.max_steps):
+        step = await _run_test_step(db, session_uuid, body.locale)
+        steps.append(step)
+        if step["status"] != "active":
+            break
+    return {"steps": steps, "step_count": len(steps), "status": steps[-1]["status"]}
+
+
+@router.post("/sessions/{session_uuid}/test/pause")
+async def pause_test_session(session_uuid: str, db: DbDep) -> dict:
+    session = await memory_service.get_session(db, session_uuid)
+    if not session or session.session_mode != "test":
+        raise HTTPException(404, "Test session not found")
+    session.status = "paused"
+    await db.flush()
+    return {"status": session.status}
+
+
+@router.post("/sessions/{session_uuid}/test/resume")
+async def resume_test_session(session_uuid: str, db: DbDep) -> dict:
+    session = await memory_service.get_session(db, session_uuid)
+    if not session or session.session_mode != "test":
+        raise HTTPException(404, "Test session not found")
+    if session.status == "completed":
+        raise HTTPException(409, "Completed sessions cannot be resumed")
+    session.status = "active"
+    await db.flush()
+    return {"status": session.status}
+
+
+@router.post("/sessions/{session_uuid}/test/stop")
+async def stop_test_session(session_uuid: str, db: DbDep) -> dict:
+    session = await memory_service.get_session(db, session_uuid)
+    if not session or session.session_mode != "test":
+        raise HTTPException(404, "Test session not found")
+    session.status = "stopped"
+    shared = dict(session.shared_state or {})
+    test_state = dict(shared.get("_test_state") or {})
+    test_state["stop_reason"] = "manually_stopped"
+    shared["_test_state"] = test_state
+    session.shared_state = shared
+    await db.flush()
+    return {"status": session.status, "test_state": test_state}
 
 
 @router.websocket("/ws/{session_uuid}")

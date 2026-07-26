@@ -45,6 +45,44 @@ async def init_db() -> None:
             )
         )
         await conn.execute(
+            text(
+                "ALTER TABLE game_sessions "
+                "ADD COLUMN IF NOT EXISTS session_mode VARCHAR(32) NOT NULL DEFAULT 'participation'"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE game_sessions "
+                "ADD COLUMN IF NOT EXISTS run_config JSONB NOT NULL DEFAULT '{}'::jsonb"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE session_messages "
+                "ADD COLUMN IF NOT EXISTS speaker_source VARCHAR(16) NOT NULL DEFAULT 'human'"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE session_messages "
+                "ADD COLUMN IF NOT EXISTS turn_id INTEGER NOT NULL DEFAULT 0"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE session_messages "
+                "ADD COLUMN IF NOT EXISTS sequence_no INTEGER NOT NULL DEFAULT 0"
+            )
+        )
+        await conn.execute(
+            text(
+                "UPDATE session_messages SET speaker_source = "
+                "CASE WHEN speaker_type = 'npc' THEN 'ai' "
+                "WHEN speaker_type IN ('director', 'system') THEN 'system' ELSE 'human' END "
+                "WHERE speaker_source IS NULL OR speaker_source = 'human'"
+            )
+        )
+        await conn.execute(
             text("ALTER TABLE scenario_templates ADD COLUMN IF NOT EXISTS player_side_goal TEXT")
         )
         await conn.execute(

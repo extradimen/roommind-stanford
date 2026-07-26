@@ -205,6 +205,8 @@ class ScenarioListItem(BaseModel):
 class SessionCreate(BaseModel):
     scenario_id: int
     user_id: str | None = None
+    session_mode: str = "participation"
+    run_config: dict[str, Any] = Field(default_factory=dict)
 
 
 class SessionOut(BaseModel):
@@ -212,6 +214,8 @@ class SessionOut(BaseModel):
     scenario_id: int
     current_phase: str
     orchestration_mode: str = "generative"
+    session_mode: str = "participation"
+    run_config: dict[str, Any] = Field(default_factory=dict)
     shared_state: dict[str, Any]
     status: str
 
@@ -223,6 +227,11 @@ class UserMessageIn(BaseModel):
     locale: str | None = None
 
 
+class TestRunIn(BaseModel):
+    max_steps: int = Field(default=1, ge=1, le=50)
+    locale: str | None = None
+
+
 class OrchestrationConfigIn(BaseModel):
     orchestration_config: dict[str, Any]
 
@@ -230,6 +239,9 @@ class OrchestrationConfigIn(BaseModel):
 class ChatMessageOut(BaseModel):
     speaker_id: str
     speaker_type: str
+    speaker_source: str = "human"
+    turn_id: int = 0
+    sequence_no: int = 0
     content: str
     emotion: str | None = None
     gesture: str | None = None
@@ -242,6 +254,8 @@ class SessionDebugOut(BaseModel):
     session_uuid: str
     scenario_id: int
     orchestration_mode: str
+    session_mode: str = "participation"
+    run_config: dict[str, Any] = Field(default_factory=dict)
     current_phase: str
     shared_state: dict[str, Any]
     orchestration_config: dict[str, Any]
@@ -286,6 +300,7 @@ class SessionListItem(BaseModel):
     session_uuid: str
     scenario_id: int
     orchestration_mode: str
+    session_mode: str = "participation"
     current_phase: str
     status: str
     created_at: datetime | None = None

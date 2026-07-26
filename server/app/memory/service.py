@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import redis.asyncio as aioredis
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -45,13 +45,19 @@ class MemoryService:
         db: AsyncSession,
         scenario_id: int,
         user_id: str | None = None,
+        session_mode: str = "participation",
+        run_config: dict[str, Any] | None = None,
     ) -> GameSession:
+        if session_mode not in {"participation", "test"}:
+            raise ValueError("session_mode must be 'participation' or 'test'")
         session = GameSession(
             session_uuid=str(uuid.uuid4()),
             scenario_id=scenario_id,
             user_id=user_id,
             current_phase="opening",
             orchestration_mode=ORCHESTRATION_MODE,
+            session_mode=session_mode,
+            run_config=run_config or {},
             shared_state={},
             status="active",
         )
@@ -72,11 +78,14 @@ class MemoryService:
             {
                 "speaker_id": m.speaker_id,
                 "speaker_type": m.speaker_type,
+                "speaker_source": m.speaker_source,
+                "turn_id": m.turn_id,
+                "sequence_no": m.sequence_no,
                 "content": m.content,
                 "emotion": m.emotion,
                 "gesture": m.gesture,
             }
-            for m in sorted(session.messages, key=lambda x: x.created_at)
+            for m in sorted(session.messages, key=lambda x: (x.sequence_no, x.id))
         ]
 
     async def process_user_message(
@@ -95,26 +104,89 @@ class MemoryService:
     async def process_user_message_stream(
         self, db: AsyncSession, session_uuid: str, user_input: str, ui_locale: str | None = None
     ) -> AsyncIterator[dict[str, Any]]:
+        async for event in self.process_player_message_stream(
+            db,
+            session_uuid,
+            user_input,
+            ui_locale=ui_locale,
+            speaker_source="human",
+        ):
+            yield event
+
+    async def process_player_message_stream(
+        self,
+        db: AsyncSession,
+        session_uuid: str,
+        user_input: str,
+        ui_locale: str | None = None,
+        speaker_source: str = "human",
+        message_meta: dict[str, Any] | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
         from app.i18n.reply_language import detect_reply_language
 
-        session = await self.get_session(db, session_uuid)
+        if speaker_source not in {"human", "ai"}:
+            raise ValueError("speaker_source must be 'human' or 'ai'")
+
+        session_result = await db.execute(
+            select(GameSession).where(GameSession.session_uuid == session_uuid).with_for_update()
+        )
+        session = session_result.scalar_one_or_none()
         if not session:
             raise ValueError("Session not found")
+        if session.session_mode == "test" and speaker_source != "ai":
+            raise ValueError("Test sessions only accept AI player turns")
+        if session.session_mode == "participation" and speaker_source != "human":
+            raise ValueError("Participation sessions only accept human player turns")
 
         scenario = await orch_support.load_scenario(db, session.scenario_id)
         dispatch_rules = await orch_support.load_dispatch_rules(db, session.scenario_id)
-        messages = await self.get_session_messages_dict(session)
+        message_result = await db.execute(
+            select(SessionMessage)
+            .where(SessionMessage.session_id == session.id)
+            .order_by(SessionMessage.sequence_no, SessionMessage.id)
+        )
+        messages = [
+            {
+                "speaker_id": m.speaker_id,
+                "speaker_type": m.speaker_type,
+                "speaker_source": m.speaker_source,
+                "turn_id": m.turn_id,
+                "sequence_no": m.sequence_no,
+                "content": m.content,
+                "emotion": m.emotion,
+                "gesture": m.gesture,
+            }
+            for m in message_result.scalars().all()
+        ]
 
+        turn_id = sum(1 for m in messages if m.get("speaker_type") == "user") + 1
+        seq_result = await db.execute(
+            select(func.coalesce(func.max(SessionMessage.sequence_no), 0)).where(
+                SessionMessage.session_id == session.id
+            )
+        )
+        next_sequence = int(seq_result.scalar_one()) + 1
         user_msg = SessionMessage(
             session_id=session.id,
             speaker_id="user",
             speaker_type="user",
+            speaker_source=speaker_source,
+            turn_id=turn_id,
+            sequence_no=next_sequence,
             content=user_input,
+            meta=message_meta or {},
         )
         db.add(user_msg)
-        messages.append({"speaker_id": "user", "speaker_type": "user", "content": user_input})
+        messages.append({
+            "speaker_id": "user",
+            "speaker_type": "user",
+            "speaker_source": speaker_source,
+            "turn_id": turn_id,
+            "sequence_no": next_sequence,
+            "content": user_input,
+        })
 
-        user_turn_count = sum(1 for m in messages if m.get("speaker_type") == "user")
+        user_turn_count = turn_id
         orch_cfg = scenario.orchestration_config or {}
         reply_language = detect_reply_language(user_input, ui_locale)
         shared_state = dict(session.shared_state or {})
@@ -149,11 +221,14 @@ class MemoryService:
         session.orchestration_mode = ORCHESTRATION_MODE
 
         npc_records = []
-        for reply in result.replies:
+        for reply_index, reply in enumerate(result.replies, start=1):
             msg = SessionMessage(
                 session_id=session.id,
                 speaker_id=reply.character_id,
                 speaker_type="npc",
+                speaker_source="ai",
+                turn_id=turn_id,
+                sequence_no=next_sequence + reply_index,
                 content=reply.content,
                 emotion=reply.emotion,
                 gesture=reply.gesture,
