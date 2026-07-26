@@ -169,7 +169,10 @@ Follow each field's type and confirmation_policy. Preserve prior confirmed value
             db_provider=evaluator.provider,
             db_model=evaluator.model,
             temperature=0.0,
-            max_tokens=min(evaluator.max_tokens, 900),
+            # Reasoning-capable models can spend a substantial part of this budget
+            # before emitting the short JSON answer. A 900-token cap produced valid
+            # HTTP responses with empty visible content on Ollama Cloud.
+            max_tokens=min(max(evaluator.max_tokens, 1800), 2400),
             response_format={"type": "json_object"},
         )
         parsed = normalize_evaluator_payload(raw)

@@ -117,7 +117,13 @@ class LLMClient:
                 resp = await client.post(url, json=payload, headers=headers)
                 if resp.status_code < 400:
                     data = resp.json()
-                    return data["choices"][0]["message"]["content"]
+                    content = data["choices"][0]["message"].get("content")
+                    if isinstance(content, str) and content.strip():
+                        return content
+                    finish_reason = data.get("choices", [{}])[0].get("finish_reason")
+                    raise RuntimeError(
+                        f"LLM API returned no visible content (finish_reason={finish_reason!r})"
+                    )
                 if resp.status_code in self.RETRYABLE_STATUS and attempt < self.MAX_RETRIES - 1:
                     await asyncio.sleep(1.0 * (attempt + 1))
                     continue
