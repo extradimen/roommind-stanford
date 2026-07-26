@@ -25,6 +25,9 @@ def main() -> None:
         "I appreciate the proposal, but the 5% cap is non"
     ) == "truncated"
     assert speech_rejection_reason(
+        "I need 30% upfront and the balance within 30"
+    ) == "truncated"
+    assert speech_rejection_reason(
         "Thank you for the proposal. We can review the full package together."
     ) is None
     assert "bottom line" not in PUBLIC_RESPONSE_DRAFT.casefold()

@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
-
 PUBLIC_RESPONSE_DRAFT = (
     "Respond directly and naturally to the latest public statement. Advance the "
     "negotiation without revealing private goals, internal plans, hidden knowledge, "
@@ -21,12 +18,6 @@ _INTERNAL_SPEECH_MARKERS = (
     "real floor",
     "reservation value",
 )
-_TRUNCATED_LAST_WORDS = {
-    "a", "an", "and", "at", "but", "for", "if", "in", "is", "no", "non",
-    "of", "or", "the", "to", "with",
-}
-
-
 def speech_rejection_reason(content: str, *, active_plan_text: str = "") -> str | None:
     """Reject obvious internal-plan echoes and visibly truncated public speech."""
     text = " ".join((content or "").split()).strip()
@@ -41,8 +32,6 @@ def speech_rejection_reason(content: str, *, active_plan_text: str = "") -> str 
     if plan and (lowered == plan or (len(plan) >= 48 and lowered.startswith(plan[:48]))):
         return "active_plan_echo"
 
-    last_word_match = re.search(r"([A-Za-z]+)[^A-Za-z]*$", text)
-    last_word = last_word_match.group(1).casefold() if last_word_match else ""
-    if text[-1] not in ".!?\"'" and last_word in _TRUNCATED_LAST_WORDS:
+    if text[-1] not in ".!?\"'”’":
         return "truncated"
     return None
