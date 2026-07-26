@@ -17,6 +17,28 @@ from app.models.db import CharacterTemplate
 ALLOWED_STATUSES = {"unknown", "proposed", "disputed", "confirmed", "rejected"}
 
 
+def normalize_evaluator_payload(raw: str) -> dict[str, Any]:
+    """Unwrap OpenAI-compatible providers that nest structured JSON in an envelope."""
+    current: Any = orch_support.parse_json(raw)
+    for _ in range(4):
+        if not isinstance(current, dict):
+            return {}
+        if isinstance(current.get("updates"), list):
+            return current
+        nested: Any = None
+        for key in ("content", "result", "response", "output"):
+            if key in current:
+                nested = current[key]
+                break
+        if isinstance(nested, dict):
+            current = nested
+        elif isinstance(nested, str):
+            current = orch_support.parse_json(nested)
+        else:
+            return current
+    return current if isinstance(current, dict) else {}
+
+
 def initial_task_state(task_config: dict[str, Any]) -> dict[str, Any]:
     phases = task_config.get("phases") or []
     first = phases[0].get("phase_id", "active") if phases and isinstance(phases[0], dict) else "active"
@@ -148,7 +170,7 @@ Follow each field's type and confirmation_policy. Preserve prior confirmed value
             max_tokens=min(evaluator.max_tokens, 900),
             response_format={"type": "json_object"},
         )
-        parsed = orch_support.parse_json(raw)
+        parsed = normalize_evaluator_payload(raw)
     except Exception:
         parsed = {}
 

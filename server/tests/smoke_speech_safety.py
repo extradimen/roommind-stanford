@@ -5,7 +5,7 @@ from app.agent.speech_safety import (
     player_speech_rejection_reason,
     speech_rejection_reason,
 )
-from app.task_state import advance_phase, evaluate_conditions, initial_task_state
+from app.task_state import advance_phase, evaluate_conditions, initial_task_state, normalize_evaluator_payload
 from app.player_agent import normalize_player_content
 
 
@@ -37,6 +37,8 @@ def main() -> None:
     assert normalize_player_content(
         '{"content":"{\\"content\\":\\"I am ready for the first question.\\"}"}'
     ) == "I am ready for the first question."
+    nested_evaluation = '{"content":"{\\"phase\\":\\"evidence\\",\\"updates\\":[{\\"field\\":\\"outcome\\",\\"value\\":true,\\"status\\":\\"proposed\\"}]}"}'
+    assert normalize_evaluator_payload(nested_evaluation)["updates"][0]["field"] == "outcome"
     assert "bottom line" not in PUBLIC_RESPONSE_DRAFT.casefold()
     assert "active plan" not in PUBLIC_RESPONSE_DRAFT.casefold()
     config = {
