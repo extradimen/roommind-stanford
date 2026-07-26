@@ -38,6 +38,8 @@ jobs:
         working-directory: server
       - run: python tests/smoke_modes.py
         working-directory: server
+      - run: python tests/smoke_speech_safety.py
+        working-directory: server
 
   frontend:
     runs-on: ubuntu-24.04

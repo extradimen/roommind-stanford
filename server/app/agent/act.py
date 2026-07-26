@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.memory_stream import AgentMemoryStore, MemoryNode, active_plan
+from app.agent.speech_safety import PUBLIC_RESPONSE_DRAFT, speech_rejection_reason
 from app.llm.client import llm_client
 from app.models.db import CharacterTemplate, ScenarioTemplate
 from app.orchestrator.common import NPCReply
@@ -80,13 +81,12 @@ async def render_npc_speech(
     if not draft:
         return idle_ack(reply_language), emotion, gesture
 
-    plan_hint = f"Your current action plan: {active_plan_text}\n" if active_plan_text else ""
     lang_rule = speech_language_rule(reply_language)
 
     npc_prompt = f"""You are playing {character.display_name} ({character.persona}).
 You are in a meeting room. Speak naturally in 1-2 sentences based on your plan and intent.
 
-{plan_hint}Intent for this turn (from your decision): {reasoning}
+Intent for this turn (from your decision): {reasoning}
 Core content to convey: {draft}
 
 Recent dialogue:
@@ -97,6 +97,11 @@ The user just said: {user_input}
 Requirements:
 - Speak like a real negotiator; do not repeat the prompt
 - Reflect your persona: {character.persona}
+- Treat private goals, internal plans, hidden knowledge, redlines, and reservation
+  values as secret. Never quote, summarize, or label them in public speech.
+- Do not say phrases such as "my plan is", "I will first", "private knowledge",
+  "real floor", or "reservation value".
+- Finish every sentence; never return a visibly cut-off fragment.
 {lang_rule}
 - Output only what you say aloud; no JSON or explanation
 
@@ -105,31 +110,30 @@ Requirements:
     if character.system_prompt:
         npc_prompt = character.system_prompt + "\n\n" + npc_prompt
 
-    content = await llm_client.chat_completion(
-        [{"role": "user", "content": npc_prompt}],
-        db_provider=npc_llm.provider,
-        db_model=npc_llm.model,
-        temperature=npc_llm.temperature,
-        max_tokens=min(npc_llm.max_tokens, 256),
-    )
-    return content.strip() or draft, emotion, gesture
+    rejection = ""
+    for attempt in range(2):
+        retry_rule = (
+            f"\nPrevious candidate was rejected ({rejection}). Generate a fresh, complete, "
+            "public-facing reply only.\n"
+            if attempt
+            else ""
+        )
+        content = await llm_client.chat_completion(
+            [{"role": "user", "content": npc_prompt + retry_rule}],
+            db_provider=npc_llm.provider,
+            db_model=npc_llm.model,
+            temperature=npc_llm.temperature,
+            max_tokens=min(npc_llm.max_tokens, 256),
+        )
+        cleaned = content.strip()
+        rejection = speech_rejection_reason(
+            cleaned,
+            active_plan_text=active_plan_text,
+        ) or ""
+        if not rejection:
+            return cleaned, emotion, gesture
 
-
-def plan_speak_draft(
-    nodes: list[MemoryNode],
-    *,
-    plan_update: str | None,
-    decision: AgentDecision,
-    fallback: str,
-) -> str:
-    if decision.speak_draft.strip():
-        return decision.speak_draft.strip()
-    if plan_update:
-        return plan_update
-    current = active_plan(nodes)
-    if current:
-        return current.content
-    return fallback
+    return idle_ack(reply_language), emotion, gesture
 
 
 async def _record_action_memory(
@@ -295,13 +299,8 @@ async def execute_decision(
 
         speak_tick = tick + (1 if result.world_events else 0)
 
-        if speak_quota_remaining > 0:
-            draft = plan_speak_draft(
-                nodes,
-                plan_update=plan_text or None,
-                decision=decision,
-                fallback=decision.reasoning or user_input,
-            )
+        if speak_quota_remaining > 0 and decision.speak_draft.strip():
+            draft = decision.speak_draft.strip()
             result.action = "update_plan+speak"
             result.reasoning = decision.reasoning + " → updated plan and spoke"
             return await _apply_speak(
@@ -352,7 +351,7 @@ async def execute_decision(
             result.memory_nodes.append(node)
 
         if speak_quota_remaining > 0 and mentioned:
-            draft = plan_speak_draft(nodes, plan_update=None, decision=decision, fallback=user_input)
+            draft = decision.speak_draft.strip() or PUBLIC_RESPONSE_DRAFT
             result.action = "internal_note+speak"
             return await _apply_speak(
                 result,
@@ -407,7 +406,7 @@ async def execute_decision(
         )
 
     if action == "wait" and speak_quota_remaining > 0 and mentioned:
-        draft = plan_speak_draft(nodes, plan_update=None, decision=decision, fallback=user_input)
+        draft = PUBLIC_RESPONSE_DRAFT
         result.action = "wait→speak"
         result.reasoning = decision.reasoning + " → mentioned; speaking instead"
         return await _apply_speak(
@@ -418,7 +417,7 @@ async def execute_decision(
             character=character,
             conversation_context=conversation_context,
             user_input=user_input,
-            reasoning=decision.reasoning + " (mentioned; responding from plan)",
+            reasoning="Respond because the character was explicitly addressed",
             draft=draft,
             npc_llm=npc_llm,
             decision=decision,
@@ -479,7 +478,7 @@ async def execute_plan_fallback_speak(
     if not plan and not user_input.strip():
         return None
 
-    draft = plan.content if plan else f"Respond to: {user_input}"
+    draft = PUBLIC_RESPONSE_DRAFT
     reasoning = f"Respond from current plan ({scenario.title} / {current_phase})"
     decision = AgentDecision(action="speak", reasoning=reasoning, speak_draft=draft)
     result = ActionResult(
