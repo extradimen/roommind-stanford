@@ -14,16 +14,16 @@ jobs:
         env:
           POSTGRES_USER: roommind
           POSTGRES_PASSWORD: roommind_dev
-          POSTGRES_DB: roommind_ci
+          POSTGRES_DB: roommind_stanford
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U roommind -d roommind_ci"
+          --health-cmd "pg_isready -U roommind -d roommind_stanford"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgresql+asyncpg://roommind:roommind_dev@localhost:5432/roommind_ci
+      DATABASE_URL: postgresql+asyncpg://roommind:roommind_dev@localhost:5432/roommind_stanford
       REDIS_URL: redis://localhost:6379/15
       PYTHONPATH: .
     steps:
