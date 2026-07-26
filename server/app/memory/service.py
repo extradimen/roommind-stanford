@@ -254,6 +254,7 @@ class MemoryService:
             db.add(msg)
             npc_records.append(reply)
 
+        session.updated_at = datetime.now(timezone.utc)
         await db.flush()
         await self.cache_working_memory(
             session_uuid,

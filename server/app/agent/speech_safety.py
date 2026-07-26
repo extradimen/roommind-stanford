@@ -35,3 +35,14 @@ def speech_rejection_reason(content: str, *, active_plan_text: str = "") -> str 
     if text[-1] not in ".!?\"'”’":
         return "truncated"
     return None
+
+
+def player_speech_rejection_reason(content: str) -> str | None:
+    """Reject malformed structured output accidentally exposed as player dialogue."""
+    text = (content or "").strip()
+    if text.startswith(("{", "[", "```")):
+        return "structured_output"
+    lowered = text.casefold()
+    if '"content"' in lowered and '"intent"' in lowered:
+        return "structured_output"
+    return speech_rejection_reason(text)

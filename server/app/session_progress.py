@@ -22,7 +22,8 @@ def infer_session_phase(
     available = phases or ["opening", "discovery", "bargaining", "closing"]
     combined = " ".join([player_text, *npc_texts]).casefold()
     if requested_end or (turn_id >= 2 and any(word in combined for word in (
-        "final offer", "finalize", "shake on", "sign the", "close the deal",
+        "final offer", "finalize", "shake on", "let's shake", "let’s shake",
+        "sign the", "close the deal", "move forward together",
     ))):
         return _phase(available, ("clos", "agreement"), len(available) - 1)
     if turn_id >= 2 and any(word in combined for word in (
@@ -41,7 +42,9 @@ def has_mutual_agreement(player_text: str, npc_texts: list[str], *, turn_id: int
         return False
     player = player_text.casefold()
     npc = " ".join(npc_texts).casefold()
-    player_close = any(x in player for x in ("final offer", "shake on", "can we agree", "finalize"))
+    player_close = any(x in player for x in (
+        "final offer", "shake on", "let's shake", "let’s shake", "can we agree", "finalize",
+    ))
     npc_accept = any(x in npc for x in (
         "that works", "we have a deal", "agreed", "i accept", "we accept", "deal is agreed",
     ))

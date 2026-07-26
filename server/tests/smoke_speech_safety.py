@@ -12,6 +12,7 @@ spec.loader.exec_module(speech_safety)
 
 PUBLIC_RESPONSE_DRAFT = speech_safety.PUBLIC_RESPONSE_DRAFT
 speech_rejection_reason = speech_safety.speech_rejection_reason
+player_speech_rejection_reason = speech_safety.player_speech_rejection_reason
 
 progress_path = Path(__file__).parents[1] / "app" / "session_progress.py"
 progress_spec = spec_from_file_location("session_progress", progress_path)
@@ -36,6 +37,12 @@ def main() -> None:
     assert speech_rejection_reason(
         "Thank you for the proposal. We can review the full package together."
     ) is None
+    assert player_speech_rejection_reason(
+        '{"content": "A truncated proposal", "intent": "compromise with long'
+    ) == "structured_output"
+    assert player_speech_rejection_reason(
+        "Let’s review the complete package before deciding."
+    ) is None
     assert "bottom line" not in PUBLIC_RESPONSE_DRAFT.casefold()
     assert "active plan" not in PUBLIC_RESPONSE_DRAFT.casefold()
     phases = ["opening", "discovery", "bargaining", "closing"]
@@ -50,6 +57,12 @@ def main() -> None:
         ["That works. We have a deal."],
         turn_id=4,
     )
+    assert session_progress.infer_session_phase(
+        phases,
+        turn_id=4,
+        player_text="Let’s shake and move forward together.",
+        npc_texts=["I need to review the proposal."],
+    ) == "closing"
     print("NPC speech safety smoke test: ok")
 
 

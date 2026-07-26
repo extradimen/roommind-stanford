@@ -133,7 +133,14 @@ Requirements:
         if not rejection:
             return cleaned, emotion, gesture
 
-    return idle_ack(reply_language), emotion, gesture
+    job_title = (character.job_title or "").casefold()
+    if "legal" in job_title or "counsel" in job_title:
+        fallback = "I have nothing further to add until the commercial terms are clarified."
+    elif character.side == "player_ally":
+        fallback = "I recommend that we clarify the remaining terms before moving forward."
+    else:
+        fallback = "I need to review the complete commercial package before I can agree."
+    return fallback, emotion, gesture
 
 
 async def _record_action_memory(

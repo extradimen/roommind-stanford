@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.memory_stream import AgentMemoryStore, active_plan
+from app.agent.speech_safety import player_speech_rejection_reason
 from app.llm.client import llm_client
 from app.models.db import GameSession, ScenarioTemplate
 from app.orchestrator.common import orch_support
@@ -126,18 +127,35 @@ Return strict JSON only:
   "requested_end": false
 }}"""
 
-    raw = await llm_client.chat_completion(
-        [{"role": "user", "content": prompt}],
-        db_provider=player_llm.provider,
-        db_model=player_llm.model,
-        temperature=float(config.get("player_temperature", player_llm.temperature)),
-        max_tokens=min(int(config.get("player_max_tokens", player_llm.max_tokens)), 512),
-        response_format={"type": "json_object"},
-    )
-    parsed = orch_support.parse_json(raw)
-    content = str(parsed.get("content") or "").strip()
-    if not content:
-        raise RuntimeError("AI player returned an empty move")
+    raw = ""
+    parsed: dict[str, Any] = {}
+    content = ""
+    rejection = ""
+    for attempt in range(2):
+        retry_rule = (
+            f"\nYour previous response was rejected ({rejection}). Return one complete JSON "
+            "object with a complete, punctuated content string and no extra text.\n"
+            if attempt
+            else ""
+        )
+        raw = await llm_client.chat_completion(
+            [{"role": "user", "content": prompt + retry_rule}],
+            db_provider=player_llm.provider,
+            db_model=player_llm.model,
+            temperature=float(config.get("player_temperature", player_llm.temperature)),
+            max_tokens=min(int(config.get("player_max_tokens", player_llm.max_tokens)), 768),
+            response_format={"type": "json_object"},
+        )
+        parsed = orch_support.parse_json(raw)
+        content = str(parsed.get("content") or "").strip()
+        rejection = player_speech_rejection_reason(content) or ""
+        if not rejection and isinstance(parsed.get("requested_end", False), bool):
+            break
+        if not rejection:
+            rejection = "invalid_requested_end"
+    else:
+        raise RuntimeError(f"AI player returned invalid structured output ({rejection})")
+
     intent = str(parsed.get("intent") or "unspecified")
     requested_end = bool(parsed.get("requested_end", False))
     await player_store.append(
