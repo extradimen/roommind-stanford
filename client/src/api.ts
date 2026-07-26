@@ -33,6 +33,8 @@ export interface AvatarManifestFields {
   label?: string;
   team?: string;
   color?: string;
+  glasses?: boolean;
+  necklace?: boolean;
 }
 
 export interface Character {
