@@ -1,9 +1,14 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+def utc_now() -> datetime:
+    """Wall-clock UTC time; unlike PostgreSQL now(), this advances within a transaction."""
+    return datetime.now(timezone.utc)
 
 
 class Base(DeclarativeBase):
@@ -116,7 +121,7 @@ class GameSession(Base):
     status: Mapped[str] = mapped_column(String(32), default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), onupdate=utc_now
     )
 
     messages: Mapped[list["SessionMessage"]] = relationship(back_populates="session", cascade="all, delete-orphan")
