@@ -121,6 +121,9 @@ class LLMClient:
                     if isinstance(content, str) and content.strip():
                         return content
                     finish_reason = data.get("choices", [{}])[0].get("finish_reason")
+                    if finish_reason == "length" and attempt < self.MAX_RETRIES - 1:
+                        payload["max_tokens"] = min(int(payload["max_tokens"]) * 2, 4096)
+                        continue
                     raise RuntimeError(
                         f"LLM API returned no visible content (finish_reason={finish_reason!r})"
                     )
