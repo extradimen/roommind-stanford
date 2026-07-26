@@ -4,7 +4,7 @@ from __future__ import annotations
 
 PUBLIC_RESPONSE_DRAFT = (
     "Respond directly and naturally to the latest public statement. Advance the "
-    "negotiation without revealing private goals, internal plans, hidden knowledge, "
+    "configured task without revealing private goals, internal plans, hidden knowledge, "
     "redlines, or reservation values."
 )
 

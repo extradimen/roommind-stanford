@@ -13,18 +13,6 @@ DEFAULT_PLAYER_AVATAR: dict[str, Any] = {
     "avatar_style": "gltf",
 }
 
-SLUG_PLAYER_DEFAULTS: dict[str, dict[str, str]] = {
-    "global-smart-manufacturing-supply-chain-negotiation": {
-        "character_name": "James Park",
-        "job_title": "Director of Strategic Procurement",
-    },
-    "supply-chain-negotiation": {
-        "character_name": "Alex Chen",
-        "job_title": "Chief Procurement Officer",
-    },
-}
-
-
 def resolve_player_character(scenario: ScenarioTemplate) -> dict[str, Any]:
     """Return normalized player identity for UI and agent prompts."""
     scene = scenario.scene_config if isinstance(scenario.scene_config, dict) else {}
@@ -37,9 +25,9 @@ def resolve_player_character(scenario: ScenarioTemplate) -> dict[str, Any]:
     )
 
     if not name and not title:
-        slug_defaults = SLUG_PLAYER_DEFAULTS.get(scenario.slug or "", {})
-        name = slug_defaults.get("character_name", "Alex Chen")
-        title = slug_defaults.get("job_title", "Chief Procurement Officer")
+        terminology = (scenario.task_config or {}).get("terminology") or {}
+        name = str(terminology.get("player_name") or "Player")
+        title = str(terminology.get("player_role") or "Participant")
         display = compose_display_name(name, title)
 
     manifest = sanitize_avatar_manifest(raw.get("avatar_manifest"))

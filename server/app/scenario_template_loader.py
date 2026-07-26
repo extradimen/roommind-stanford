@@ -21,6 +21,10 @@ TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates" / "scenarios"
 CHARACTER_FIELDS = (
     "character_id",
     "side",
+    "team_id",
+    "relationship_to_player",
+    "interaction_role",
+    "authority",
     "character_name",
     "job_title",
     "display_name",
@@ -64,6 +68,8 @@ def _player_goal(data: dict[str, Any]) -> str:
 
 
 async def import_scenario_template(db: AsyncSession, data: dict[str, Any]) -> ScenarioTemplate:
+    if data.get("schema_version") != 2 or not isinstance(data.get("task_config"), dict):
+        raise ValueError("Scenario templates must use schema_version 2 and define task_config")
     player_goal = _player_goal(data)
     meta = data.get("template_meta") or {}
     orchestration = merge_orchestration_config(data.get("orchestration_config") or default_orchestration_config())
@@ -74,6 +80,7 @@ async def import_scenario_template(db: AsyncSession, data: dict[str, Any]) -> Sc
     scenario = ScenarioTemplate(
         slug=data["slug"],
         title=data["title"],
+        task_config=data["task_config"],
         description=data.get("description"),
         business_goal=player_goal,
         player_side_goal=player_goal,

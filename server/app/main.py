@@ -13,6 +13,7 @@ from app.database import init_db
 from app.platform_llm import ensure_platform_llm_defaults
 from app.seed import (
     ensure_scenario_templates,
+    migrate_scenarios_to_schema_v2,
     seed_if_empty,
     sync_character_name_fields,
     sync_dispatch_rule_keywords,
@@ -28,7 +29,7 @@ settings = get_settings()
 
 app = FastAPI(
     title="RoomMind API",
-    description="Multi-agent business negotiation platform — Phase 1 Web3D Text",
+    description="Configurable multi-agent interactive task simulation platform",
     version="0.1.0",
 )
 
@@ -56,6 +57,7 @@ async def startup() -> None:
     await init_db()
     await seed_if_empty()
     await ensure_scenario_templates()
+    await migrate_scenarios_to_schema_v2()
     await sync_character_name_fields()
     await sync_scenario_side_goals()
     await sync_scenario_player_characters()

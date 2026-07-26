@@ -74,7 +74,7 @@ const FOOTER = {
     { label: "npc",        value: "Kimi-K2.5 (speech render)", x: 318 },
     { label: "reflection", value: "Qwen2.5-7B",               x: 496 },
   ],
-  meta: "phases: opening → discovery → bargaining → closing  ·  provider: SiliconFlow / Ollama",
+  meta: "scenario-defined phases and state  ·  provider: SiliconFlow / Ollama",
 };
 
 // ─────────────────────────────────────────
@@ -231,7 +231,7 @@ export default function RoomMindArchitecture() {
         RoomMind — system architecture
       </text>
       <text x={340} y={44} textAnchor="middle" fontSize={11} fill={COLORS.muted}>
-        Stanford generative agents · multi-NPC negotiation simulation
+        Stanford generative agents · configurable multi-role task simulation
       </text>
 
       {/* ══════════ A  Infrastructure ══════════ */}

@@ -37,6 +37,26 @@ async def ensure_scenario_templates() -> None:
             await db.commit()
 
 
+async def migrate_scenarios_to_schema_v2() -> None:
+    """One-shot cutover: migrate bundled scenarios; hide unsupported legacy scenarios."""
+    from app.scenario_template_loader import find_scenario_template_by_slug, reimport_scenario_from_template
+
+    async with async_session_factory() as db:
+        result = await db.execute(select(ScenarioTemplate))
+        scenarios = list(result.scalars().all())
+        changed = False
+        for scenario in scenarios:
+            if (scenario.task_config or {}).get("task_type"):
+                continue
+            if find_scenario_template_by_slug(scenario.slug):
+                await reimport_scenario_from_template(db, scenario.slug, overwrite_orchestration=False)
+            else:
+                scenario.is_published = False
+            changed = True
+        if changed:
+            await db.commit()
+
+
 async def sync_character_name_fields() -> None:
     """Backfill character_name / job_title from legacy display_name."""
     from app.character_display import split_display_name

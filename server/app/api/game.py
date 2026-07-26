@@ -80,9 +80,9 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
     completed_turns = sum(1 for m in rows if m.speaker_type == "user") + 1
     max_turns = max(1, min(int((session.run_config or {}).get("max_turns", 20)), 100))
     stop_reason = None
-    agreement_reached = bool((session.shared_state or {}).get("_agreement_reached"))
-    if agreement_reached:
-        stop_reason = "mutual_agreement"
+    task_complete = ((session.shared_state or {}).get("task_state") or {}).get("completion_status") == "completed"
+    if task_complete:
+        stop_reason = "completion_conditions_met"
     elif move.requested_end:
         stop_reason = "player_requested_end"
     elif completed_turns >= max_turns:
@@ -154,7 +154,9 @@ async def get_published_scenario(scenario_id: int, db: DbDep) -> dict:
         "description": scenario.description,
         "player_side_goal": resolve_player_side_goal(scenario),
         "business_goal": resolve_player_side_goal(scenario),
-        "phases": scenario.phases,
+        "schema_version": 2,
+        "task_config": scenario.task_config or {},
+        "phases": [p.get("phase_id") for p in (scenario.task_config or {}).get("phases", [])],
         "scene_config": scenario.scene_config,
         "player_character": player,
         "orchestration_mode": ORCHESTRATION_MODE,
@@ -166,6 +168,9 @@ async def get_published_scenario(scenario_id: int, db: DbDep) -> dict:
                 "job_title": c.job_title,
                 "display_name": c.display_name,
                 "side": c.side or "opponent",
+                "team_id": c.team_id,
+                "relationship_to_player": c.relationship_to_player,
+                "interaction_role": c.interaction_role,
                 "spawn_point": c.spawn_point,
                 "avatar_manifest": client_avatar_manifest(c.avatar_manifest),
             }

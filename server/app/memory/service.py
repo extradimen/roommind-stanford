@@ -14,7 +14,7 @@ from app.models.db import GameSession, SessionMessage
 from app.orchestrator.common import orch_support
 from app.orchestrator.defaults import ORCHESTRATION_MODE
 from app.orchestrator.generative import generative_orchestrator
-from app.session_progress import has_mutual_agreement, infer_session_phase
+from app.task_state import initial_task_state, update_task_state
 
 settings = get_settings()
 
@@ -52,15 +52,17 @@ class MemoryService:
     ) -> GameSession:
         if session_mode not in {"participation", "test"}:
             raise ValueError("session_mode must be 'participation' or 'test'")
+        scenario = await orch_support.load_scenario(db, scenario_id)
+        task_state = initial_task_state(scenario.task_config or {})
         session = GameSession(
             session_uuid=str(uuid.uuid4()),
             scenario_id=scenario_id,
             user_id=user_id,
-            current_phase="opening",
+            current_phase=task_state["phase"],
             orchestration_mode=ORCHESTRATION_MODE,
             session_mode=session_mode,
             run_config=run_config or {},
-            shared_state={},
+            shared_state={"task_state": task_state},
             status="active",
         )
         db.add(session)
@@ -219,19 +221,19 @@ class MemoryService:
         if result is None:
             raise RuntimeError("Stream ended without turn_result")
 
-        npc_texts = [reply.content for reply in result.replies]
-        requested_end = bool((message_meta or {}).get("requested_end", False))
-        session.current_phase = infer_session_phase(
-            list(scenario.phases or []),
-            turn_id=turn_id,
-            player_text=user_input,
-            npc_texts=npc_texts,
-            requested_end=requested_end,
-        )
         updated_shared_state = dict(result.shared_state or {})
-        agreement_reached = has_mutual_agreement(user_input, npc_texts, turn_id=turn_id)
-        if agreement_reached:
-            updated_shared_state["_agreement_reached"] = True
+        task_state = await update_task_state(
+            db,
+            task_config=scenario.task_config or {},
+            previous=updated_shared_state.get("task_state"),
+            player_text=user_input,
+            npc_turns=[{"speaker_id": reply.character_id, "content": reply.content} for reply in result.replies],
+            orchestration_config=orch_cfg,
+            characters=list(scenario.characters),
+        )
+        updated_shared_state["task_state"] = task_state
+        session.current_phase = task_state["phase"]
+        if task_state["completion_status"] == "completed":
             session.status = "completed"
         session.shared_state = updated_shared_state
         session.orchestration_mode = ORCHESTRATION_MODE

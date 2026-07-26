@@ -65,6 +65,10 @@ class LLMProvidersOut(BaseModel):
 class CharacterTemplateIn(BaseModel):
     character_id: str
     side: str = "opponent"
+    team_id: str = "independent"
+    relationship_to_player: str = "counterpart"
+    interaction_role: str = "participant"
+    authority: dict[str, Any] = Field(default_factory=dict)
     character_name: str = ""
     job_title: str = ""
     display_name: str | None = None
@@ -116,6 +120,8 @@ class DispatchRuleOut(DispatchRuleIn):
 class ScenarioTemplateIn(BaseModel):
     slug: str
     title: str
+    schema_version: int = 2
+    task_config: dict[str, Any]
     description: str | None = None
     player_side_goal: str = ""
     opponent_side_goal: str = ""
@@ -130,6 +136,45 @@ class ScenarioTemplateIn(BaseModel):
 
     @model_validator(mode="after")
     def normalize_goals(self) -> "ScenarioTemplateIn":
+        if self.schema_version != 2:
+            raise ValueError("Only RoomMind scenario schema_version 2 is supported")
+        required = {"task_type", "terminology", "state_schema", "phases", "completion_conditions"}
+        missing = sorted(required - set(self.task_config))
+        if missing:
+            raise ValueError(f"task_config missing required fields: {', '.join(missing)}")
+        state_schema = self.task_config.get("state_schema")
+        phases = self.task_config.get("phases")
+        conditions = self.task_config.get("completion_conditions")
+        if not isinstance(state_schema, dict) or not state_schema:
+            raise ValueError("task_config.state_schema must be a non-empty object")
+        if not isinstance(phases, list) or not phases or any(not isinstance(p, dict) or not p.get("phase_id") for p in phases):
+            raise ValueError("task_config.phases must contain phase objects with phase_id")
+        if not isinstance(conditions, dict):
+            raise ValueError("task_config.completion_conditions must be an object")
+        known_fields = set(state_schema)
+        for condition in [*(conditions.get("all") or []), *(conditions.get("any") or [])]:
+            if condition.get("field") not in known_fields:
+                raise ValueError(f"Completion condition references unknown field: {condition.get('field')}")
+        character_ids = {c.character_id for c in self.characters}
+        if len(character_ids) != len(self.characters):
+            raise ValueError("character_id values must be unique")
+        for rule in self.dispatch_rules:
+            unknown = set(rule.priority_character_ids) - character_ids
+            if unknown:
+                raise ValueError(f"Dispatch rule references unknown characters: {', '.join(sorted(unknown))}")
+        authorized_fields = {
+            field
+            for character in self.characters
+            for field in (character.authority.get("can_confirm", []) if isinstance(character.authority, dict) else [])
+        }
+        required_authority = {
+            condition.get("field")
+            for condition in [*(conditions.get("all") or []), *(conditions.get("any") or [])]
+            if state_schema.get(condition.get("field"), {}).get("confirmation_policy") != "player"
+        }
+        missing_authority = sorted(field for field in required_authority if field not in authorized_fields)
+        if missing_authority:
+            raise ValueError(f"No character has confirmation authority for: {', '.join(missing_authority)}")
         if not self.player_side_goal and self.business_goal:
             self.player_side_goal = self.business_goal
         return self
@@ -139,6 +184,8 @@ class ScenarioTemplateOut(BaseModel):
     id: int
     slug: str
     title: str
+    schema_version: int = 2
+    task_config: dict[str, Any]
     description: str | None
     player_side_goal: str = ""
     opponent_side_goal: str = ""
@@ -166,6 +213,8 @@ class ScenarioTemplateOut(BaseModel):
                 "id": data.id,
                 "slug": data.slug,
                 "title": data.title,
+                "schema_version": 2,
+                "task_config": data.task_config or {},
                 "description": data.description,
                 "player_side_goal": player,
                 "opponent_side_goal": opponent,

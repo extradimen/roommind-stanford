@@ -41,8 +41,7 @@ export default function ScenarioList() {
   };
 
   const exampleScenarioId = () => {
-    const preferred = items.find((s) => s.slug === "supply-chain-negotiation");
-    return preferred?.id ?? items[0]?.id;
+    return items[0]?.id;
   };
 
   const downloadExample = async () => {

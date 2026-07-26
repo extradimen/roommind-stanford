@@ -23,7 +23,8 @@ SESSION_EXPORT_VERSION = 2
 TRANSCRIPT_COLUMNS = [
     "session_uuid", "scenario_id", "scenario_slug", "session_mode",
     "turn_id", "sequence_no", "created_at", "speaker_id", "speaker_type",
-    "speaker_source", "character_name", "job_title", "side", "content",
+    "speaker_source", "character_name", "job_title", "team_id", "relationship_to_player",
+    "interaction_role", "content",
     "emotion", "gesture",
 ]
 
@@ -47,7 +48,9 @@ def transcript_rows(bundle: dict[str, Any]) -> list[dict[str, Any]]:
             "speaker_source": message.get("speaker_source"),
             "character_name": speaker.get("character_name"),
             "job_title": speaker.get("job_title"),
-            "side": speaker.get("side"),
+            "team_id": speaker.get("team_id"),
+            "relationship_to_player": speaker.get("relationship_to_player"),
+            "interaction_role": speaker.get("interaction_role"),
             "content": message.get("content"),
             "emotion": message.get("emotion"),
             "gesture": message.get("gesture"),
@@ -192,6 +195,9 @@ async def build_session_export_bundle(db: AsyncSession, session: GameSession) ->
             **player,
             "side": "player",
             "role": "player",
+            "team_id": "player",
+            "relationship_to_player": "self",
+            "interaction_role": "player",
         }
         char_result = await db.execute(
             select(CharacterTemplate)
@@ -206,6 +212,10 @@ async def build_session_export_bundle(db: AsyncSession, session: GameSession) ->
                 "display_name": char.display_name,
                 "side": char.side,
                 "role": "npc",
+                "team_id": char.team_id,
+                "relationship_to_player": char.relationship_to_player,
+                "interaction_role": char.interaction_role,
+                "authority": char.authority or {},
             }
 
     msg_result = await db.execute(
@@ -291,6 +301,8 @@ async def build_session_export_bundle(db: AsyncSession, session: GameSession) ->
             "id": scenario.id if scenario else session.scenario_id,
             "slug": scenario.slug if scenario else None,
             "title": scenario.title if scenario else None,
+            "schema_version": 2 if scenario else None,
+            "task_config": scenario.task_config if scenario else None,
         },
         "character_names": character_names,
         "speaker_directory": speaker_directory,

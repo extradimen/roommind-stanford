@@ -263,6 +263,7 @@ async def create_scenario(body: ScenarioTemplateIn, db: DbDep, _: AdminDep) -> S
     scenario = ScenarioTemplate(
         slug=body.slug,
         title=body.title,
+        task_config=body.task_config,
         description=body.description,
         business_goal=player_goal,
         player_side_goal=player_goal,
@@ -313,6 +314,7 @@ async def update_scenario(scenario_id: int, body: ScenarioTemplateIn, db: DbDep,
     for field in (
         "slug",
         "title",
+        "task_config",
         "description",
         "phases",
         "win_conditions",
@@ -420,6 +422,7 @@ async def import_scenario_new(body: dict[str, Any], db: DbDep, _: AdminDep) -> S
     scenario = ScenarioTemplate(
         slug=slug,
         title=data["title"],
+        task_config=data["task_config"],
         description=data.get("description"),
         business_goal=player_goal,
         player_side_goal=player_goal,

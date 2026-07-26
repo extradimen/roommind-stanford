@@ -156,6 +156,10 @@ export interface Character {
   id?: number;
   character_id: string;
   side?: "player_ally" | "opponent";
+  team_id: string;
+  relationship_to_player: string;
+  interaction_role: string;
+  authority: Record<string, unknown>;
   character_name: string;
   job_title: string;
   display_name?: string;
@@ -175,6 +179,8 @@ export interface Scenario {
   id: number;
   slug: string;
   title: string;
+  schema_version: 2;
+  task_config: Record<string, unknown>;
   description: string | null;
   player_side_goal: string;
   opponent_side_goal: string;

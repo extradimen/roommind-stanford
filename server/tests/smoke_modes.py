@@ -27,6 +27,13 @@ async def main() -> None:
             business_goal="Reach a balanced agreement",
             player_side_goal="Reach a balanced agreement",
             opponent_side_goal="Protect supplier value",
+            task_config={
+                "task_type": "smoke_test",
+                "terminology": {"task": "test"},
+                "state_schema": {},
+                "phases": [{"phase_id": "active", "description": "Test"}],
+                "completion_conditions": {"all": []},
+            },
             phases=["opening", "closing"],
             win_conditions=[],
             scene_config={

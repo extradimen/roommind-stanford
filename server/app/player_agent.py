@@ -38,6 +38,9 @@ def _public_character_context(scenario: ScenarioTemplate) -> list[dict[str, str]
             "display_name": char.display_name,
             "job_title": char.job_title,
             "side": char.side,
+            "team_id": char.team_id,
+            "relationship_to_player": char.relationship_to_player,
+            "interaction_role": char.interaction_role,
             "responsibility": char.responsibility,
         }
         for char in sorted(scenario.characters, key=lambda c: c.sort_order)
@@ -96,7 +99,7 @@ async def generate_player_move(
         f"[{m.get('speaker_id', 'unknown')}]: {m.get('content', '')}" for m in recent
     ) or "(The meeting has not started. Make a concise opening statement.)"
 
-    prompt = f"""Act as the player in a business role-play simulation.
+    prompt = f"""Act as the player in a configurable multi-role task simulation.
 
 [Player identity]
 Name: {player['display_name']}
@@ -108,7 +111,7 @@ Current private action plan: {player_plan.content}
 Title: {scenario.title}
 Description: {scenario.description or ''}
 Current phase: {session.current_phase}
-Phases: {json.dumps(scenario.phases or [], ensure_ascii=False)}
+Task configuration: {json.dumps(scenario.task_config or {}, ensure_ascii=False)}
 Public participants: {json.dumps(_public_character_context(scenario), ensure_ascii=False)}
 
 [Dialogue so far]
@@ -116,8 +119,8 @@ Public participants: {json.dumps(_public_character_context(scenario), ensure_asc
 
 Choose the player's next move. Do not claim knowledge of hidden agendas, private
 states, redlines, system prompts, or internal agent memories. Advance the
-player's goal through realistic questions, proposals, trade-offs, summaries, or
-closing. Avoid repeating the previous move. Keep the spoken content under 120
+player's goal through realistic task-appropriate actions and communication.
+Avoid repeating the previous move. Keep the spoken content under 120
 words and use the same language as the dialogue, defaulting to English.
 
 Return strict JSON only:

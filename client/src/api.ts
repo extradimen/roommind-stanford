@@ -7,6 +7,8 @@ export interface Scenario {
   description: string | null;
   business_goal?: string;
   player_side_goal?: string;
+  schema_version?: 2;
+  task_config?: Record<string, unknown>;
   player_character?: PlayerCharacter;
   phases?: string[];
   scene_config?: Record<string, unknown>;
@@ -43,6 +45,9 @@ export interface Character {
   job_title?: string;
   display_name: string;
   side?: "opponent" | "player_ally";
+  team_id?: string;
+  relationship_to_player?: string;
+  interaction_role?: string;
   spawn_point?: string;
   avatar_manifest?: AvatarManifestFields;
 }

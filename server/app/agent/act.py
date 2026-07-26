@@ -84,7 +84,7 @@ async def render_npc_speech(
     lang_rule = speech_language_rule(reply_language)
 
     npc_prompt = f"""You are playing {character.display_name} ({character.persona}).
-You are in a meeting room. Speak naturally in 1-2 sentences based on your plan and intent.
+You are in a multi-role task simulation. Speak naturally in 1-2 sentences based on your plan and intent.
 
 Intent for this turn (from your decision): {reasoning}
 Core content to convey: {draft}
@@ -95,7 +95,7 @@ Recent dialogue:
 The user just said: {user_input}
 
 Requirements:
-- Speak like a real negotiator; do not repeat the prompt
+- Speak like a real participant in this configured task; do not repeat the prompt
 - Reflect your persona: {character.persona}
 - Treat private goals, internal plans, hidden knowledge, redlines, and reservation
   values as secret. Never quote, summarize, or label them in public speech.
@@ -133,13 +133,10 @@ Requirements:
         if not rejection:
             return cleaned, emotion, gesture
 
-    job_title = (character.job_title or "").casefold()
-    if "legal" in job_title or "counsel" in job_title:
-        fallback = "I have nothing further to add until the commercial terms are clarified."
-    elif character.side == "player_ally":
-        fallback = "I recommend that we clarify the remaining terms before moving forward."
+    if character.relationship_to_player in {"ally", "advisor", "teammate"}:
+        fallback = "I recommend that we clarify the remaining task details before moving forward."
     else:
-        fallback = "I need to review the complete commercial package before I can agree."
+        fallback = "I need the remaining task details clarified before I can commit."
     return fallback, emotion, gesture
 
 

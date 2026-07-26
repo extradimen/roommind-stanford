@@ -20,6 +20,7 @@ def default_llm_roles() -> dict[str, Any]:
         "npc_default": {"temperature": 0.7, "max_tokens": 512},
         "decision": {"temperature": 0.4, "max_tokens": 512},
         "reflection": {"temperature": 0.3, "max_tokens": 256},
+        "state_evaluator": {"temperature": 0.0, "max_tokens": 900},
     }
 
 

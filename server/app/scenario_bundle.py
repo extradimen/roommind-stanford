@@ -19,11 +19,15 @@ from app.scene_visual_bundle import (
 from app.scenario_side import sync_legacy_business_goal
 
 BUNDLE_FORMAT = "roommind-scenario-bundle"
-BUNDLE_VERSION = 1
+BUNDLE_VERSION = 2
 
 CHARACTER_EXPORT_FIELDS = (
     "character_id",
     "side",
+    "team_id",
+    "relationship_to_player",
+    "interaction_role",
+    "authority",
     "character_name",
     "job_title",
     "persona",
@@ -58,6 +62,15 @@ def validate_scenario_bundle(data: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Missing or invalid required field: slug")
     if not title or not isinstance(title, str):
         raise ValueError("Missing or invalid required field: title")
+    if data.get("schema_version") != 2:
+        raise ValueError("Only RoomMind scenario schema_version 2 is supported")
+    task_config = data.get("task_config")
+    if not isinstance(task_config, dict):
+        raise ValueError("Missing or invalid required field: task_config")
+    required = {"task_type", "terminology", "state_schema", "phases", "completion_conditions"}
+    missing = sorted(required - set(task_config))
+    if missing:
+        raise ValueError(f"task_config missing required fields: {', '.join(missing)}")
     if "characters" in data and not isinstance(data["characters"], list):
         raise ValueError("characters must be an array")
     if "dispatch_rules" in data and not isinstance(data["dispatch_rules"], list):
@@ -85,6 +98,8 @@ def export_scenario_bundle(
             ),
         },
         "slug": scenario.slug,
+        "schema_version": 2,
+        "task_config": scenario.task_config or {},
         "title": scenario.title,
         "description": scenario.description,
         "player_side_goal": scenario.player_side_goal or scenario.business_goal or "",
@@ -132,6 +147,7 @@ async def apply_scenario_bundle(
     if update_slug and payload.get("slug"):
         scenario.slug = payload["slug"]
     scenario.title = payload["title"]
+    scenario.task_config = payload["task_config"]
     scenario.description = payload.get("description")
     scenario.business_goal = player_goal
     scenario.player_side_goal = player_goal

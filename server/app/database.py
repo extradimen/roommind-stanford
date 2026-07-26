@@ -89,6 +89,9 @@ async def init_db() -> None:
             text("ALTER TABLE scenario_templates ADD COLUMN IF NOT EXISTS opponent_side_goal TEXT")
         )
         await conn.execute(
+            text("ALTER TABLE scenario_templates ADD COLUMN IF NOT EXISTS task_config JSONB NOT NULL DEFAULT '{}'::jsonb")
+        )
+        await conn.execute(
             text(
                 "UPDATE scenario_templates SET player_side_goal = business_goal "
                 "WHERE player_side_goal IS NULL OR player_side_goal = ''"
@@ -103,3 +106,7 @@ async def init_db() -> None:
         await conn.execute(
             text("ALTER TABLE character_templates ADD COLUMN IF NOT EXISTS job_title VARCHAR(128) DEFAULT ''")
         )
+        await conn.execute(text("ALTER TABLE character_templates ADD COLUMN IF NOT EXISTS team_id VARCHAR(64) DEFAULT 'independent'"))
+        await conn.execute(text("ALTER TABLE character_templates ADD COLUMN IF NOT EXISTS relationship_to_player VARCHAR(32) DEFAULT 'counterpart'"))
+        await conn.execute(text("ALTER TABLE character_templates ADD COLUMN IF NOT EXISTS interaction_role VARCHAR(64) DEFAULT 'participant'"))
+        await conn.execute(text("ALTER TABLE character_templates ADD COLUMN IF NOT EXISTS authority JSONB NOT NULL DEFAULT '{}'::jsonb"))

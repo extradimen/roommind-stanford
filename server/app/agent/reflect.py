@@ -37,7 +37,7 @@ def _build_seed_memories(character: CharacterTemplate, scenario: ScenarioTemplat
         "importance": 7.0,
     })
     seeds.append({
-        "content": f"My responsibility in this meeting: {character.responsibility}",
+        "content": f"My responsibility in this task: {character.responsibility}",
         "importance": 8.0,
     })
 
@@ -56,7 +56,7 @@ def _build_seed_memories(character: CharacterTemplate, scenario: ScenarioTemplat
             })
 
     seeds.append({
-        "content": f"Negotiation scenario: {scenario.title}. {goal_seed_text(character, scenario)}",
+        "content": f"Task scenario: {scenario.title}. {goal_seed_text(character, scenario)}",
         "importance": 6.0,
     })
 
@@ -127,12 +127,12 @@ Private knowledge: {json.dumps(private, ensure_ascii=False)}
 Background facts you already know:
 {seed_facts}
 
-Meeting: {scenario.title}
+Task setting: {scenario.title}
 {goal_block}
 
 Write a 2-3 sentence opening strategy plan in English:
 - Which topic will you raise first?
-- What is your bottom line?
+- Which constraints must you protect?
 - How will you open the conversation?
 
 Output the plan only. No JSON. No explanation."""
@@ -199,7 +199,7 @@ Recent dialogue:
 {context[-600:]}
 
 Complete two steps in English:
-1. List 2 questions that matter most to you (negotiation situation, opponent intent, your risks).
+1. List 2 questions that matter most to you (task situation, participant intent, your risks).
 2. For each question, write one-sentence inference (higher-order reflection, not dialogue).
 
 Format:

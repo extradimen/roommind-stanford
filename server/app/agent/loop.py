@@ -136,7 +136,12 @@ async def run_agent_tick(
     # ------------------------------------------------------------------
     # Step 1 — PERCEIVE
     # ------------------------------------------------------------------
-    perceived = perceive_events(character, new_events, reply_language=reply_language)
+    perceived = perceive_events(
+        character,
+        new_events,
+        reply_language=reply_language,
+        relevance_signals=(scenario.task_config or {}).get("relevance_signals") or [],
+    )
     existing_sources = {eid for n in nodes for eid in n.source_event_ids}
     new_obs_nodes: list[MemoryNode] = []
     for obs in perceived:
@@ -210,7 +215,7 @@ async def run_agent_tick(
     goal_block = initial_plan_goal_block(character, scenario)
     user_label = user_speaker_label(character)
 
-    decision_prompt = f"""You are generative negotiation agent "{character.display_name}".
+    decision_prompt = f"""You are generative task-simulation agent "{character.display_name}".
 Every decision must follow your own goals and plan, not react blindly to the user.
 
 ━━━━━━━━━━━━━━━━━━━━
@@ -221,7 +226,7 @@ Behavior tendency: {json.dumps(character.tendency, ensure_ascii=False)}
 Private knowledge (only you know): {json.dumps(private, ensure_ascii=False)}
 
 ━━━━━━━━━━━━━━━━━━━━
-[Negotiation goals]
+[Task goals and relationship]
 {goal_block}
 
 ━━━━━━━━━━━━━━━━━━━━
@@ -243,6 +248,8 @@ Private knowledge (only you know): {json.dumps(private, ensure_ascii=False)}
 ━━━━━━━━━━━━━━━━━━━━
 [Situation]
 Scenario: {scenario.title} | Phase: {current_phase}
+Task type: {(scenario.task_config or {}).get('task_type', 'simulation')}
+Task terminology: {json.dumps((scenario.task_config or {}).get('terminology', {}), ensure_ascii=False)}
 {user_label}: "{user_input}"
 {wait_guidance}
 {quota_guidance}
