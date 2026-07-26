@@ -147,7 +147,7 @@ export async function listScenarios(): Promise<Scenario[]> {
 }
 
 export async function getScenario(id: number): Promise<Scenario> {
-  const res = await fetch(`/api/game/scenarios/${id}`);
+  const res = await fetch(`/api/game/scenarios/${id}?_=${Date.now()}`);
   if (!res.ok) throw new Error("Scenario not found");
   return res.json();
 }

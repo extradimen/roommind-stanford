@@ -1,21 +1,43 @@
 import type { PlayerCharacter, Scenario } from "./api";
 import { resolvePlayerFullName, resolvePlayerLabel } from "./characterNames";
 
+function pickAvatarManifest(
+  primary?: PlayerCharacter["avatar_manifest"],
+  fallback?: unknown,
+): PlayerCharacter["avatar_manifest"] {
+  const a = primary && typeof primary === "object" ? primary : {};
+  const b = fallback && typeof fallback === "object" ? (fallback as PlayerCharacter["avatar_manifest"]) : {};
+  const aUrl = typeof a.model_url === "string" ? a.model_url.trim() : "";
+  const bUrl = typeof b.model_url === "string" ? b.model_url.trim() : "";
+  if (aUrl) return a;
+  if (bUrl) return b;
+  return Object.keys(a).length ? a : b;
+}
+
 export function resolvePlayerCharacter(scenario: Scenario | null | undefined): PlayerCharacter | null {
   if (!scenario) return null;
 
+  const scenePc =
+    scenario.scene_config?.player_character && typeof scenario.scene_config.player_character === "object"
+      ? (scenario.scene_config.player_character as Record<string, unknown>)
+      : null;
+
   if (scenario.player_character?.character_name || scenario.player_character?.job_title) {
-    return scenario.player_character;
+    return {
+      ...scenario.player_character,
+      avatar_manifest: pickAvatarManifest(
+        scenario.player_character.avatar_manifest,
+        scenePc?.avatar_manifest,
+      ),
+    };
   }
 
-  const raw = scenario.scene_config?.player_character;
-  if (raw && typeof raw === "object") {
-    const pc = raw as Record<string, unknown>;
-    const character_name = String(pc.character_name || "").trim();
-    const job_title = String(pc.job_title || "").trim();
+  if (scenePc) {
+    const character_name = String(scenePc.character_name || "").trim();
+    const job_title = String(scenePc.job_title || "").trim();
     if (character_name || job_title) {
       const display_name =
-        String(pc.display_name || "").trim() ||
+        String(scenePc.display_name || "").trim() ||
         (character_name && job_title
           ? `${character_name} (${job_title})`
           : character_name || job_title);
@@ -23,7 +45,7 @@ export function resolvePlayerCharacter(scenario: Scenario | null | undefined): P
         character_name,
         job_title,
         display_name,
-        avatar_manifest: (pc.avatar_manifest as PlayerCharacter["avatar_manifest"]) || {},
+        avatar_manifest: pickAvatarManifest(undefined, scenePc.avatar_manifest),
       };
     }
   }

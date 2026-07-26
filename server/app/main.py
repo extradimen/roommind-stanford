@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.admin import router as admin_router
 from app.api.game import router as game_router
 from app.avatar_assets import AVATAR_DIR, ensure_avatar_dir
+from app.prop_assets import PROPS_DIR, ensure_props_dir
 from app.config import get_settings, reload_settings
 from app.database import init_db
 from app.platform_llm import ensure_platform_llm_defaults
@@ -43,7 +44,9 @@ app.include_router(admin_router)
 app.include_router(game_router)
 
 ensure_avatar_dir()
+ensure_props_dir()
 app.mount("/static/avatars", StaticFiles(directory=str(AVATAR_DIR)), name="avatar_assets")
+app.mount("/static/props", StaticFiles(directory=str(PROPS_DIR)), name="prop_assets")
 
 
 @app.on_event("startup")

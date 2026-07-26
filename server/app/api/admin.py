@@ -29,9 +29,21 @@ from app.models.db import (
 )
 from app.orchestrator.defaults import ORCHESTRATION_MODE, merge_orchestration_config, sanitize_llm_roles_storage
 from app.scenario_bundle import apply_scenario_bundle, export_scenario_bundle, validate_scenario_bundle
+from app.scene_visual_bundle import (
+    apply_scene_visual_bundle,
+    export_scene_visual_bundle,
+    validate_scene_visual_bundle,
+)
 from app.session_export import build_session_export_bundle
 from app.platform_config import CONFIG_PATH, ENV_PATH, PlatformConfig, load_platform_config, resolve_client_host, resolve_public_host, save_platform_config, urls_for_host
-from app.avatar_assets import ensure_avatar_dir, public_avatar_url, sanitize_upload_filename
+from app.avatar_assets import (
+    ensure_avatar_dir,
+    optimize_glb_for_web,
+    public_avatar_url,
+    sanitize_upload_filename,
+)
+from app.prop_assets import sanitize_prop_filename, store_prop_upload
+from app.avatar_manifest import sanitize_avatar_manifest
 from app.character_display import normalize_character_fields
 from app.scenario_side import normalize_side, sync_legacy_business_goal
 from app.schemas import (
@@ -241,6 +253,13 @@ async def create_scenario(body: ScenarioTemplateIn, db: DbDep, _: AdminDep) -> S
         if body.orchestration_config is not None
         else merge_orchestration_config({})
     )
+    scene_config = dict(body.scene_config or {})
+    player_block = scene_config.get("player_character")
+    if isinstance(player_block, dict):
+        player_copy = dict(player_block)
+        player_copy["avatar_manifest"] = sanitize_avatar_manifest(player_block.get("avatar_manifest"))
+        scene_config["player_character"] = player_copy
+
     scenario = ScenarioTemplate(
         slug=body.slug,
         title=body.title,
@@ -250,7 +269,7 @@ async def create_scenario(body: ScenarioTemplateIn, db: DbDep, _: AdminDep) -> S
         opponent_side_goal=body.opponent_side_goal,
         phases=body.phases,
         win_conditions=body.win_conditions,
-        scene_config=body.scene_config,
+        scene_config=scene_config,
         orchestration_config=orch,
         is_published=body.is_published,
     )
@@ -258,7 +277,9 @@ async def create_scenario(body: ScenarioTemplateIn, db: DbDep, _: AdminDep) -> S
     await db.flush()
 
     for idx, c in enumerate(body.characters):
-        db.add(CharacterTemplate(scenario_id=scenario.id, **_character_payload(c, idx)))
+        data = _character_payload(c, idx)
+        data["avatar_manifest"] = sanitize_avatar_manifest(data.get("avatar_manifest"))
+        db.add(CharacterTemplate(scenario_id=scenario.id, **data))
 
     await _sync_dispatch_rules(db, scenario.id, body.dispatch_rules)
     await db.flush()
@@ -282,16 +303,23 @@ async def update_scenario(scenario_id: int, body: ScenarioTemplateIn, db: DbDep,
         raise HTTPException(404, "Scenario not found")
 
     player_goal = body.player_side_goal or body.business_goal or ""
+    scene_config = dict(body.scene_config or {})
+    player_block = scene_config.get("player_character")
+    if isinstance(player_block, dict):
+        player_copy = dict(player_block)
+        player_copy["avatar_manifest"] = sanitize_avatar_manifest(player_block.get("avatar_manifest"))
+        scene_config["player_character"] = player_copy
+
     for field in (
         "slug",
         "title",
         "description",
         "phases",
         "win_conditions",
-        "scene_config",
         "is_published",
     ):
         setattr(scenario, field, getattr(body, field))
+    scenario.scene_config = scene_config
     if body.orchestration_config is not None:
         scenario.orchestration_config = merge_orchestration_config(body.orchestration_config)
     scenario.player_side_goal = player_goal
@@ -307,6 +335,7 @@ async def update_scenario(scenario_id: int, body: ScenarioTemplateIn, db: DbDep,
 
     for idx, c in enumerate(body.characters):
         data = _character_payload(c, idx)
+        data["avatar_manifest"] = sanitize_avatar_manifest(data.get("avatar_manifest"))
         if c.character_id in existing_ids:
             char = existing_ids[c.character_id]
             for k, v in data.items():
@@ -336,6 +365,45 @@ async def export_scenario(scenario_id: int, db: DbDep, _: AdminDep) -> dict[str,
         raise HTTPException(404, "Scenario not found")
     rules = await _load_dispatch_rules(db, scenario.id)
     return export_scenario_bundle(scenario, list(scenario.characters), rules)
+
+
+@router.get("/scenarios/{scenario_id}/scene-visual/export")
+async def export_scene_visual(scenario_id: int, db: DbDep, _: AdminDep) -> dict[str, Any]:
+    result = await db.execute(
+        select(ScenarioTemplate)
+        .where(ScenarioTemplate.id == scenario_id)
+        .options(selectinload(ScenarioTemplate.characters))
+    )
+    scenario = result.scalar_one_or_none()
+    if not scenario:
+        raise HTTPException(404, "Scenario not found")
+    return export_scene_visual_bundle(scenario, list(scenario.characters))
+
+
+@router.put("/scenarios/{scenario_id}/scene-visual/import", response_model=ScenarioTemplateOut)
+async def import_scene_visual(
+    scenario_id: int,
+    body: dict[str, Any],
+    db: DbDep,
+    _: AdminDep,
+) -> ScenarioTemplateOut:
+    result = await db.execute(
+        select(ScenarioTemplate)
+        .where(ScenarioTemplate.id == scenario_id)
+        .options(selectinload(ScenarioTemplate.characters))
+    )
+    scenario = result.scalar_one_or_none()
+    if not scenario:
+        raise HTTPException(404, "Scenario not found")
+    try:
+        data = validate_scene_visual_bundle(body)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    try:
+        scenario = await apply_scene_visual_bundle(db, scenario, data)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return await _scenario_to_out(db, scenario)
 
 
 @router.post("/scenarios/import", response_model=ScenarioTemplateOut)
@@ -626,9 +694,44 @@ async def upload_avatar(_: AdminDep, file: UploadFile = File(...)) -> dict[str, 
     data = await file.read()
     if not data:
         raise HTTPException(400, "Empty file")
-    if len(data) > 20 * 1024 * 1024:
-        raise HTTPException(400, "File too large (max 20MB)")
 
     target = ensure_avatar_dir() / filename
     target.write_bytes(data)
-    return {"url": public_avatar_url(filename), "filename": filename}
+
+    served_name = filename
+    optimized = False
+    if filename.lower().endswith(".glb"):
+        web_target = optimize_glb_for_web(target)
+        if web_target:
+            served_name = web_target.name
+            optimized = True
+
+    payload: dict[str, str] = {
+        "url": public_avatar_url(served_name),
+        "filename": served_name,
+    }
+    if optimized:
+        payload["optimized"] = "true"
+        payload["original_filename"] = filename
+    if len(data) > 5 * 1024 * 1024 and filename.lower().endswith(".glb"):
+        payload["warning"] = (
+            "Large GLB auto-compressed for web. Original kept on server; "
+            "game client uses the lighter -web.glb build."
+        )
+    return payload
+
+
+@router.post("/assets/prop")
+async def upload_prop(_: AdminDep, file: UploadFile = File(...)) -> dict[str, str]:
+    if not file.filename:
+        raise HTTPException(400, "Missing filename")
+    try:
+        filename = sanitize_prop_filename(file.filename)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty file")
+
+    return store_prop_upload(filename, data)

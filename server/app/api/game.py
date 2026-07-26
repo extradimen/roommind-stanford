@@ -12,6 +12,7 @@ from app.database import async_session_factory, get_db
 from app.memory.service import memory_service
 from app.models.db import AgentMemoryNode, ScenarioTemplate, SessionMessage
 from app.orchestrator.defaults import ORCHESTRATION_MODE, merge_orchestration_config
+from app.avatar_manifest import client_avatar_manifest
 from app.player_character import resolve_player_character
 from app.scenario_side import resolve_player_side_goal
 from app.schemas import (
@@ -86,7 +87,7 @@ async def get_published_scenario(scenario_id: int, db: DbDep) -> dict:
                 "display_name": c.display_name,
                 "side": c.side or "opponent",
                 "spawn_point": c.spawn_point,
-                "avatar_manifest": c.avatar_manifest,
+                "avatar_manifest": client_avatar_manifest(c.avatar_manifest),
             }
             for c in sorted(scenario.characters, key=lambda x: x.sort_order)
         ],

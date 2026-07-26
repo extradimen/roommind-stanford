@@ -9,6 +9,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    optimizeDeps: {
+      include: ["three", "@react-three/fiber", "@react-three/drei"],
+    },
+    assetsInclude: ["**/*.wasm"],
     server: {
       port: adminPort,
       host: true,

@@ -25,13 +25,20 @@
       "character_name": "Alex Chen",
       "job_title": "Chief Procurement Officer",
       "avatar_manifest": {
+        "avatar_style": "minecraft",
         "team": "buyer",
-        "suit": "#1e5631",
-        "accent": "#58a6ff",
-        "skin": "#e8b896",
+        "suit": "#1e3a5f",
+        "top": "#1e3a5f",
+        "bottom": "#2a2a2a",
+        "hair": "#5c4033",
+        "hair_style": "short",
+        "gender": "male",
+        "accent": "#c8d4e8",
+        "skin": "#e8c4a8",
         "pattern": "global",
         "accessory": "none",
-        "height": 1.72
+        "height": 1.72,
+        "label": "Strategic procurement"
       }
     }
   },
@@ -59,13 +66,20 @@
       },
       "spawn_point": "seat_opposite",
       "avatar_manifest": {
+        "avatar_style": "minecraft",
         "team": "supplier",
-        "suit": "#1a2744",
-        "accent": "#c9a227",
-        "skin": "#e8c4a0",
+        "suit": "#2f2f2f",
+        "top": "#2f2f2f",
+        "bottom": "#1a1a1a",
+        "hair": "#9e9e9e",
+        "hair_style": "gray",
+        "gender": "male",
+        "accent": "#8b2635",
+        "skin": "#f0d0b0",
         "pattern": "east",
-        "accessory": "fan",
-        "height": 1.75
+        "accessory": "none",
+        "height": 1.75,
+        "label": "Supplier CEO"
       },
       "sort_order": 0
     },
@@ -88,13 +102,20 @@
       },
       "spawn_point": "seat_side",
       "avatar_manifest": {
+        "avatar_style": "minecraft",
         "team": "supplier",
-        "suit": "#1a2744",
-        "accent": "#c9a227",
-        "skin": "#e8c4a0",
-        "pattern": "east",
-        "accessory": "briefcase",
-        "height": 1.68
+        "suit": "#1c1c1c",
+        "top": "#1c1c1c",
+        "bottom": "#3d3d3d",
+        "hair": "#e6c547",
+        "hair_style": "bob",
+        "gender": "female",
+        "accent": "#f5f5f5",
+        "skin": "#fdd5b8",
+        "pattern": "west",
+        "accessory": "none",
+        "height": 1.68,
+        "label": "Legal counsel"
       },
       "sort_order": 1
     },
@@ -109,13 +130,20 @@
       "private_state": { "market_benchmark": 83 },
       "spawn_point": "seat_adjacent",
       "avatar_manifest": {
+        "avatar_style": "minecraft",
         "team": "buyer",
-        "suit": "#1e5631",
-        "accent": "#00a896",
-        "skin": "#d4a574",
+        "suit": "#2d6a6a",
+        "top": "#2d6a6a",
+        "bottom": "#4a5568",
+        "hair": "#8b4513",
+        "hair_style": "ponytail",
+        "gender": "female",
+        "accent": "#48cae4",
+        "skin": "#eecfb0",
         "pattern": "global",
-        "accessory": "globe",
-        "height": 1.7
+        "accessory": "none",
+        "height": 1.7,
+        "label": "Procurement ally"
       },
       "sort_order": 2
     }

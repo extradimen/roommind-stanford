@@ -3,15 +3,17 @@ import {
   avatarScaleFromManifest,
   isImportedAvatar,
   manifestToProfile,
+  normalizeAvatarManifest,
   resolveAssetUrl,
 } from "../avatarManifest";
-import AnimatedAvatar, { type CulturalProfile } from "./AnimatedAvatar";
+import { type CulturalProfile } from "./AnimatedAvatar";
+import GlbMissingAvatar from "./GlbMissingAvatar";
 import GltfAvatarModel from "./GltfAvatarModel";
-import PortraitAvatarModel from "./PortraitAvatarModel";
 
 type Side = "opponent" | "player_ally" | "user";
 
 type Props = {
+  characterId: string;
   name: string;
   position: [number, number, number];
   profile: CulturalProfile;
@@ -19,61 +21,71 @@ type Props = {
   sideLabel?: string;
   side?: Side;
   active?: boolean;
+  pose?: "stand" | "sit";
+  rotationY?: number;
+  seatScale?: number;
 };
 
 export default function SceneAvatar({
+  characterId,
   name,
   position,
-  profile,
   manifest,
   sideLabel,
   side,
   active = false,
+  pose = "sit",
+  rotationY = 0,
+  seatScale = 1,
 }: Props) {
-  const importKind = isImportedAvatar(manifest);
-  const modelUrl = resolveAssetUrl(manifest?.model_url);
-  const imageUrl = resolveAssetUrl(manifest?.image_url);
-  const scale = avatarScaleFromManifest(manifest);
+  const manifestNorm = normalizeAvatarManifest(manifest);
+  const importKind = isImportedAvatar(manifestNorm);
+  const manifestScale = avatarScaleFromManifest(manifestNorm);
+  const modelUrl = resolveAssetUrl(manifestNorm?.model_url);
+
+  const missing = (
+    <GlbMissingAvatar
+      position={position}
+      rotationY={rotationY}
+      name={name}
+      sideLabel={sideLabel}
+      side={side}
+      pose={pose}
+      reason="missing"
+    />
+  );
 
   if (importKind === "model" && modelUrl) {
     return (
       <GltfAvatarModel
+        key={`${characterId}:${modelUrl}`}
+        instanceId={characterId}
         url={modelUrl}
         position={position}
-        scale={scale}
+        manifestScale={manifestScale}
+        seatScale={seatScale}
         name={name}
         sideLabel={sideLabel}
         side={side}
         active={active}
+        pose={pose}
+        rotationY={rotationY}
+        fallback={
+          <GlbMissingAvatar
+            position={position}
+            rotationY={rotationY}
+            name={name}
+            sideLabel={sideLabel}
+            side={side}
+            pose={pose}
+            reason="error"
+          />
+        }
       />
     );
   }
 
-  if (importKind === "image" && imageUrl) {
-    return (
-      <PortraitAvatarModel
-        url={imageUrl}
-        position={position}
-        name={name}
-        sideLabel={sideLabel}
-        side={side}
-        active={active}
-        accent={profile.accent}
-      />
-    );
-  }
-
-  return (
-    <AnimatedAvatar
-      position={position}
-      profile={profile}
-      name={name}
-      sideLabel={sideLabel}
-      side={side}
-      active={active}
-      scale={scale}
-    />
-  );
+  return missing;
 }
 
 export function buildSceneAvatarProfile(

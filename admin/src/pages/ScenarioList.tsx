@@ -155,6 +155,7 @@ export default function ScenarioList() {
               <td>{s.is_published ? "✓" : t.common.none}</td>
               <td>
                 <Link to={`/scenarios/${s.id}`} className="btn small">{t.common.edit}</Link>
+                <Link to={`/scenarios/${s.id}/scene`} className="btn small">{t.scenarios.sceneVisual}</Link>
                 <Link to={`/scenarios/${s.id}/orchestration`} className="btn small">{t.scenarios.agent}</Link>
                 <button className="btn small danger" onClick={() => remove(s.id)}>{t.common.delete}</button>
               </td>

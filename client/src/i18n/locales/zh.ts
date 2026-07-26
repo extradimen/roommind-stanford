@@ -52,6 +52,11 @@ export const zh = {
     sideOpponent: "对手",
     sideYou: "本方",
     sideYouHint: "你（谈判负责人）",
+    avatarGlbRequired: "请在场景视觉页上传 GLB",
+    avatarGlbLoading: "正在加载 3D…",
+    avatarGlbLoadingPct: "正在加载 3D {pct}%",
+    avatarGlbReady: "3D 模型",
+    avatarGlbFailed: "3D 加载失败",
   },
   debug: {
     title: "连接调试",

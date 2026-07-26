@@ -1,7 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, Character, ScenarioDispatchRule, ScenarioInput } from "../api";
-import AvatarUpload from "../components/AvatarUpload";
 import { useLocale } from "../i18n";
 
 type PlayerCharacterForm = {
@@ -13,14 +12,7 @@ type PlayerCharacterForm = {
 const emptyPlayerCharacter = (): PlayerCharacterForm => ({
   character_name: "Alex Chen",
   job_title: "Chief Procurement Officer",
-  avatar_manifest: {
-    suit: "#1e5631",
-    accent: "#58a6ff",
-    skin: "#e8b896",
-    pattern: "global",
-    accessory: "none",
-    height: 1.72,
-  },
+  avatar_manifest: {},
 });
 
 const emptyCharacter = (): Character => ({
@@ -32,7 +24,7 @@ const emptyCharacter = (): Character => ({
   responsibility: "",
   tendency: { risk: "medium", aggression: "medium", cooperation: "medium" },
   private_state: {},
-  avatar_manifest: { color: "#888888" },
+  avatar_manifest: { avatar_style: "gltf" },
   sort_order: 0,
 });
 
@@ -88,7 +80,7 @@ export default function ScenarioEditor() {
       setPlayerCharacter({
         character_name: String(pc.character_name || emptyPlayerCharacter().character_name),
         job_title: String(pc.job_title || emptyPlayerCharacter().job_title),
-        avatar_manifest: (pc.avatar_manifest as Record<string, unknown>) || emptyPlayerCharacter().avatar_manifest,
+        avatar_manifest: {},
       });
       return;
     }
@@ -227,7 +219,16 @@ export default function ScenarioEditor() {
           .filter(Boolean),
       }));
       const sceneConfig = JSON.parse(jsonScene) as Record<string, unknown>;
-      sceneConfig.player_character = playerCharacter;
+      const prevPc =
+        sceneConfig.player_character && typeof sceneConfig.player_character === "object"
+          ? (sceneConfig.player_character as Record<string, unknown>)
+          : {};
+      sceneConfig.player_character = {
+        ...prevPc,
+        character_name: playerCharacter.character_name,
+        job_title: playerCharacter.job_title,
+      };
+      setJsonScene(JSON.stringify(sceneConfig, null, 2));
       const payload: ScenarioInput = {
         ...form,
         phases: JSON.parse(jsonPhases),
@@ -256,6 +257,8 @@ export default function ScenarioEditor() {
       <h1>{isNew ? t.scenarioEditor.newTitle : t.scenarioEditor.editTitle}</h1>
       {!isNew && id && (
         <p className="muted">
+          <Link to={`/scenarios/${id}/scene`}>{t.scenarioEditor.sceneVisualLink}</Link>
+          {" · "}
           <Link to={`/scenarios/${id}/orchestration`}>{t.scenarioEditor.orchestrationLink}</Link>
         </p>
       )}
@@ -307,21 +310,15 @@ export default function ScenarioEditor() {
           <h2>{t.scenarioEditor.phasesSection}</h2>
           <label>{t.scenarioEditor.phasesJson}<textarea value={jsonPhases} onChange={(e) => setJsonPhases(e.target.value)} rows={4} className="mono" /></label>
           <label>{t.scenarioEditor.winConditionsJson}<textarea value={jsonWin} onChange={(e) => setJsonWin(e.target.value)} rows={5} className="mono" /></label>
-          <label>{t.scenarioEditor.sceneConfigJson}<textarea value={jsonScene} onChange={(e) => setJsonScene(e.target.value)} rows={5} className="mono" /></label>
         </section>
 
         <section>
           <h2>{t.scenarioEditor.playerCharacterSection}</h2>
-          <p className="muted">{t.scenarioEditor.playerCharacterHint}</p>
+          <p className="muted">{t.scenarioEditor.playerCharacterTextHint}</p>
           <div className="row">
             <label>{t.scenarioEditor.characterName}<input required value={playerCharacter.character_name} onChange={(e) => setPlayerCharacter({ ...playerCharacter, character_name: e.target.value })} /></label>
             <label>{t.scenarioEditor.jobTitle}<input required value={playerCharacter.job_title} onChange={(e) => setPlayerCharacter({ ...playerCharacter, job_title: e.target.value })} /></label>
           </div>
-          <AvatarUpload
-            manifest={playerCharacter.avatar_manifest}
-            onChange={(avatar_manifest) => setPlayerCharacter({ ...playerCharacter, avatar_manifest })}
-          />
-          <label>{t.scenarioEditor.avatarManifestJson}<textarea value={JSON.stringify(playerCharacter.avatar_manifest || {}, null, 2)} onChange={(e) => { try { setPlayerCharacter({ ...playerCharacter, avatar_manifest: JSON.parse(e.target.value) }); } catch { /* ignore */ } }} rows={4} className="mono" /></label>
         </section>
 
         <section>
@@ -356,11 +353,6 @@ export default function ScenarioEditor() {
                 <label>{t.scenarioEditor.tendencyJson}<textarea value={JSON.stringify(c.tendency)} onChange={(e) => updateChar(idx, { tendency: JSON.parse(e.target.value) })} rows={2} className="mono" /></label>
                 <label>{t.scenarioEditor.privateStateJson}<textarea value={JSON.stringify(c.private_state)} onChange={(e) => updateChar(idx, { private_state: JSON.parse(e.target.value) })} rows={2} className="mono" /></label>
               </div>
-              <label>{t.scenarioEditor.avatarManifestJson}<textarea value={JSON.stringify(c.avatar_manifest || {})} onChange={(e) => { try { updateChar(idx, { avatar_manifest: JSON.parse(e.target.value) }); } catch { /* ignore */ } }} rows={2} className="mono" /></label>
-              <AvatarUpload
-                manifest={c.avatar_manifest || {}}
-                onChange={(avatar_manifest) => updateChar(idx, { avatar_manifest })}
-              />
               <label>{t.scenarioEditor.systemPrompt}<textarea value={c.system_prompt || ""} onChange={(e) => updateChar(idx, { system_prompt: e.target.value })} rows={2} /></label>
               <label>
                 {t.scenarioEditor.llmConfigJson}

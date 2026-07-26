@@ -315,6 +315,30 @@ export default function Game() {
   }, [scenarioId, pushDebug]);
 
   useEffect(() => {
+    const id = parseInt(scenarioId || "0");
+    if (!id) return;
+
+    const refreshScenario = () => {
+      getScenario(id)
+        .then((s) => {
+          setScenario(s);
+          scenarioRef.current = s;
+        })
+        .catch(() => {});
+    };
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refreshScenario();
+    };
+    window.addEventListener("focus", refreshScenario);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", refreshScenario);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [scenarioId]);
+
+  useEffect(() => {
     sessionUuidRef.current = sessionUuid;
   }, [sessionUuid]);
 
@@ -768,6 +792,7 @@ export default function Game() {
                 characters={scenario.characters || []}
                 playerCharacter={playerCharacter}
                 activeSpeaker={activeSpeaker}
+                sceneConfig={scenario.scene_config}
                 compact
               />
               <span className="scene-widget-label">{t.game.room}</span>

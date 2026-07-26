@@ -11,6 +11,13 @@ export type AvatarManifest = {
   image_url?: string;
   model_url?: string;
   label?: string;
+  /** GLB-only avatars in 3D meeting scene */
+  avatar_style?: "gltf";
+  hair?: string;
+  top?: string;
+  bottom?: string;
+  hair_style?: "short" | "gray" | "bob" | "ponytail";
+  gender?: "male" | "female";
 };
 
 const DEFAULT_PROFILE: CulturalProfile = {
@@ -28,6 +35,15 @@ export function resolveAssetUrl(url?: string): string | undefined {
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   if (trimmed.startsWith("/")) return trimmed;
   return `/${trimmed.replace(/^\/+/, "")}`;
+}
+
+/** Strip empty import URLs so cleared avatars fall back to procedural models. */
+export function normalizeAvatarManifest(manifest?: AvatarManifest): AvatarManifest | undefined {
+  if (!manifest) return undefined;
+  const next: AvatarManifest = { ...manifest };
+  if (!resolveAssetUrl(next.model_url)) delete next.model_url;
+  if (!resolveAssetUrl(next.image_url)) delete next.image_url;
+  return next;
 }
 
 export function manifestToProfile(
@@ -57,7 +73,8 @@ export function avatarScaleFromManifest(manifest?: AvatarManifest): number {
 }
 
 export function isImportedAvatar(manifest?: AvatarManifest): "model" | "image" | null {
-  if (resolveAssetUrl(manifest?.model_url)) return "model";
-  if (resolveAssetUrl(manifest?.image_url)) return "image";
+  const m = normalizeAvatarManifest(manifest);
+  if (resolveAssetUrl(m?.model_url)) return "model";
+  if (resolveAssetUrl(m?.image_url)) return "image";
   return null;
 }

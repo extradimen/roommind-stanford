@@ -49,6 +49,13 @@ export const api = {
   deleteScenario: (id: number) =>
     request<{ status: string }>(`/api/admin/scenarios/${id}`, { method: "DELETE" }),
   exportScenario: (id: number) => request<Record<string, unknown>>(`/api/admin/scenarios/${id}/export`),
+  exportSceneVisual: (id: number) =>
+    request<Record<string, unknown>>(`/api/admin/scenarios/${id}/scene-visual/export`),
+  importSceneVisual: (id: number, data: Record<string, unknown>) =>
+    request<Scenario>(`/api/admin/scenarios/${id}/scene-visual/import`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
   importScenarioNew: (data: Record<string, unknown>) =>
     request<Scenario>("/api/admin/scenarios/import", { method: "POST", body: JSON.stringify(data) }),
   importScenarioReplace: (id: number, data: Record<string, unknown>) =>
@@ -102,7 +109,22 @@ export const api = {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
       throw new Error(err.detail || res.statusText);
     }
-    return res.json() as Promise<{ url: string; filename: string }>;
+    return res.json() as Promise<{ url: string; filename: string; warning?: string }>;
+  },
+
+  uploadProp: async (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch("/api/admin/assets/prop", {
+      method: "POST",
+      headers: { "X-Admin-Secret": getAdminSecret() },
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+    return res.json() as Promise<{ url: string; filename: string; warning?: string }>;
   },
 };
 

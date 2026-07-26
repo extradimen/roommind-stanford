@@ -21,7 +21,7 @@
   "ollama": {
     "apiKey": "",
     "baseUrl": "https://ollama.com",
-    "modelId": "deepseek-v3.1:671b",
+    "modelId": "deepseek-v4-flash",
     "apiKeyConfigured": true
   },
   "siliconflow": {

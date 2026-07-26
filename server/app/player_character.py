@@ -4,16 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.avatar_manifest import sanitize_avatar_manifest
+from app.avatar_assets import resolve_model_url_for_client
 from app.character_display import compose_display_name, normalize_character_fields
 from app.models.db import ScenarioTemplate
 
 DEFAULT_PLAYER_AVATAR: dict[str, Any] = {
-    "suit": "#1e5631",
-    "accent": "#58a6ff",
-    "skin": "#e8b896",
-    "pattern": "global",
-    "accessory": "none",
-    "height": 1.72,
+    "avatar_style": "gltf",
 }
 
 SLUG_PLAYER_DEFAULTS: dict[str, dict[str, str]] = {
@@ -45,9 +42,13 @@ def resolve_player_character(scenario: ScenarioTemplate) -> dict[str, Any]:
         title = slug_defaults.get("job_title", "Chief Procurement Officer")
         display = compose_display_name(name, title)
 
-    manifest = dict(raw.get("avatar_manifest") or {})
-    for key, value in DEFAULT_PLAYER_AVATAR.items():
-        manifest.setdefault(key, value)
+    manifest = sanitize_avatar_manifest(raw.get("avatar_manifest"))
+    model_url = resolve_model_url_for_client(manifest.get("model_url"))
+    if model_url:
+        manifest["model_url"] = model_url
+    elif "model_url" in manifest:
+        manifest.pop("model_url", None)
+    manifest.setdefault("avatar_style", "gltf")
 
     return {
         "character_id": "user",

@@ -11,6 +11,11 @@ from sqlalchemy.orm import selectinload
 
 from app.character_display import normalize_character_fields
 from app.models.db import CharacterTemplate, DispatchRule, ScenarioTemplate
+from app.scene_visual_bundle import (
+    empty_gltf_manifest,
+    merge_content_scene_config,
+    strip_content_scene_config,
+)
 from app.scenario_side import sync_legacy_business_goal
 
 BUNDLE_FORMAT = "roommind-scenario-bundle"
@@ -28,7 +33,6 @@ CHARACTER_EXPORT_FIELDS = (
     "system_prompt",
     "voice_id",
     "spawn_point",
-    "avatar_manifest",
     "llm_config",
     "sort_order",
 )
@@ -74,7 +78,11 @@ def export_scenario_bundle(
             "version": BUNDLE_VERSION,
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "scenario_id": scenario.id,
-            "note": "Scenario content only. Agent orchestration_config is stored separately.",
+            "note": (
+                "Scenario content only (no GLB avatars or visual scene config). "
+                "Use Scene visual / Web3D Studio export for 3D assets. "
+                "Agent orchestration_config is stored separately."
+            ),
         },
         "slug": scenario.slug,
         "title": scenario.title,
@@ -83,7 +91,7 @@ def export_scenario_bundle(
         "opponent_side_goal": scenario.opponent_side_goal or "",
         "phases": scenario.phases or [],
         "win_conditions": scenario.win_conditions or [],
-        "scene_config": scenario.scene_config or {},
+        "scene_config": strip_content_scene_config(scenario.scene_config),
         "director_prompt": scenario.director_prompt,
         "router_rules": scenario.router_rules or {},
         "is_published": scenario.is_published,
@@ -92,7 +100,7 @@ def export_scenario_bundle(
                 field: getattr(char, field)
                 for field in CHARACTER_EXPORT_FIELDS
                 if getattr(char, field, None) is not None
-                or field in ("tendency", "private_state", "avatar_manifest", "llm_config")
+                or field in ("tendency", "private_state", "llm_config")
             }
             for char in chars
         ],
@@ -110,9 +118,16 @@ async def apply_scenario_bundle(
     *,
     update_slug: bool = True,
 ) -> ScenarioTemplate:
-    """Replace scenario content from bundle. Does not touch orchestration_config."""
+    """Replace scenario content from bundle. Does not touch orchestration_config or scene visual."""
     payload = validate_scenario_bundle(data)
     player_goal = payload.get("player_side_goal") or payload.get("business_goal") or ""
+
+    existing_scene = scenario.scene_config if isinstance(scenario.scene_config, dict) else {}
+    existing_avatars = {
+        char.character_id: char.avatar_manifest
+        for char in (scenario.characters or [])
+        if char.character_id
+    }
 
     if update_slug and payload.get("slug"):
         scenario.slug = payload["slug"]
@@ -123,7 +138,7 @@ async def apply_scenario_bundle(
     scenario.opponent_side_goal = payload.get("opponent_side_goal") or ""
     scenario.phases = payload.get("phases") or ["opening", "discovery", "bargaining", "closing"]
     scenario.win_conditions = payload.get("win_conditions") or []
-    scenario.scene_config = payload.get("scene_config") or {}
+    scenario.scene_config = merge_content_scene_config(payload.get("scene_config"), existing_scene)
     if "director_prompt" in payload:
         scenario.director_prompt = payload.get("director_prompt")
     if "router_rules" in payload:
@@ -158,7 +173,10 @@ async def apply_scenario_bundle(
         fields.setdefault("responsibility", "")
         fields.setdefault("tendency", {})
         fields.setdefault("private_state", {})
-        fields.setdefault("avatar_manifest", {})
+        fields["avatar_manifest"] = existing_avatars.get(
+            str(fields["character_id"]),
+            empty_gltf_manifest(),
+        )
         fields.setdefault("llm_config", {})
         fields["sort_order"] = fields.get("sort_order", idx)
         db.add(CharacterTemplate(scenario_id=scenario.id, **fields))

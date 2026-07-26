@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Link, Navigate, Route, Routes } from "react-router-dom";
 import ClientLinks from "./ClientLinks";
 import LanguageSwitcher from "./components/LanguageSwitcher";
@@ -9,6 +10,8 @@ import PlatformSettings from "./pages/PlatformSettings";
 import ScenarioEditor from "./pages/ScenarioEditor";
 import ScenarioList from "./pages/ScenarioList";
 import SessionDebug from "./pages/SessionDebug";
+
+const SceneVisualStudio = lazy(() => import("./pages/SceneVisualStudio"));
 
 export default function App() {
   const { t } = useLocale();
@@ -39,6 +42,14 @@ export default function App() {
           <Route path="/scenarios" element={<ScenarioList />} />
           <Route path="/scenarios/new" element={<ScenarioEditor />} />
           <Route path="/scenarios/:id/orchestration" element={<OrchestrationSettings />} />
+          <Route
+            path="/scenarios/:id/scene"
+            element={
+              <Suspense fallback={<p className="muted">{t.common.loading}</p>}>
+                <SceneVisualStudio />
+              </Suspense>
+            }
+          />
           <Route path="/scenarios/:id" element={<ScenarioEditor />} />
           <Route path="/dispatch" element={<Navigate to="/scenarios" replace />} />
           <Route path="/sessions/debug" element={<SessionDebug />} />

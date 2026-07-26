@@ -54,6 +54,11 @@ export const en = {
     sideOpponent: "Opponent",
     sideYou: "Your side",
     sideYouHint: "You (lead negotiator)",
+    avatarGlbRequired: "Upload GLB in Scene visual",
+    avatarGlbLoading: "Loading 3D…",
+    avatarGlbLoadingPct: "Loading 3D {pct}%",
+    avatarGlbReady: "3D model",
+    avatarGlbFailed: "3D load failed",
   },
   debug: {
     title: "Connection debug",
