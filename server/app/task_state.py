@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from copy import deepcopy
 from typing import Any
 
@@ -15,6 +16,7 @@ from app.models.db import CharacterTemplate
 
 
 ALLOWED_STATUSES = {"unknown", "proposed", "disputed", "confirmed", "rejected"}
+logger = logging.getLogger(__name__)
 
 
 def normalize_evaluator_payload(raw: str) -> dict[str, Any]:
@@ -171,7 +173,10 @@ Follow each field's type and confirmation_policy. Preserve prior confirmed value
             response_format={"type": "json_object"},
         )
         parsed = normalize_evaluator_payload(raw)
+        if not isinstance(parsed.get("updates"), list):
+            logger.warning("Task evaluator returned no usable updates: %s", raw[:2000])
     except Exception:
+        logger.exception("Task evaluator failed; preserving the previous task state")
         parsed = {}
 
     schema = task_config.get("state_schema") or {}
