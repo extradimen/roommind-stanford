@@ -118,6 +118,7 @@ async def run_agent_tick(
     mentioned: bool = False,
     timeline: WorldTimeline | None = None,
     reply_language: str = "en",
+    task_state: dict[str, Any] | None = None,
 ) -> AgentLoopResult:
     """
     Stanford Generative Agent perceive → retrieve → react → act loop.
@@ -224,6 +225,9 @@ Persona: {character.persona}
 Responsibility: {character.responsibility}
 Behavior tendency: {json.dumps(character.tendency, ensure_ascii=False)}
 Private knowledge (only you know): {json.dumps(private, ensure_ascii=False)}
+Team: {character.team_id} | Relationship to player: {character.relationship_to_player}
+Interaction role: {character.interaction_role}
+Authority and action limits: {json.dumps(character.authority or {}, ensure_ascii=False)}
 
 ━━━━━━━━━━━━━━━━━━━━
 [Task goals and relationship]
@@ -250,6 +254,7 @@ Private knowledge (only you know): {json.dumps(private, ensure_ascii=False)}
 Scenario: {scenario.title} | Phase: {current_phase}
 Task type: {(scenario.task_config or {}).get('task_type', 'simulation')}
 Task terminology: {json.dumps((scenario.task_config or {}).get('terminology', {}), ensure_ascii=False)}
+Shared task state (confirmed work and open issues): {json.dumps(task_state or {}, ensure_ascii=False)}
 {user_label}: "{user_input}"
 {wait_guidance}
 {quota_guidance}
@@ -261,6 +266,8 @@ Priority:
 2. Opportunity: did the user open a topic you can advance?
 3. Strategic wait: if speaking now hurts you, wait is valid.
 4. No repetition: do not repeat what you just said.
+5. State-aware: advance an open issue; do not reopen a confirmed issue without new evidence.
+6. Authority: never propose, accept, execute, or confirm an action outside your configured authority.
 
 {decision_language_rule(reply_language)}
 

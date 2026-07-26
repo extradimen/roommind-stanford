@@ -253,19 +253,19 @@ export async function createSession(
     body: JSON.stringify({
       scenario_id: scenarioId,
       session_mode: sessionMode,
-      run_config: sessionMode === "test" ? { max_turns: 20, player_strategy: "balanced" } : {},
+      run_config: sessionMode === "test" ? { safety_max_turns: 50, player_strategy: "balanced" } : {},
     }),
   });
   if (!res.ok) throw new Error("Failed to create session");
   return res.json();
 }
 
-export async function runTestStep(sessionUuid: string, maxSteps = 1, locale?: string) {
-  const path = maxSteps === 1 ? "step" : "run";
+export async function runTestStep(sessionUuid: string, maxSteps = 1, locale?: string, untilComplete = false) {
+  const path = maxSteps === 1 && !untilComplete ? "step" : "run";
   const res = await fetch(`/api/game/sessions/${sessionUuid}/test/${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ max_steps: maxSteps, locale }),
+    body: JSON.stringify({ max_steps: maxSteps, until_complete: untilComplete, locale }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

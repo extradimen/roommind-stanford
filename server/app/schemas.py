@@ -69,6 +69,8 @@ class CharacterTemplateIn(BaseModel):
     relationship_to_player: str = "counterpart"
     interaction_role: str = "participant"
     authority: dict[str, Any] = Field(default_factory=dict)
+    aliases: list[str] = Field(default_factory=list)
+    fallback_actions: dict[str, Any] = Field(default_factory=dict)
     character_name: str = ""
     job_title: str = ""
     display_name: str | None = None
@@ -152,12 +154,27 @@ class ScenarioTemplateIn(BaseModel):
         if not isinstance(conditions, dict):
             raise ValueError("task_config.completion_conditions must be an object")
         known_fields = set(state_schema)
-        for condition in [*(conditions.get("all") or []), *(conditions.get("any") or [])]:
+        phase_conditions = [
+            condition
+            for phase in phases
+            for condition in [
+                *((phase.get("entry_conditions") or {}).get("all") or []),
+                *((phase.get("entry_conditions") or {}).get("any") or []),
+            ]
+        ]
+        for condition in [*(conditions.get("all") or []), *(conditions.get("any") or []), *phase_conditions]:
             if condition.get("field") not in known_fields:
-                raise ValueError(f"Completion condition references unknown field: {condition.get('field')}")
+                raise ValueError(f"Task condition references unknown field: {condition.get('field')}")
         character_ids = {c.character_id for c in self.characters}
         if len(character_ids) != len(self.characters):
             raise ValueError("character_id values must be unique")
+        for field, spec in state_schema.items():
+            for permission_key in ("propose_permissions", "confirm_permissions"):
+                unknown = set(spec.get(permission_key) or []) - character_ids - {"player", "user"}
+                if unknown:
+                    raise ValueError(
+                        f"{field}.{permission_key} references unknown characters: {', '.join(sorted(unknown))}"
+                    )
         for rule in self.dispatch_rules:
             unknown = set(rule.priority_character_ids) - character_ids
             if unknown:
@@ -278,6 +295,7 @@ class UserMessageIn(BaseModel):
 
 class TestRunIn(BaseModel):
     max_steps: int = Field(default=1, ge=1, le=50)
+    until_complete: bool = False
     locale: str | None = None
 
 

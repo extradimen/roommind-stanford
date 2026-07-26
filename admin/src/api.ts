@@ -160,6 +160,8 @@ export interface Character {
   relationship_to_player: string;
   interaction_role: string;
   authority: Record<string, unknown>;
+  aliases: string[];
+  fallback_actions: Record<string, unknown>;
   character_name: string;
   job_title: string;
   display_name?: string;

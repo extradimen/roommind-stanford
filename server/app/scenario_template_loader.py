@@ -25,6 +25,8 @@ CHARACTER_FIELDS = (
     "relationship_to_player",
     "interaction_role",
     "authority",
+    "aliases",
+    "fallback_actions",
     "character_name",
     "job_title",
     "display_name",

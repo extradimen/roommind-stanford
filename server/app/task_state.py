@@ -58,9 +58,35 @@ def _condition_result(condition: dict[str, Any], variables: dict[str, Any]) -> d
     field = str(condition.get("field", ""))
     state = variables.get(field) or {}
     required_status = condition.get("required_status", "confirmed")
-    status_ok = state.get("status") == required_status if required_status else True
+    allowed_statuses = condition.get("allowed_statuses")
+    status_ok = state.get("status") in allowed_statuses if allowed_statuses else (state.get("status") == required_status if required_status else True)
     value_ok = _compare(state.get("value"), str(condition.get("operator", "==")), condition.get("value"))
     return {"condition": condition, "met": bool(status_ok and value_ok), "actual": state.get("value"), "status": state.get("status", "unknown")}
+
+
+def conditions_met(root: dict[str, Any] | None, variables: dict[str, Any]) -> bool:
+    if not root:
+        return False
+    all_results = [_condition_result(c, variables) for c in root.get("all", [])]
+    any_results = [_condition_result(c, variables) for c in root.get("any", [])]
+    return bool(all_results or any_results) and all(r["met"] for r in all_results) and (not any_results or any(r["met"] for r in any_results))
+
+
+def advance_phase(task_config: dict[str, Any], task_state: dict[str, Any]) -> str:
+    """Advance monotonically to the furthest phase whose entry conditions are met."""
+    phases = [p for p in task_config.get("phases", []) if isinstance(p, dict) and p.get("phase_id")]
+    if not phases:
+        return str(task_state.get("phase") or "active")
+    ids = [str(p["phase_id"]) for p in phases]
+    current = str(task_state.get("phase") or ids[0])
+    current_index = ids.index(current) if current in ids else 0
+    variables = task_state.get("variables") or {}
+    furthest = current_index
+    for index, phase in enumerate(phases[current_index + 1 :], start=current_index + 1):
+        if conditions_met(phase.get("entry_conditions"), variables):
+            furthest = index
+    task_state["phase"] = ids[furthest]
+    return ids[furthest]
 
 
 def evaluate_conditions(task_config: dict[str, Any], task_state: dict[str, Any]) -> dict[str, Any]:
@@ -72,6 +98,7 @@ def evaluate_conditions(task_config: dict[str, Any], task_state: dict[str, Any])
     task_state["condition_results"] = all_results + any_results
     task_state["completion_status"] = "completed" if complete and (all_results or any_results) else "in_progress"
     task_state["open_issues"] = [name for name, value in variables.items() if value.get("status") != "confirmed"]
+    advance_phase(task_config, task_state)
     return task_state
 
 
@@ -125,9 +152,6 @@ Follow each field's type and confirmation_policy. Preserve prior confirmed value
     except Exception:
         parsed = {}
 
-    valid_phases = [p.get("phase_id") for p in task_config.get("phases", []) if isinstance(p, dict)]
-    if parsed.get("phase") in valid_phases:
-        state["phase"] = parsed["phase"]
     schema = task_config.get("state_schema") or {}
     authorized: dict[str, set[str]] = {field: set() for field in schema}
     for character in characters:
@@ -141,6 +165,11 @@ Follow each field's type and confirmation_policy. Preserve prior confirmed value
             continue
         current = variables.setdefault(field, {"value": None, "status": "unknown", "proposals": [], "confirmations": [], "evidence": []})
         proposal = {"value": update.get("value"), "proposed_by": update.get("proposed_by"), "evidence": update.get("evidence") or []}
+        proposed_by = str(update.get("proposed_by") or "")
+        configured_proposers = set(schema[field].get("propose_permissions") or [])
+        if "player" in configured_proposers:
+            configured_proposers.add("user")
+        proposer_valid = not configured_proposers or proposed_by in configured_proposers
         if update["status"] in {"proposed", "disputed", "rejected"}:
             current.setdefault("proposals", []).append(proposal)
         confirmations = list(dict.fromkeys(update.get("confirmed_by") or []))
@@ -148,6 +177,13 @@ Follow each field's type and confirmation_policy. Preserve prior confirmed value
         policy = schema[field].get("confirmation_policy", "responsible_participant")
         has_player = "user" in confirmations
         has_authorized = bool(authorized[field].intersection(confirmations))
+        configured_confirmers = set(schema[field].get("confirm_permissions") or [])
+        if "player" in configured_confirmers:
+            configured_confirmers.add("user")
+        if configured_confirmers:
+            confirmations = [speaker for speaker in confirmations if speaker in configured_confirmers]
+            has_player = "user" in confirmations
+            has_authorized = bool((authorized[field] | configured_confirmers).intersection(confirmations) - {"user", "player"})
         confirmation_valid = {
             "player": has_player,
             "responsible_participant": has_authorized,
@@ -157,7 +193,11 @@ Follow each field's type and confirmation_policy. Preserve prior confirmed value
         }.get(policy, False)
         if status == "confirmed" and not confirmation_valid:
             status = "proposed"
-        current["value"] = update.get("value")
+        if not proposer_valid and status in {"proposed", "disputed", "confirmed"}:
+            status = "disputed"
+            current.setdefault("permission_violations", []).append({"action": "propose", "speaker_id": proposed_by, "value": update.get("value")})
+        else:
+            current["value"] = update.get("value")
         current["status"] = status
         current["confirmations"] = confirmations
         current.setdefault("evidence", []).extend(update.get("evidence") or [])

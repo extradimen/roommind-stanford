@@ -5,7 +5,7 @@ from app.agent.speech_safety import (
     player_speech_rejection_reason,
     speech_rejection_reason,
 )
-from app.task_state import evaluate_conditions, initial_task_state
+from app.task_state import advance_phase, evaluate_conditions, initial_task_state
 from app.player_agent import normalize_player_content
 
 
@@ -51,6 +51,30 @@ def main() -> None:
     assert evaluate_conditions(config, state)["completion_status"] == "in_progress"
     state["variables"]["outcome"]["status"] = "confirmed"
     assert evaluate_conditions(config, state)["completion_status"] == "completed"
+
+    phase_config = {
+        "state_schema": {
+            "facts_known": {"type": "boolean"},
+            "action_done": {"type": "boolean"},
+        },
+        "phases": [
+            {"phase_id": "observe"},
+            {"phase_id": "act", "entry_conditions": {"all": [
+                {"field": "facts_known", "operator": "==", "value": True, "required_status": "confirmed"}
+            ]}},
+            {"phase_id": "close", "entry_conditions": {"all": [
+                {"field": "action_done", "operator": "==", "value": True, "required_status": "confirmed"}
+            ]}},
+        ],
+        "completion_conditions": {"all": []},
+    }
+    phase_state = initial_task_state(phase_config)
+    phase_state["variables"]["facts_known"].update(value=True, status="confirmed")
+    assert advance_phase(phase_config, phase_state) == "act"
+    phase_state["variables"]["facts_known"].update(value=False, status="disputed")
+    assert advance_phase(phase_config, phase_state) == "act", "phase progression must be monotonic"
+    phase_state["variables"]["action_done"].update(value=True, status="confirmed")
+    assert advance_phase(phase_config, phase_state) == "close"
     print("NPC speech safety and task-state smoke test: ok")
 
 

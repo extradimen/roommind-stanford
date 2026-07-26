@@ -46,13 +46,15 @@ async def migrate_scenarios_to_schema_v2() -> None:
         scenarios = list(result.scalars().all())
         changed = False
         for scenario in scenarios:
-            if (scenario.task_config or {}).get("task_type"):
-                continue
-            if find_scenario_template_by_slug(scenario.slug):
+            template = find_scenario_template_by_slug(scenario.slug)
+            current_version = int((scenario.task_config or {}).get("config_version") or 0)
+            template_version = int(((template or {}).get("task_config") or {}).get("config_version") or 0)
+            if template and (not (scenario.task_config or {}).get("task_type") or template_version > current_version):
                 await reimport_scenario_from_template(db, scenario.slug, overwrite_orchestration=False)
-            else:
+                changed = True
+            elif not (scenario.task_config or {}).get("task_type"):
                 scenario.is_published = False
-            changed = True
+                changed = True
         if changed:
             await db.commit()
 

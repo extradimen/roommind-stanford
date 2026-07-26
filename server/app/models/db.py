@@ -76,6 +76,8 @@ class CharacterTemplate(Base):
     relationship_to_player: Mapped[str] = mapped_column(String(32), default="counterpart")
     interaction_role: Mapped[str] = mapped_column(String(64), default="participant")
     authority: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    aliases: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    fallback_actions: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     character_name: Mapped[str] = mapped_column(String(128), default="")
     job_title: Mapped[str] = mapped_column(String(128), default="")
     display_name: Mapped[str] = mapped_column(String(128))

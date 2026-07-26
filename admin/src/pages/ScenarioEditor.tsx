@@ -22,6 +22,8 @@ const emptyCharacter = (): Character => ({
   relationship_to_player: "counterpart",
   interaction_role: "participant",
   authority: { can_confirm: ["task_outcome"] },
+  aliases: [],
+  fallback_actions: {},
   character_name: "",
   job_title: "",
   persona: "",
@@ -382,6 +384,14 @@ export default function ScenarioEditor() {
                   <label>Interaction role<input value={c.interaction_role} onChange={(e) => updateChar(idx, { interaction_role: e.target.value })} /></label>
                 </div>
                 <label>Authority JSON<textarea value={JSON.stringify(c.authority)} onChange={(e) => updateChar(idx, { authority: JSON.parse(e.target.value) })} rows={2} className="mono" /></label>
+                <label>Aliases (comma separated)<input value={(c.aliases || []).join(", ")} onChange={(e) => updateChar(idx, { aliases: e.target.value.split(",").map((v) => v.trim()).filter(Boolean) })} /></label>
+                <label>Fallback actions JSON<textarea value={JSON.stringify(c.fallback_actions || {})} onChange={(e) => {
+                  try {
+                    updateChar(idx, { fallback_actions: JSON.parse(e.target.value || "{}") });
+                  } catch {
+                    /* keep the last valid object while the user is typing */
+                  }
+                }} rows={2} className="mono" /></label>
               </div>
               <label>{t.scenarioEditor.systemPrompt}<textarea value={c.system_prompt || ""} onChange={(e) => updateChar(idx, { system_prompt: e.target.value })} rows={2} /></label>
               <label>

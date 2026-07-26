@@ -95,9 +95,13 @@ class GenerativeOrchestrator:
         )
         tick += 1
 
-        mentioned  = set(orch_support.match_mentioned_characters(user_input, characters))
+        mentioned_list = orch_support.match_mentioned_characters(user_input, characters)
+        pending = [cid for cid in updated_state.get("_pending_responses", []) if cid not in mentioned_list]
+        # A direct mention in the current utterance outranks an older queued response.
+        priority_mentions = [*mentioned_list, *pending]
+        mentioned = set(priority_mentions)
         rule_hits  = orch_support.match_dispatch_rules(user_input, dispatch_rules)
-        agent_order = self._agent_order(characters, mentioned, rule_hits)
+        agent_order = self._agent_order(characters, priority_mentions, rule_hits)
 
         yield {
             "type": "processing",
@@ -189,6 +193,7 @@ class GenerativeOrchestrator:
                 mentioned=cid in mentioned,
                 timeline=timeline,
                 reply_language=reply_language,
+                task_state=updated_state.get("task_state") or {},
             )
             npc_llm_labels[cid] = resolve_llm(llm_cfg, orch_cfg, "npc", char).label()
 
@@ -298,6 +303,8 @@ class GenerativeOrchestrator:
         # PERSIST STATE
         # ----------------------------------------------------------------
         updated_state[WorldTimeline.KEY] = timeline.to_list()
+        spoken_ids = {reply.character_id for reply in replies}
+        updated_state["_pending_responses"] = [cid for cid in priority_mentions if cid not in spoken_ids]
         updated_state["_importance_accumulators"] = accumulators
         updated_state["_last_debug"] = {
             "turn_id":                  turn_id,
@@ -331,14 +338,14 @@ class GenerativeOrchestrator:
     def _agent_order(
         self,
         characters: list[CharacterTemplate],
-        mentioned: set[str],
+        mentioned: list[str],
         rule_hits: list[str],
     ) -> list[CharacterTemplate]:
         char_map = {c.character_id: c for c in characters}
         ordered: list[CharacterTemplate] = []
         seen: set[str] = set()
 
-        for cid in list(mentioned) + rule_hits:
+        for cid in mentioned + rule_hits:
             if cid in char_map and cid not in seen:
                 ordered.append(char_map[cid])
                 seen.add(cid)

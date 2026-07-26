@@ -78,21 +78,19 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
             turn_result = {k: v for k, v in event.items() if k != "_result"}
 
     completed_turns = sum(1 for m in rows if m.speaker_type == "user") + 1
-    max_turns = max(1, min(int((session.run_config or {}).get("max_turns", 20)), 100))
+    safety_max_turns = max(10, min(int((session.run_config or {}).get("safety_max_turns", 50)), 100))
     stop_reason = None
     task_complete = ((session.shared_state or {}).get("task_state") or {}).get("completion_status") == "completed"
     if task_complete:
         stop_reason = "completion_conditions_met"
-    elif move.requested_end:
-        stop_reason = "player_requested_end"
-    elif completed_turns >= max_turns:
-        stop_reason = "max_turns_reached"
+    elif completed_turns >= safety_max_turns:
+        stop_reason = "safety_limit_reached"
     if stop_reason:
-        session.status = "completed"
+        session.status = "completed" if task_complete else "stopped"
     shared = dict(session.shared_state or {})
     shared["_test_state"] = {
         "completed_turns": completed_turns,
-        "max_turns": max_turns,
+        "safety_max_turns": safety_max_turns,
         "stop_reason": stop_reason,
         "last_player_intent": move.intent,
     }
@@ -363,14 +361,24 @@ async def run_test_step(session_uuid: str, body: TestRunIn, db: DbDep) -> dict:
 
 @router.post("/sessions/{session_uuid}/test/run")
 async def run_test_session(session_uuid: str, body: TestRunIn, db: DbDep) -> dict:
-    """Run a bounded number of autonomous turns; callers may invoke again to resume."""
+    """Run requested turns or continue until task completion, with a safety cap."""
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    completed = sum(1 for m in session.messages if m.speaker_type == "user")
+    safety_max = max(10, min(int((session.run_config or {}).get("safety_max_turns", 50)), 100))
+    iterations = max(0, safety_max - completed) if body.until_complete else body.max_steps
     steps: list[dict] = []
-    for _ in range(body.max_steps):
-        step = await _run_test_step(db, session_uuid, body.locale)
-        steps.append(step)
-        if step["status"] != "active":
-            break
-    return {"steps": steps, "step_count": len(steps), "status": steps[-1]["status"]}
+    try:
+        for _ in range(iterations):
+            step = await _run_test_step(db, session_uuid, body.locale)
+            steps.append(step)
+            if step["status"] != "active":
+                break
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    status = steps[-1]["status"] if steps else session.status
+    return {"steps": steps, "step_count": len(steps), "status": status}
 
 
 @router.post("/sessions/{session_uuid}/test/pause")

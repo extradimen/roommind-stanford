@@ -96,12 +96,14 @@ class OrchestratorSupport:
         hits: list[str] = []
         seen: set[str] = set()
         for c in characters:
-            labels = [c.display_name]
+            labels = [c.display_name, c.character_name, c.job_title, *(c.aliases or [])]
+            if c.character_name:
+                labels.extend(c.character_name.split())
             for sep in ("（", "("):
                 if sep in c.display_name:
                     labels.append(c.display_name.split(sep)[0].strip())
             for label in labels:
-                if len(label) >= 2 and label in user_input and c.character_id not in seen:
+                if len(label) >= 2 and label.casefold() in user_input.casefold() and c.character_id not in seen:
                     hits.append(c.character_id)
                     seen.add(c.character_id)
                     break

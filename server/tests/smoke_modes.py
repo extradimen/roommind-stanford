@@ -55,7 +55,7 @@ async def main() -> None:
             db,
             scenario.id,
             session_mode="test",
-            run_config={"max_turns": 3, "player_strategy": "balanced"},
+            run_config={"safety_max_turns": 50, "player_strategy": "balanced"},
         )
         await db.flush()
 

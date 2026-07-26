@@ -97,6 +97,7 @@ The user just said: {user_input}
 Requirements:
 - Speak like a real participant in this configured task; do not repeat the prompt
 - Reflect your persona: {character.persona}
+- Stay within these authority and action limits: {character.authority}
 - Treat private goals, internal plans, hidden knowledge, redlines, and reservation
   values as secret. Never quote, summarize, or label them in public speech.
 - Do not say phrases such as "my plan is", "I will first", "private knowledge",
@@ -133,10 +134,13 @@ Requirements:
         if not rejection:
             return cleaned, emotion, gesture
 
-    if character.relationship_to_player in {"ally", "advisor", "teammate"}:
-        fallback = "I recommend that we clarify the remaining task details before moving forward."
-    else:
-        fallback = "I need the remaining task details clarified before I can commit."
+    configured = character.fallback_actions or {}
+    fallback = str(configured.get("default") or "").strip()
+    if not fallback:
+        if character.relationship_to_player in {"ally", "advisor", "teammate"}:
+            fallback = "Please clarify the highest-priority open issue so I can help move the task forward."
+        else:
+            fallback = "Please clarify the highest-priority open issue before I commit."
     return fallback, emotion, gesture
 
 

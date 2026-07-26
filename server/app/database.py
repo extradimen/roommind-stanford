@@ -110,3 +110,5 @@ async def init_db() -> None:
         await conn.execute(text("ALTER TABLE character_templates ADD COLUMN IF NOT EXISTS relationship_to_player VARCHAR(32) DEFAULT 'counterpart'"))
         await conn.execute(text("ALTER TABLE character_templates ADD COLUMN IF NOT EXISTS interaction_role VARCHAR(64) DEFAULT 'participant'"))
         await conn.execute(text("ALTER TABLE character_templates ADD COLUMN IF NOT EXISTS authority JSONB NOT NULL DEFAULT '{}'::jsonb"))
+        await conn.execute(text("ALTER TABLE character_templates ADD COLUMN IF NOT EXISTS aliases JSONB NOT NULL DEFAULT '[]'::jsonb"))
+        await conn.execute(text("ALTER TABLE character_templates ADD COLUMN IF NOT EXISTS fallback_actions JSONB NOT NULL DEFAULT '{}'::jsonb"))

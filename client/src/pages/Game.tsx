@@ -320,12 +320,12 @@ export default function Game() {
     };
   }, [scenarioId, sessionMode, pushDebug]);
 
-  const runAiTurns = async (steps: number) => {
+  const runAiTurns = async (steps: number, untilComplete = false) => {
     if (!sessionUuid || loading) return;
     setLoading(true);
     setError("");
     try {
-      const result = await runTestStep(sessionUuid, steps, locale);
+      const result = await runTestStep(sessionUuid, steps, locale, untilComplete);
       const lastStep = Array.isArray(result.steps) && result.steps.length
         ? result.steps[result.steps.length - 1]
         : undefined;
@@ -909,8 +909,11 @@ export default function Game() {
                   <button type="button" disabled={loading || testStatus !== "active"} onClick={() => runAiTurns(1)}>
                     Run 1 AI turn
                   </button>
-                  <button type="button" disabled={loading || testStatus !== "active"} onClick={() => runAiTurns(5)}>
-                    Run 5 AI turns
+                  <button type="button" disabled={loading || testStatus !== "active"} onClick={() => runAiTurns(10)}>
+                    Run 10 AI turns
+                  </button>
+                  <button type="button" disabled={loading || testStatus !== "active"} onClick={() => runAiTurns(1, true)}>
+                    Run until task complete
                   </button>
                   {testStatus === "paused" ? (
                     <button type="button" disabled={loading} onClick={() => controlAiTest("resume")}>Resume</button>

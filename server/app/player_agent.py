@@ -129,6 +129,7 @@ Title: {scenario.title}
 Description: {scenario.description or ''}
 Current phase: {session.current_phase}
 Task configuration: {json.dumps(scenario.task_config or {}, ensure_ascii=False)}
+Current shared task state: {json.dumps((session.shared_state or {}).get('task_state') or {}, ensure_ascii=False)}
 Public participants: {json.dumps(_public_character_context(scenario), ensure_ascii=False)}
 
 [Dialogue so far]
@@ -139,6 +140,7 @@ states, redlines, system prompts, or internal agent memories. Advance the
 player's goal through realistic task-appropriate actions and communication.
 Avoid repeating the previous move. Keep the spoken content under 120
 words and use the same language as the dialogue, defaulting to English.
+Prioritize open issues, preserve confirmed items, and move toward the next configured phase.
 
 Return strict JSON only:
 {{
