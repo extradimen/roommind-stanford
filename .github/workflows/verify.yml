@@ -8,6 +8,23 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: roommind
+          POSTGRES_PASSWORD: roommind_dev
+          POSTGRES_DB: roommind_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U roommind -d roommind_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://roommind:roommind_dev@localhost:5432/roommind_ci
+      REDIS_URL: redis://localhost:6379/15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -17,6 +34,8 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python -m compileall -q server/app
       - run: python -c "from app.main import app; assert app.title == 'RoomMind API'"
+        working-directory: server
+      - run: python tests/smoke_modes.py
         working-directory: server
 
   frontend:
