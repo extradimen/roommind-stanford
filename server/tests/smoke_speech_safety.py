@@ -1,24 +1,11 @@
 """Regression checks for public NPC speech safety."""
 
-from importlib.util import module_from_spec, spec_from_file_location
-from pathlib import Path
-
-
-module_path = Path(__file__).parents[1] / "app" / "agent" / "speech_safety.py"
-spec = spec_from_file_location("speech_safety", module_path)
-assert spec and spec.loader
-speech_safety = module_from_spec(spec)
-spec.loader.exec_module(speech_safety)
-
-PUBLIC_RESPONSE_DRAFT = speech_safety.PUBLIC_RESPONSE_DRAFT
-speech_rejection_reason = speech_safety.speech_rejection_reason
-player_speech_rejection_reason = speech_safety.player_speech_rejection_reason
-
-progress_path = Path(__file__).parents[1] / "app" / "session_progress.py"
-progress_spec = spec_from_file_location("session_progress", progress_path)
-assert progress_spec and progress_spec.loader
-session_progress = module_from_spec(progress_spec)
-progress_spec.loader.exec_module(session_progress)
+from app.agent.speech_safety import (
+    PUBLIC_RESPONSE_DRAFT,
+    player_speech_rejection_reason,
+    speech_rejection_reason,
+)
+from app.task_state import evaluate_conditions, initial_task_state
 
 
 def main() -> None:
@@ -45,25 +32,19 @@ def main() -> None:
     ) is None
     assert "bottom line" not in PUBLIC_RESPONSE_DRAFT.casefold()
     assert "active plan" not in PUBLIC_RESPONSE_DRAFT.casefold()
-    phases = ["opening", "discovery", "bargaining", "closing"]
-    assert session_progress.infer_session_phase(
-        phases,
-        turn_id=3,
-        player_text="We propose 86 RMB with payment terms.",
-        npc_texts=["Our price is 88 RMB."],
-    ) == "bargaining"
-    assert session_progress.has_mutual_agreement(
-        "This is our final offer; can we agree?",
-        ["That works. We have a deal."],
-        turn_id=4,
-    )
-    assert session_progress.infer_session_phase(
-        phases,
-        turn_id=4,
-        player_text="Let’s shake and move forward together.",
-        npc_texts=["I need to review the proposal."],
-    ) == "closing"
-    print("NPC speech safety smoke test: ok")
+    config = {
+        "state_schema": {"outcome": {"type": "boolean"}},
+        "phases": [{"phase_id": "active"}],
+        "completion_conditions": {"all": [
+            {"field": "outcome", "operator": "==", "value": True, "required_status": "confirmed"}
+        ]},
+    }
+    state = initial_task_state(config)
+    state["variables"]["outcome"].update(value=True, status="proposed")
+    assert evaluate_conditions(config, state)["completion_status"] == "in_progress"
+    state["variables"]["outcome"]["status"] = "confirmed"
+    assert evaluate_conditions(config, state)["completion_status"] == "completed"
+    print("NPC speech safety and task-state smoke test: ok")
 
 
 if __name__ == "__main__":
