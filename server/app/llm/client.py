@@ -24,6 +24,8 @@ class LLMClient:
     PROVIDERS = ("ollama", "siliconflow")
     RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
     MAX_RETRIES = 3
+    LENGTH_RETRY_MIN_TOKENS = 1024
+    LENGTH_RETRY_MAX_TOKENS = 4096
 
     @property
     def AVAILABLE_MODELS(self) -> dict[str, list[str]]:
@@ -122,7 +124,16 @@ class LLMClient:
                         return content
                     finish_reason = data.get("choices", [{}])[0].get("finish_reason")
                     if finish_reason == "length" and attempt < self.MAX_RETRIES - 1:
-                        payload["max_tokens"] = min(int(payload["max_tokens"]) * 2, 4096)
+                        # Reasoning models may consume the entire small output budget
+                        # before emitting visible content. Jump to a useful floor on
+                        # the first retry, then grow normally while remaining bounded.
+                        payload["max_tokens"] = min(
+                            max(
+                                int(payload["max_tokens"]) * 2,
+                                self.LENGTH_RETRY_MIN_TOKENS,
+                            ),
+                            self.LENGTH_RETRY_MAX_TOKENS,
+                        )
                         continue
                     raise RuntimeError(
                         f"LLM API returned no visible content (finish_reason={finish_reason!r})"
