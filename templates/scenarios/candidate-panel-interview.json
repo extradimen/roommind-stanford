@@ -1,5 +1,6 @@
 {
   "schema_version":2,
+  "template_meta":{"preferred_id":3},
   "slug":"candidate-panel-interview",
   "title":"Cross-functional Product Leadership Interview",
   "description":"The player is a candidate answering a structured panel interview with product, engineering, and people perspectives.",
