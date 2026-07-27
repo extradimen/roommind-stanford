@@ -57,6 +57,12 @@ async def main() -> None:
             session_mode="test",
             run_config={"safety_max_turns": 50, "player_strategy": "balanced"},
         )
+        baseline_session = await memory_service.create_session(
+            db,
+            scenario.id,
+            session_mode="baseline",
+            run_config={"safety_max_turns": 50, "player_strategy": "balanced"},
+        )
         await db.flush()
 
         db.add_all([
@@ -87,6 +93,24 @@ async def main() -> None:
                 sequence_no=2,
                 content="AI opponent reply",
             ),
+            SessionMessage(
+                session_id=baseline_session.id,
+                speaker_id="user",
+                speaker_type="user",
+                speaker_source="ai",
+                turn_id=1,
+                sequence_no=1,
+                content="Baseline AI player move",
+            ),
+            SessionMessage(
+                session_id=baseline_session.id,
+                speaker_id="supplier",
+                speaker_type="npc",
+                speaker_source="ai",
+                turn_id=1,
+                sequence_no=2,
+                content="Baseline prompt-only opponent reply",
+            ),
         ])
         await db.flush()
 
@@ -109,8 +133,20 @@ async def main() -> None:
         assert public_bundle["task_result"]["completion_status"] == "in_progress"
         assert "shared_state" not in public_bundle
 
+        baseline_bundle = await build_session_export_bundle(db, baseline_session)
+        assert baseline_bundle["session"]["session_mode"] == "baseline"
+        assert baseline_bundle["task_result"] == {}
+        observation = baseline_bundle["external_observation"]
+        assert observation["protocol"] == "public-transcript-observer-v1"
+        assert observation["descriptive_metrics"]["player_turns"] == 1
+        assert observation["descriptive_metrics"]["public_message_count"] == 2
+        assert observation["descriptive_metrics"]["exact_repetition_count"] == 0
+        baseline_public = build_public_session_export_bundle(baseline_bundle)
+        assert baseline_public["external_observation"]["protocol"] == "public-transcript-observer-v1"
+        assert "shared_state" not in baseline_public
+
         modes = set((await db.execute(select(GameSession.session_mode))).scalars().all())
-        assert modes == {"participation", "test"}
+        assert modes == {"participation", "test", "baseline"}
         await db.rollback()
 
     print("dual-mode PostgreSQL smoke test: ok")
