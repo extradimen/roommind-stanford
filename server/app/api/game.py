@@ -20,6 +20,9 @@ from app.models.db import AgentMemoryNode, ScenarioTemplate, SessionMessage
 from app.orchestrator.defaults import ORCHESTRATION_MODE, merge_orchestration_config
 from app.orchestrator.common import orch_support
 from app.avatar_manifest import client_avatar_manifest
+from app.baseline_chat import generate_baseline_player_move, process_baseline_step
+from app.external_observer import build_blinded_evaluation_packet
+from app.external_evaluator import evaluate_public_transcript
 from app.player_character import resolve_player_character
 from app.player_agent import generate_player_move
 from app.scenario_side import resolve_player_side_goal
@@ -120,6 +123,77 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
         "status": session.status,
         "test_state": shared["_test_state"],
     }
+
+
+async def _run_baseline_step(db: AsyncSession, session_uuid: str, locale: str | None = None) -> dict:
+    """Advance a prompt-only baseline without RoomMind runtime governance."""
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if session.session_mode != "baseline":
+        raise HTTPException(409, "This operation requires a baseline session")
+    if session.status not in {"active", "paused"}:
+        raise HTTPException(409, f"Session is {session.status}")
+    scenario = await orch_support.load_scenario(db, session.scenario_id)
+    rows = sorted(session.messages, key=lambda row: (row.sequence_no, row.id))
+    messages = [
+        {
+            "speaker_id": row.speaker_id,
+            "speaker_type": row.speaker_type,
+            "speaker_source": row.speaker_source,
+            "turn_id": row.turn_id,
+            "sequence_no": row.sequence_no,
+            "content": row.content,
+        }
+        for row in rows
+    ]
+    move = await generate_baseline_player_move(db, session, scenario, messages)
+    turn = await process_baseline_step(db, session, scenario, move, messages)
+    completed_turns = sum(1 for row in rows if row.speaker_type == "user") + 1
+    safety_max_turns = max(10, min(int((session.run_config or {}).get("safety_max_turns", 50)), 100))
+    stop_reason = None
+    if turn.declared_complete:
+        session.status = "completed"
+        stop_reason = "model_declared_complete"
+    elif completed_turns >= safety_max_turns:
+        session.status = "stopped"
+        stop_reason = "safety_limit_reached"
+    shared = dict(session.shared_state or {})
+    shared["_baseline_state"] = {
+        "completed_turns": completed_turns,
+        "safety_max_turns": safety_max_turns,
+        "stop_reason": stop_reason,
+        "declared_phase": turn.declared_phase,
+        "declared_complete": turn.declared_complete,
+        "last_player_intent": move.intent,
+        "model": turn.model_label,
+    }
+    session.shared_state = shared
+    await db.flush()
+    return {
+        "player_move": {
+            "content": move.content,
+            "intent": move.intent,
+            "requested_end": move.requested_end,
+            "model": move.model_label,
+        },
+        "turn_result": {
+            "replies": turn.replies,
+            "declared_phase": turn.declared_phase,
+            "declared_complete": turn.declared_complete,
+        },
+        "status": session.status,
+        "test_state": shared["_baseline_state"],
+    }
+
+
+async def _run_autonomous_step(db: AsyncSession, session_uuid: str, locale: str | None = None) -> dict:
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if session.session_mode == "baseline":
+        return await _run_baseline_step(db, session_uuid, locale)
+    return await _run_test_step(db, session_uuid, locale)
 
 
 @router.get("/scenarios", response_model=list[ScenarioListItem])
@@ -272,6 +346,42 @@ async def export_session(session_uuid: str, db: DbDep) -> dict:
     return build_public_session_export_bundle(full)
 
 
+@router.get("/sessions/{session_uuid}/evaluation-packet")
+async def export_blinded_evaluation_packet(session_uuid: str, db: DbDep) -> dict:
+    """Condition-hidden public transcript for an external human or AI judge."""
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    public = build_public_session_export_bundle(await build_session_export_bundle(db, session))
+    return build_blinded_evaluation_packet(public)
+
+
+@router.post("/sessions/{session_uuid}/external-evaluation")
+async def run_external_evaluation(session_uuid: str, db: DbDep) -> dict:
+    """Run a post-hoc observer that cannot affect dialogue or stopping."""
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if session.status not in {"completed", "stopped"}:
+        raise HTTPException(409, "External evaluation is only available after the session ends")
+    scenario = await orch_support.load_scenario(db, session.scenario_id)
+    public = build_public_session_export_bundle(await build_session_export_bundle(db, session))
+    try:
+        result = await evaluate_public_transcript(
+            db,
+            scenario=scenario,
+            messages=public.get("messages") or [],
+            system_claim=(public.get("external_observation") or {}).get("system_claim") or {},
+        )
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    shared = dict(session.shared_state or {})
+    shared["_external_evaluation"] = result
+    session.shared_state = shared
+    await db.flush()
+    return result
+
+
 @router.get("/sessions/{session_uuid}/export.csv", response_class=PlainTextResponse)
 async def export_session_csv(session_uuid: str, db: DbDep) -> PlainTextResponse:
     session = await memory_service.get_session(db, session_uuid)
@@ -365,9 +475,9 @@ async def send_message(session_uuid: str, body: UserMessageIn, db: DbDep) -> dic
 
 @router.post("/sessions/{session_uuid}/test/step")
 async def run_test_step(session_uuid: str, body: TestRunIn, db: DbDep) -> dict:
-    """Generate exactly one AI-player move and the corresponding NPC turn."""
+    """Generate one autonomous turn for RoomMind test or prompt baseline."""
     try:
-        return await _run_test_step(db, session_uuid, body.locale)
+        return await _run_autonomous_step(db, session_uuid, body.locale)
     except RuntimeError as exc:
         raise HTTPException(502, str(exc)) from exc
 
@@ -384,7 +494,7 @@ async def run_test_session(session_uuid: str, body: TestRunIn, db: DbDep) -> dic
     steps: list[dict] = []
     try:
         for _ in range(iterations):
-            step = await _run_test_step(db, session_uuid, body.locale)
+            step = await _run_autonomous_step(db, session_uuid, body.locale)
             steps.append(step)
             # Multi-turn API clients can observe/export every completed turn even
             # while a longer autonomous run is still in progress.
@@ -400,8 +510,8 @@ async def run_test_session(session_uuid: str, body: TestRunIn, db: DbDep) -> dic
 @router.post("/sessions/{session_uuid}/test/pause")
 async def pause_test_session(session_uuid: str, db: DbDep) -> dict:
     session = await memory_service.get_session(db, session_uuid)
-    if not session or session.session_mode != "test":
-        raise HTTPException(404, "Test session not found")
+    if not session or session.session_mode not in {"test", "baseline"}:
+        raise HTTPException(404, "Autonomous session not found")
     session.status = "paused"
     await db.flush()
     return {"status": session.status}
@@ -410,8 +520,8 @@ async def pause_test_session(session_uuid: str, db: DbDep) -> dict:
 @router.post("/sessions/{session_uuid}/test/resume")
 async def resume_test_session(session_uuid: str, db: DbDep) -> dict:
     session = await memory_service.get_session(db, session_uuid)
-    if not session or session.session_mode != "test":
-        raise HTTPException(404, "Test session not found")
+    if not session or session.session_mode not in {"test", "baseline"}:
+        raise HTTPException(404, "Autonomous session not found")
     if session.status == "completed":
         raise HTTPException(409, "Completed sessions cannot be resumed")
     session.status = "active"
@@ -422,13 +532,14 @@ async def resume_test_session(session_uuid: str, db: DbDep) -> dict:
 @router.post("/sessions/{session_uuid}/test/stop")
 async def stop_test_session(session_uuid: str, db: DbDep) -> dict:
     session = await memory_service.get_session(db, session_uuid)
-    if not session or session.session_mode != "test":
-        raise HTTPException(404, "Test session not found")
+    if not session or session.session_mode not in {"test", "baseline"}:
+        raise HTTPException(404, "Autonomous session not found")
     session.status = "stopped"
     shared = dict(session.shared_state or {})
-    test_state = dict(shared.get("_test_state") or {})
+    state_key = "_baseline_state" if session.session_mode == "baseline" else "_test_state"
+    test_state = dict(shared.get(state_key) or {})
     test_state["stop_reason"] = "manually_stopped"
-    shared["_test_state"] = test_state
+    shared[state_key] = test_state
     session.shared_state = shared
     await db.flush()
     return {"status": session.status, "test_state": test_state}
