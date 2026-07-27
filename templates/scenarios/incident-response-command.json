@@ -1,5 +1,6 @@
 {
   "schema_version": 2,
+  "template_meta": {"preferred_id": 4},
   "slug": "incident-response-command",
   "title": "Critical Service Incident Command",
   "description": "Coordinate a cross-functional response to a payment outage while balancing restoration, evidence preservation, and customer communication.",
