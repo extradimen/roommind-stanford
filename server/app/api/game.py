@@ -23,6 +23,7 @@ from app.avatar_manifest import client_avatar_manifest
 from app.player_character import resolve_player_character
 from app.player_agent import generate_player_move
 from app.scenario_side import resolve_player_side_goal
+from app.task_state import task_progress_signature
 from app.schemas import (
     AgentMemoryNodeOut,
     AgentMemoryNodeUpdate,
@@ -60,6 +61,8 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
         {"speaker_id": m.speaker_id, "speaker_type": m.speaker_type, "content": m.content}
         for m in rows
     ]
+    before_task_state = ((session.shared_state or {}).get("task_state") or {})
+    before_signature = task_progress_signature(before_task_state)
     move = await generate_player_move(db, session, scenario, messages)
     turn_result: dict = {}
     async for event in memory_service.process_player_message_stream(
@@ -80,11 +83,18 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
     completed_turns = sum(1 for m in rows if m.speaker_type == "user") + 1
     safety_max_turns = max(10, min(int((session.run_config or {}).get("safety_max_turns", 50)), 100))
     stop_reason = None
-    task_complete = ((session.shared_state or {}).get("task_state") or {}).get("completion_status") == "completed"
+    after_task_state = ((session.shared_state or {}).get("task_state") or {})
+    after_signature = task_progress_signature(after_task_state)
+    previous_test_state = dict((session.shared_state or {}).get("_test_state") or {})
+    stagnant_turns = 0 if after_signature != before_signature else int(previous_test_state.get("stagnant_turns", 0)) + 1
+    max_stagnant_turns = max(4, min(int((session.run_config or {}).get("max_stagnant_turns", 10)), 25))
+    task_complete = after_task_state.get("completion_status") == "completed"
     if task_complete:
         stop_reason = "completion_conditions_met"
     elif completed_turns >= safety_max_turns:
         stop_reason = "safety_limit_reached"
+    elif stagnant_turns >= max_stagnant_turns:
+        stop_reason = "no_task_progress"
     if stop_reason:
         session.status = "completed" if task_complete else "stopped"
     shared = dict(session.shared_state or {})
@@ -93,6 +103,9 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
         "safety_max_turns": safety_max_turns,
         "stop_reason": stop_reason,
         "last_player_intent": move.intent,
+        "stagnant_turns": stagnant_turns,
+        "max_stagnant_turns": max_stagnant_turns,
+        "progress_made": after_signature != before_signature,
     }
     session.shared_state = shared
     await db.flush()
