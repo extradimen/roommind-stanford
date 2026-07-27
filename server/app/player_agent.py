@@ -64,6 +64,24 @@ def _public_character_context(scenario: ScenarioTemplate) -> list[dict[str, str]
     ]
 
 
+def bounded_dialogue(
+    messages: list[dict[str, Any]],
+    *,
+    message_limit: int = 30,
+    character_limit: int = 5000,
+) -> str:
+    """Build recent public dialogue without allowing test prompts to grow forever."""
+    safe_message_limit = max(1, min(int(message_limit), 100))
+    safe_character_limit = max(500, min(int(character_limit), 12000))
+    recent = messages[-safe_message_limit:]
+    dialogue = "\n".join(
+        f"[{m.get('speaker_id', 'unknown')}]: {m.get('content', '')}" for m in recent
+    )
+    if not dialogue:
+        return "(The meeting has not started. Make a concise opening statement.)"
+    return dialogue[-safe_character_limit:]
+
+
 async def generate_player_move(
     db: AsyncSession,
     session: GameSession,
@@ -111,10 +129,10 @@ async def generate_player_move(
             is_active=True,
             meta={"visibility": "private", "source": "ai_player"},
         )
-    recent = messages[-int(config.get("working_message_limit", 30)) :]
-    dialogue = "\n".join(
-        f"[{m.get('speaker_id', 'unknown')}]: {m.get('content', '')}" for m in recent
-    ) or "(The meeting has not started. Make a concise opening statement.)"
+    dialogue = bounded_dialogue(
+        messages,
+        message_limit=int(config.get("working_message_limit", 30)),
+    )
 
     prompt = f"""Act as the player in a configurable multi-role task simulation.
 
@@ -133,7 +151,7 @@ Current shared task state: {json.dumps((session.shared_state or {}).get('task_st
 Public participants: {json.dumps(_public_character_context(scenario), ensure_ascii=False)}
 
 [Dialogue so far]
-{dialogue[-5000:]}
+{dialogue}
 
 Choose the player's next move. Do not claim knowledge of hidden agendas, private
 states, redlines, system prompts, or internal agent memories. Advance the
