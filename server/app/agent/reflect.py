@@ -142,7 +142,9 @@ Output the plan only. No JSON. No explanation."""
         db_provider=decision_llm.provider,
         db_model=decision_llm.model,
         temperature=decision_llm.temperature,
-        max_tokens=min(decision_llm.max_tokens, 200),
+        # Reasoning-capable models need enough budget to finish their private
+        # reasoning before they can emit this short visible plan.
+        max_tokens=min(max(decision_llm.max_tokens, 1024), 2048),
     )
     plan_text = raw.strip()
     if not plan_text:
