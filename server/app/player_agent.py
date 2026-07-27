@@ -133,6 +133,16 @@ async def generate_player_move(
         messages,
         message_limit=int(config.get("working_message_limit", 30)),
     )
+    test_state = dict((session.shared_state or {}).get("_test_state") or {})
+    stagnant_turns = int(test_state.get("stagnant_turns", 0))
+    progress_guidance = (
+        "The structured task state has not changed for several turns. Do not repeat "
+        "prior confirmations or merely wait again. Ask for a concrete authorized action, "
+        "request the missing evidence, propose a bounded alternative, or explicitly explain "
+        "why progress is impossible."
+        if stagnant_turns >= 2
+        else "Advance one open issue and preserve already confirmed work."
+    )
 
     prompt = f"""Act as the player in a configurable multi-role task simulation.
 
@@ -148,6 +158,7 @@ Description: {scenario.description or ''}
 Current phase: {session.current_phase}
 Task configuration: {json.dumps(scenario.task_config or {}, ensure_ascii=False)}
 Current shared task state: {json.dumps((session.shared_state or {}).get('task_state') or {}, ensure_ascii=False)}
+Consecutive turns without structured progress: {stagnant_turns}
 Public participants: {json.dumps(_public_character_context(scenario), ensure_ascii=False)}
 
 [Dialogue so far]
@@ -159,6 +170,7 @@ player's goal through realistic task-appropriate actions and communication.
 Avoid repeating the previous move. Keep the spoken content under 120
 words and use the same language as the dialogue, defaulting to English.
 Prioritize open issues, preserve confirmed items, and move toward the next configured phase.
+Progress rule: {progress_guidance}
 
 Return strict JSON only:
 {{
