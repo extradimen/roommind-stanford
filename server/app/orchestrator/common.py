@@ -93,8 +93,8 @@ class OrchestratorSupport:
     def match_mentioned_characters(
         self, user_input: str, characters: list[CharacterTemplate]
     ) -> list[str]:
-        hits: list[str] = []
-        seen: set[str] = set()
+        hits: list[tuple[int, int, str]] = []
+        folded = user_input.casefold()
         for c in characters:
             labels = [c.display_name, c.character_name, c.job_title, *(c.aliases or [])]
             if c.character_name:
@@ -102,12 +102,15 @@ class OrchestratorSupport:
             for sep in ("（", "("):
                 if sep in c.display_name:
                     labels.append(c.display_name.split(sep)[0].strip())
-            for label in labels:
-                if len(label) >= 2 and label.casefold() in user_input.casefold() and c.character_id not in seen:
-                    hits.append(c.character_id)
-                    seen.add(c.character_id)
-                    break
-        return hits
+            positions = [folded.find(label.casefold()) for label in labels if len(label) >= 2]
+            positions = [position for position in positions if position >= 0]
+            if positions:
+                hits.append((min(positions), c.sort_order, c.character_id))
+        # Follow the user's address order rather than scenario storage order. This
+        # prevents a repeatedly mentioned third role from starving behind the first
+        # two when the per-turn speaker quota is two.
+        hits.sort(key=lambda item: (item[0], item[1], item[2]))
+        return [cid for _, _, cid in hits]
 
     def parse_json(self, text: str) -> dict[str, Any]:
         text = text.strip()
