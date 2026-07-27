@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -79,7 +79,15 @@ async def import_scenario_template(db: AsyncSession, data: dict[str, Any]) -> Sc
     if meta:
         router_rules["_template"] = meta
 
+    preferred_id = meta.get("preferred_id")
+    scenario_kwargs: dict[str, Any] = {}
+    if isinstance(preferred_id, int) and preferred_id > 0:
+        occupied = await db.execute(select(ScenarioTemplate.id).where(ScenarioTemplate.id == preferred_id))
+        if occupied.scalar_one_or_none() is None:
+            scenario_kwargs["id"] = preferred_id
+
     scenario = ScenarioTemplate(
+        **scenario_kwargs,
         slug=data["slug"],
         title=data["title"],
         task_config=data["task_config"],
@@ -98,6 +106,12 @@ async def import_scenario_template(db: AsyncSession, data: dict[str, Any]) -> Sc
     sync_legacy_business_goal(scenario)
     db.add(scenario)
     await db.flush()
+    if scenario_kwargs.get("id"):
+        # Explicit IDs do not advance PostgreSQL's identity sequence.
+        await db.execute(text(
+            "SELECT setval(pg_get_serial_sequence('scenario_templates', 'id'), "
+            "GREATEST(COALESCE(MAX(id), 1), 1), true) FROM scenario_templates"
+        ))
 
     for idx, raw in enumerate(data.get("characters") or []):
         payload = {field: raw.get(field) for field in CHARACTER_FIELDS if field in raw}
