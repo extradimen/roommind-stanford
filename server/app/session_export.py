@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.debug_payload import build_session_agent_memories_payload, load_agent_memories_grouped, load_character_names
+from app.external_observer import build_external_observation
 from app.models.db import CharacterTemplate, EpisodeMemory, GameSession, ScenarioTemplate, SessionMessage
 from app.orchestrator.defaults import merge_orchestration_config
 from app.player_character import resolve_player_character
@@ -275,7 +276,7 @@ async def build_session_export_bundle(db: AsyncSession, session: GameSession) ->
         })
         serialized_messages.append(row)
 
-    return {
+    bundle = {
         "export_meta": {
             "format": SESSION_EXPORT_FORMAT,
             "version": SESSION_EXPORT_VERSION,
@@ -316,9 +317,13 @@ async def build_session_export_bundle(db: AsyncSession, session: GameSession) ->
         "last_debug": last_debug,
         "episode_memories": episode_memories,
         "shared_state": shared,
-        "task_result": public_task_result(shared.get("task_state") or {}),
+        "task_result": {} if session.session_mode == "baseline" else public_task_result(shared.get("task_state") or {}),
         "test_result": dict(shared.get("_test_state") or {}),
+        "baseline_result": dict(shared.get("_baseline_state") or {}),
+        "external_evaluation": dict(shared.get("_external_evaluation") or {}),
     }
+    bundle["external_observation"] = build_external_observation(bundle)
+    return bundle
 
 
 def build_public_session_export_bundle(full: dict[str, Any]) -> dict[str, Any]:
@@ -365,4 +370,7 @@ def build_public_session_export_bundle(full: dict[str, Any]) -> dict[str, Any]:
         "dialogue_turns": dialogue_turns,
         "task_result": full.get("task_result") or {},
         "test_result": full.get("test_result") or {},
+        "baseline_result": full.get("baseline_result") or {},
+        "external_observation": full.get("external_observation") or {},
+        "external_evaluation": full.get("external_evaluation") or {},
     }
