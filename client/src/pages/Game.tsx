@@ -56,7 +56,9 @@ export default function Game() {
   const { t, locale } = useLocale();
   const { scenarioId } = useParams();
   const [searchParams] = useSearchParams();
-  const sessionMode = searchParams.get("mode") === "test" ? "test" : "participation";
+  const requestedMode = searchParams.get("mode");
+  const sessionMode: "participation" | "test" | "baseline" =
+    requestedMode === "test" || requestedMode === "baseline" ? requestedMode : "participation";
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [sessionUuid, setSessionUuid] = useState<string | null>(null);
   const [phase, setPhase] = useState("opening");
@@ -795,7 +797,9 @@ export default function Game() {
           <div className="game-header-meta">
             <span className="phase">{t.game.phase}: {phase}</span>
             <span className="orchestration-badge">{t.game.stanfordBadge}</span>
-            <span className="orchestration-badge">{sessionMode === "test" ? "AI Test" : "Participation"}</span>
+            <span className="orchestration-badge">
+              {sessionMode === "test" ? "RoomMind AI Test" : sessionMode === "baseline" ? "Prompt Baseline" : "Participation"}
+            </span>
             <span className={`ws-badge ws-${wsMode}`}>{wsBadge}</span>
             <LanguageSwitcher className="inline-lang" />
           </div>
@@ -906,7 +910,7 @@ export default function Game() {
 
               {error && <div className="error-banner">{error}</div>}
 
-              {sessionMode === "test" ? (
+              {sessionMode !== "participation" ? (
                 <div className="chat-input">
                   <button type="button" disabled={loading || testStatus !== "active"} onClick={() => runAiTurns(1)}>
                     Run 1 AI turn
