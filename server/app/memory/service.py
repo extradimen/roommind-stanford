@@ -50,8 +50,8 @@ class MemoryService:
         session_mode: str = "participation",
         run_config: dict[str, Any] | None = None,
     ) -> GameSession:
-        if session_mode not in {"participation", "test"}:
-            raise ValueError("session_mode must be 'participation' or 'test'")
+        if session_mode not in {"participation", "test", "baseline"}:
+            raise ValueError("session_mode must be 'participation', 'test', or 'baseline'")
         scenario = await orch_support.load_scenario(db, scenario_id)
         task_state = initial_task_state(scenario.task_config or {})
         session = GameSession(
@@ -59,10 +59,11 @@ class MemoryService:
             scenario_id=scenario_id,
             user_id=user_id,
             current_phase=task_state["phase"],
-            orchestration_mode=ORCHESTRATION_MODE,
+            orchestration_mode="prompt_baseline" if session_mode == "baseline" else ORCHESTRATION_MODE,
             session_mode=session_mode,
             run_config=run_config or {},
-            shared_state={"task_state": task_state},
+            # The prompt-only baseline deliberately has no RoomMind task state.
+            shared_state={} if session_mode == "baseline" else {"task_state": task_state},
             status="active",
         )
         db.add(session)
@@ -139,6 +140,8 @@ class MemoryService:
             raise ValueError("Session not found")
         if session.session_mode == "test" and speaker_source != "ai":
             raise ValueError("Test sessions only accept AI player turns")
+        if session.session_mode == "baseline":
+            raise ValueError("Baseline sessions must use the prompt-only baseline endpoint")
         if session.session_mode == "participation" and speaker_source != "human":
             raise ValueError("Participation sessions only accept human player turns")
 
