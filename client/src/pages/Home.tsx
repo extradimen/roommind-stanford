@@ -60,7 +60,10 @@ export default function Home() {
                 {t.home.enter} · Participation
               </Link>
               <Link to={`/play/${s.id}?mode=test`} className="play-btn" style={{ marginLeft: "0.5rem" }}>
-                AI Test
+                RoomMind AI Test
+              </Link>
+              <Link to={`/play/${s.id}?mode=baseline`} className="play-btn" style={{ marginLeft: "0.5rem", marginTop: "0.5rem" }}>
+                Prompt Baseline
               </Link>
             </div>
             );
