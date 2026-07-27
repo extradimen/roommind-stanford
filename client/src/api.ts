@@ -266,7 +266,7 @@ export async function updateAgentMemoryNode(
 
 export async function createSession(
   scenarioId: number,
-  sessionMode: "participation" | "test" = "participation",
+  sessionMode: "participation" | "test" | "baseline" = "participation",
 ): Promise<{ session_uuid: string; current_phase: string; orchestration_mode?: string; session_mode: string }> {
   const res = await fetch("/api/game/sessions", {
     method: "POST",
@@ -274,7 +274,7 @@ export async function createSession(
     body: JSON.stringify({
       scenario_id: scenarioId,
       session_mode: sessionMode,
-      run_config: sessionMode === "test" ? { safety_max_turns: 50, player_strategy: "balanced" } : {},
+      run_config: sessionMode !== "participation" ? { safety_max_turns: 50, player_strategy: "balanced" } : {},
     }),
   });
   if (!res.ok) throw new Error("Failed to create session");
@@ -300,6 +300,15 @@ export async function controlTestSession(sessionUuid: string, action: "pause" | 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || `Failed to ${action} test session`);
+  }
+  return res.json();
+}
+
+export async function runExternalEvaluation(sessionUuid: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`/api/game/sessions/${sessionUuid}/external-evaluation`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to run external evaluation");
   }
   return res.json();
 }
