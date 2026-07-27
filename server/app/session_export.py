@@ -15,6 +15,7 @@ from app.agent.debug_payload import build_session_agent_memories_payload, load_a
 from app.models.db import CharacterTemplate, EpisodeMemory, GameSession, ScenarioTemplate, SessionMessage
 from app.orchestrator.defaults import merge_orchestration_config
 from app.player_character import resolve_player_character
+from app.task_state import public_task_result
 
 SESSION_EXPORT_FORMAT = "roommind-session-bundle"
 SESSION_EXPORT_VERSION = 2
@@ -315,6 +316,8 @@ async def build_session_export_bundle(db: AsyncSession, session: GameSession) ->
         "last_debug": last_debug,
         "episode_memories": episode_memories,
         "shared_state": shared,
+        "task_result": public_task_result(shared.get("task_state") or {}),
+        "test_result": dict(shared.get("_test_state") or {}),
     }
 
 
@@ -360,4 +363,6 @@ def build_public_session_export_bundle(full: dict[str, Any]) -> dict[str, Any]:
         "speaker_directory": full.get("speaker_directory") or {},
         "messages": messages,
         "dialogue_turns": dialogue_turns,
+        "task_result": full.get("task_result") or {},
+        "test_result": full.get("test_result") or {},
     }
