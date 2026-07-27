@@ -1,5 +1,6 @@
 {
   "schema_version": 2,
+  "template_meta": {"preferred_id": 1},
   "slug": "supply-chain-negotiation",
   "title": "Supply Chain Contract Meeting",
   "description": "A multi-party procurement meeting covering commercial, operational, and legal commitments.",
