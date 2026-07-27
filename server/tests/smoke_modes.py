@@ -15,9 +15,26 @@ from app.session_export import (
     transcript_csv,
     transcript_jsonl,
 )
+from app.scenario_template_loader import list_scenario_template_files, load_scenario_template_file
 
 
 async def main() -> None:
+    bundled = [load_scenario_template_file(path) for path in list_scenario_template_files()]
+    preferred_ids = {
+        row["slug"]: (row.get("template_meta") or {}).get("preferred_id")
+        for row in bundled
+    }
+    assert preferred_ids["supply-chain-negotiation"] == 1
+    assert preferred_ids["market-launch-go-no-go"] == 2
+    assert preferred_ids["candidate-panel-interview"] == 3
+    assert preferred_ids["incident-response-command"] == 4
+    launch = next(row for row in bundled if row["slug"] == "market-launch-go-no-go")
+    assert launch["is_published"] is True
+    assert len(launch["characters"]) == 3
+    assert set(launch["task_config"]["state_schema"]) == {
+        "market_readiness", "operational_readiness", "budget_approved", "launch_decision"
+    }
+
     await init_db()
     async with async_session_factory() as db:
         scenario = ScenarioTemplate(
