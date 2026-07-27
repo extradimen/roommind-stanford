@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { resolveNpcFullName, resolveNpcLabel, resolvePlayerFullName, resolvePlayerLabel } from "../characterNames";
 import { resolveCharacterSide, type CharacterSide } from "../characterSide";
 import type { PlayerCharacter } from "../api";
-import { downloadJsonFile, exportSessionBundle } from "../api";
+import { downloadJsonFile, exportSessionBundle, runExternalEvaluation } from "../api";
 import { useLocale } from "../i18n";
 import CharacterSideBadge from "./CharacterSideBadge";
 import { localizeMemoryContent } from "../memoryDisplay";
@@ -68,6 +68,7 @@ export default function AgentMemoryStrip({
   const { t, locale } = useLocale();
   const [filter, setFilter] = useState<FilterType>("all");
   const [exportMsg, setExportMsg] = useState("");
+  const [evaluating, setEvaluating] = useState(false);
 
   const exportSession = async () => {
     if (!sessionUuid) return;
@@ -77,6 +78,20 @@ export default function AgentMemoryStrip({
       downloadJsonFile(`session-${sessionUuid.slice(0, 8)}.json`, data);
     } catch (e) {
       setExportMsg(String(e));
+    }
+  };
+
+  const evaluateSession = async () => {
+    if (!sessionUuid || evaluating) return;
+    try {
+      setExportMsg("");
+      setEvaluating(true);
+      const result = await runExternalEvaluation(sessionUuid);
+      downloadJsonFile(`external-evaluation-${sessionUuid.slice(0, 8)}.json`, result);
+    } catch (e) {
+      setExportMsg(String(e));
+    } finally {
+      setEvaluating(false);
     }
   };
 
@@ -145,6 +160,11 @@ export default function AgentMemoryStrip({
         {sessionUuid && (
           <button type="button" className="btn-debug strip-open-browser" onClick={exportSession}>
             {t.agent.exportSession}
+          </button>
+        )}
+        {sessionUuid && (
+          <button type="button" className="btn-debug strip-open-browser" onClick={evaluateSession} disabled={evaluating}>
+            {evaluating ? "Evaluating…" : "External evaluation"}
           </button>
         )}
         {onOpenBrowser && (
