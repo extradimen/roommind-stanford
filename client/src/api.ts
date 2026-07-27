@@ -83,6 +83,27 @@ export interface PlatformPorts {
 
 let cachedWsBase: string | null = null;
 
+const READ_RETRY_DELAYS_MS = [0, 250, 750];
+
+async function fetchReadWithRetry(input: RequestInfo | URL): Promise<Response> {
+  let lastError: unknown;
+  for (const delay of READ_RETRY_DELAYS_MS) {
+    if (delay) await new Promise((resolve) => window.setTimeout(resolve, delay));
+    try {
+      const response = await fetch(input, { cache: "no-store" });
+      // Retry only transient gateway failures. Other HTTP responses are real
+      // application results and must be handled by the caller.
+      if (![502, 503, 504].includes(response.status)) return response;
+      lastError = new Error(`Transient gateway response (HTTP ${response.status})`);
+    } catch (error) {
+      // Vite's development proxy can occasionally close an idle/reused
+      // connection and surface ERR_EMPTY_RESPONSE as a fetch TypeError.
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Failed to fetch");
+}
+
 /** Resolve WebSocket base URL (without path). */
 export async function resolveWsBase(): Promise<string> {
   if (cachedWsBase) return cachedWsBase;
@@ -163,7 +184,7 @@ export async function getScenario(id: number): Promise<Scenario> {
 }
 
 export async function getSessionMessages(sessionUuid: string): Promise<ChatMessage[]> {
-  const res = await fetch(`/api/game/sessions/${sessionUuid}/messages`);
+  const res = await fetchReadWithRetry(`/api/game/sessions/${sessionUuid}/messages`);
   if (!res.ok) throw new Error("Failed to load messages");
   const rows = await res.json();
   return rows.map((m: ChatMessage) => ({
@@ -202,7 +223,7 @@ export interface SessionAgentMemories {
 }
 
 export async function getSessionAgentMemories(sessionUuid: string): Promise<SessionAgentMemories> {
-  const res = await fetch(`/api/game/sessions/${sessionUuid}/agent-memories`);
+  const res = await fetchReadWithRetry(`/api/game/sessions/${sessionUuid}/agent-memories`);
   if (!res.ok) throw new Error("Failed to load agent memories");
   return res.json();
 }
