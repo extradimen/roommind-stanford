@@ -19,6 +19,101 @@ ALLOWED_STATUSES = {"unknown", "proposed", "disputed", "confirmed", "rejected"}
 logger = logging.getLogger(__name__)
 
 
+def task_progress_signature(task_state: dict[str, Any] | None) -> str:
+    """Stable, evidence-free signature used to detect real task progress."""
+    state = task_state or {}
+    variables = state.get("variables") or {}
+    compact = {
+        "phase": state.get("phase"),
+        "completion_status": state.get("completion_status"),
+        "variables": {
+            field: {
+                "value": item.get("value"),
+                "status": item.get("status"),
+                "confirmations": sorted(set(item.get("confirmations") or [])),
+            }
+            for field, item in sorted(variables.items())
+            if isinstance(item, dict)
+        },
+    }
+    return json.dumps(compact, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def public_task_result(task_state: dict[str, Any] | None) -> dict[str, Any]:
+    """Expose auditable outcomes without private prompts, reasoning, or memories."""
+    state = task_state or {}
+    variables = state.get("variables") or {}
+    return {
+        "phase": state.get("phase"),
+        "completion_status": state.get("completion_status", "in_progress"),
+        "variables": {
+            field: {
+                "value": item.get("value"),
+                "status": item.get("status", "unknown"),
+                "confirmations": list(item.get("confirmations") or []),
+            }
+            for field, item in variables.items()
+            if isinstance(item, dict)
+        },
+        "open_issues": list(state.get("open_issues") or []),
+        "condition_results": list(state.get("condition_results") or []),
+    }
+
+
+def _evaluator_state_view(state: dict[str, Any]) -> dict[str, Any]:
+    """Keep the evaluator prompt bounded as proposals/evidence accumulate."""
+    return public_task_result(state)
+
+
+def _evaluator_config_view(task_config: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "task_type": task_config.get("task_type"),
+        "state_schema": task_config.get("state_schema") or {},
+        "phase_ids": [
+            phase.get("phase_id")
+            for phase in task_config.get("phases") or []
+            if isinstance(phase, dict) and phase.get("phase_id")
+        ],
+        "completion_conditions": task_config.get("completion_conditions") or {},
+        "evaluator_instructions": task_config.get("evaluator_instructions") or [],
+    }
+
+
+def _coerce_value(value: Any, spec: dict[str, Any]) -> tuple[Any, bool]:
+    """Validate common JSON scalar types declared by arbitrary scenario schemas."""
+    kind = str(spec.get("type") or "").lower()
+    if value is None:
+        return None, True
+    if kind == "boolean":
+        if isinstance(value, bool):
+            return value, True
+        if isinstance(value, str) and value.strip().lower() in {"true", "false"}:
+            return value.strip().lower() == "true", True
+        return value, False
+    if kind == "integer":
+        if isinstance(value, bool):
+            return value, False
+        try:
+            number = int(value)
+            return number, float(value) == number
+        except (TypeError, ValueError):
+            return value, False
+    if kind == "number":
+        if isinstance(value, bool):
+            return value, False
+        try:
+            return float(value), True
+        except (TypeError, ValueError):
+            return value, False
+    if kind == "string":
+        return (value, True) if isinstance(value, str) else (value, False)
+    if kind == "array":
+        return (value, True) if isinstance(value, list) else (value, False)
+    if kind == "object":
+        return (value, True) if isinstance(value, dict) else (value, False)
+    return value, True
+
+
 def normalize_evaluator_payload(raw: str) -> dict[str, Any]:
     """Unwrap OpenAI-compatible providers that nest structured JSON in an envelope."""
     current: Any = orch_support.parse_json(raw)
@@ -126,83 +221,60 @@ def evaluate_conditions(task_config: dict[str, Any], task_state: dict[str, Any])
     return task_state
 
 
-async def update_task_state(
-    db: AsyncSession,
+def apply_evaluator_updates(
     *,
     task_config: dict[str, Any],
-    previous: dict[str, Any] | None,
+    state: dict[str, Any],
+    parsed: dict[str, Any],
+    characters: list[CharacterTemplate],
     player_text: str,
     npc_turns: list[dict[str, str]],
-    orchestration_config: dict[str, Any] | None,
-    characters: list[CharacterTemplate],
 ) -> dict[str, Any]:
-    state = deepcopy(previous) if previous else initial_task_state(task_config)
-    llm_cfg = await orch_support.get_llm_config(db)
-    evaluator = resolve_llm(llm_cfg, orchestration_config, "state_evaluator")
-    prompt = f"""You are a neutral state evaluator for a multi-role task simulation.
-Use only explicit evidence in the current turn. Never infer agreement from politeness, a question, a conditional offer, or silence.
-Scenario task configuration:
-{json.dumps(task_config, ensure_ascii=False)}
-Previous task state:
-{json.dumps(state, ensure_ascii=False)}
-Current player turn: {player_text}
-Current participant replies:
-{json.dumps(npc_turns, ensure_ascii=False)}
-
-Return strict JSON only:
-{{
-  "phase": "one phase_id from task_config.phases",
-  "updates": [{{
-    "field": "a field in state_schema",
-    "value": "typed value or null",
-    "status": "unknown|proposed|disputed|confirmed|rejected",
-    "proposed_by": "user or character_id",
-    "confirmed_by": ["speaker ids that explicitly confirmed it"],
-    "evidence": [{{"speaker_id":"...","quote":"short exact excerpt"}}]
-  }}]
-}}
-Follow each field's type and confirmation_policy. Preserve prior confirmed values unless explicit new evidence changes them.
-{chr(10).join(task_config.get('evaluator_instructions') or [])}"""
-    try:
-        raw = await llm_client.chat_completion(
-            [{"role": "user", "content": prompt}],
-            db_provider=evaluator.provider,
-            db_model=evaluator.model,
-            temperature=0.0,
-            # Reasoning-capable models can spend a substantial part of this budget
-            # before emitting the short JSON answer. A 900-token cap produced valid
-            # HTTP responses with empty visible content on Ollama Cloud.
-            max_tokens=min(max(evaluator.max_tokens, 1800), 2400),
-            response_format={"type": "json_object"},
-        )
-        parsed = normalize_evaluator_payload(raw)
-        if not isinstance(parsed.get("updates"), list):
-            logger.warning("Task evaluator returned no usable updates: %s", raw[:2000])
-    except Exception:
-        logger.exception("Task evaluator failed; preserving the previous task state")
-        parsed = {}
-
+    """Apply untrusted model extraction through schema and authority checks."""
     schema = task_config.get("state_schema") or {}
     authorized: dict[str, set[str]] = {field: set() for field in schema}
     for character in characters:
         for field in (character.authority or {}).get("can_confirm", []):
             if field in authorized:
                 authorized[field].add(character.character_id)
+    turn_text = {"user": player_text}
+    turn_text.update({str(row.get("speaker_id")): str(row.get("content") or "") for row in npc_turns})
     variables = state.setdefault("variables", {})
     for update in parsed.get("updates", []) if isinstance(parsed.get("updates"), list) else []:
         field = update.get("field")
         if field not in schema or update.get("status") not in ALLOWED_STATUSES:
             continue
+        value, value_valid = _coerce_value(update.get("value"), schema[field])
+        if not value_valid:
+            logger.warning("Ignoring invalid typed value for task field %s", field)
+            continue
         current = variables.setdefault(field, {"value": None, "status": "unknown", "proposals": [], "confirmations": [], "evidence": []})
-        proposal = {"value": update.get("value"), "proposed_by": update.get("proposed_by"), "evidence": update.get("evidence") or []}
+        evidence = [row for row in (update.get("evidence") or []) if isinstance(row, dict)]
+        valid_evidence: list[dict[str, Any]] = []
+        for row in evidence:
+            speaker_id = "user" if row.get("speaker_id") == "player" else str(row.get("speaker_id") or "")
+            quote = " ".join(str(row.get("quote") or "").split()).casefold()
+            public_text = " ".join(turn_text.get(speaker_id, "").split()).casefold()
+            if speaker_id and quote and quote in public_text:
+                valid_evidence.append({**row, "speaker_id": speaker_id})
         proposed_by = str(update.get("proposed_by") or "")
+        if proposed_by == "player":
+            proposed_by = "user"
+        if not proposed_by and valid_evidence:
+            proposed_by = str(valid_evidence[0]["speaker_id"])
+        proposal = {"value": value, "proposed_by": proposed_by, "evidence": valid_evidence}
         configured_proposers = set(schema[field].get("propose_permissions") or [])
         if "player" in configured_proposers:
             configured_proposers.add("user")
         proposer_valid = not configured_proposers or proposed_by in configured_proposers
         if update["status"] in {"proposed", "disputed", "rejected"}:
             current.setdefault("proposals", []).append(proposal)
-        confirmations = list(dict.fromkeys(update.get("confirmed_by") or []))
+        claimed_confirmations = ["user" if speaker == "player" else str(speaker) for speaker in (update.get("confirmed_by") or [])]
+        evidence_speakers = {str(row["speaker_id"]) for row in valid_evidence}
+        confirmations = [speaker for speaker in dict.fromkeys(claimed_confirmations) if speaker in evidence_speakers]
+        same_value = current.get("value") == value
+        accumulated_confirmations = list(current.get("confirmations") or []) if same_value else []
+        confirmations = list(dict.fromkeys([*accumulated_confirmations, *confirmations]))
         status = update["status"]
         policy = schema[field].get("confirmation_policy", "responsible_participant")
         has_player = "user" in confirmations
@@ -223,12 +295,93 @@ Follow each field's type and confirmation_policy. Preserve prior confirmed value
         }.get(policy, False)
         if status == "confirmed" and not confirmation_valid:
             status = "proposed"
-        if not proposer_valid and status in {"proposed", "disputed", "confirmed"}:
+        if status == "confirmed" and confirmation_valid:
+            current["value"] = value
+        elif not proposer_valid and status in {"proposed", "disputed"}:
             status = "disputed"
-            current.setdefault("permission_violations", []).append({"action": "propose", "speaker_id": proposed_by, "value": update.get("value")})
+            current.setdefault("permission_violations", []).append({"action": "propose", "speaker_id": proposed_by, "value": value})
         else:
-            current["value"] = update.get("value")
+            current["value"] = value
+        if current.get("status") == "confirmed" and same_value and status == "proposed":
+            status = "confirmed"
         current["status"] = status
         current["confirmations"] = confirmations
-        current.setdefault("evidence", []).extend(update.get("evidence") or [])
+        current.setdefault("evidence", []).extend(valid_evidence)
     return evaluate_conditions(task_config, state)
+
+
+async def update_task_state(
+    db: AsyncSession,
+    *,
+    task_config: dict[str, Any],
+    previous: dict[str, Any] | None,
+    player_text: str,
+    npc_turns: list[dict[str, str]],
+    orchestration_config: dict[str, Any] | None,
+    characters: list[CharacterTemplate],
+) -> dict[str, Any]:
+    state = deepcopy(previous) if previous else initial_task_state(task_config)
+    llm_cfg = await orch_support.get_llm_config(db)
+    evaluator = resolve_llm(llm_cfg, orchestration_config, "state_evaluator")
+    config_view = _evaluator_config_view(task_config)
+    state_view = _evaluator_state_view(state)
+    prompt = f"""You are a neutral state evaluator for a multi-role task simulation.
+Use only explicit evidence in the current turn. Never infer agreement from politeness, a question, a conditional offer, or silence.
+Only emit fields present in state_schema. An empty updates array is valid when this turn contains no state change.
+Scenario task schema:
+{json.dumps(config_view, ensure_ascii=False)}
+Previous public task state:
+{json.dumps(state_view, ensure_ascii=False)}
+Current player turn: {player_text}
+Current participant replies:
+{json.dumps(npc_turns, ensure_ascii=False)}
+
+Return strict JSON only:
+{{
+  "phase": "one phase_id from task_config.phases",
+  "updates": [{{
+    "field": "a field in state_schema",
+    "value": "typed value or null",
+    "status": "unknown|proposed|disputed|confirmed|rejected",
+    "proposed_by": "user or character_id",
+    "confirmed_by": ["speaker ids that explicitly confirmed it"],
+    "evidence": [{{"speaker_id":"...","quote":"short exact excerpt"}}]
+  }}]
+}}
+Follow each field's type and confirmation_policy. Preserve prior confirmed values unless explicit new evidence changes them.
+{chr(10).join(task_config.get('evaluator_instructions') or [])}"""
+    parsed: dict[str, Any] = {}
+    for semantic_attempt in range(2):
+        try:
+            repair = (
+                "\nYour previous response was unusable. Return one complete JSON object; "
+                "use {\"updates\":[]} if there is no explicit update.\n"
+                if semantic_attempt
+                else ""
+            )
+            raw = await llm_client.chat_completion(
+                [{"role": "user", "content": prompt + repair}],
+                db_provider=evaluator.provider,
+                db_model=evaluator.model,
+                temperature=0.0,
+                max_tokens=min(max(evaluator.max_tokens, 1800), 3200),
+                response_format={"type": "json_object"},
+            )
+            candidate = normalize_evaluator_payload(raw)
+            if isinstance(candidate.get("updates"), list):
+                parsed = candidate
+                break
+            logger.warning("Task evaluator returned no usable updates: %s", raw[:2000])
+        except Exception:
+            logger.exception("Task evaluator attempt failed")
+    if not parsed:
+        logger.warning("Task evaluator failed; preserving the previous task state")
+
+    return apply_evaluator_updates(
+        task_config=task_config,
+        state=state,
+        parsed=parsed,
+        characters=characters,
+        player_text=player_text,
+        npc_turns=npc_turns,
+    )
