@@ -106,6 +106,8 @@ async def main() -> None:
         assert "orchestration_config" not in public_bundle
         assert "meta" not in public_bundle["messages"][0]
         assert public_bundle["messages"][0]["speaker_source"] == "ai"
+        assert public_bundle["task_result"]["completion_status"] == "in_progress"
+        assert "shared_state" not in public_bundle
 
         modes = set((await db.execute(select(GameSession.session_mode))).scalars().all())
         assert modes == {"participation", "test"}
