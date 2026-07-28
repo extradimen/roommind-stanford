@@ -36,6 +36,14 @@ export default function Home() {
           <span className="system-banner-btn">{t.home.systemBannerBtn} →</span>
         </Link>
 
+        <Link to="/batch-experiments" className="system-banner batch-banner">
+          <div className="system-banner-text">
+            <strong>Batch Experiments</strong>
+            <span>Run RoomMind and baseline comparisons in the background and export one analysis table.</span>
+          </div>
+          <span className="system-banner-btn">Open →</span>
+        </Link>
+
         {error && <div className="error-banner">{error}</div>}
 
         <div className="scenario-grid">
