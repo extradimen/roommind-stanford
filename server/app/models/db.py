@@ -135,6 +135,46 @@ class GameSession(Base):
     memories: Mapped[list["EpisodeMemory"]] = relationship(back_populates="session", cascade="all, delete-orphan")
 
 
+class BatchExperiment(Base):
+    """Persistent server-side collection of autonomous comparison runs."""
+
+    __tablename__ = "batch_experiments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_uuid: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(256), default="Batch experiment")
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    total_runs: Mapped[int] = mapped_column(Integer, default=0)
+    completed_runs: Mapped[int] = mapped_column(Integer, default=0)
+    failed_runs: Mapped[int] = mapped_column(Integer, default=0)
+    cancelled_runs: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BatchExperimentRun(Base):
+    """One scenario/condition/repetition cell in a batch experiment."""
+
+    __tablename__ = "batch_experiment_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[int] = mapped_column(
+        ForeignKey("batch_experiments.id", ondelete="CASCADE"), index=True
+    )
+    scenario_id: Mapped[int] = mapped_column(ForeignKey("scenario_templates.id"), index=True)
+    condition: Mapped[str] = mapped_column(String(32))  # test | baseline
+    repetition: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    session_uuid: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class SessionMessage(Base):
     __tablename__ = "session_messages"
 
