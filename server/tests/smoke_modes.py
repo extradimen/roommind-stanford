@@ -8,7 +8,13 @@ from sqlalchemy import select
 
 from app.database import async_session_factory, init_db
 from app.memory.service import memory_service
-from app.models.db import GameSession, ScenarioTemplate, SessionMessage
+from app.models.db import (
+    BatchExperiment,
+    BatchExperimentRun,
+    GameSession,
+    ScenarioTemplate,
+    SessionMessage,
+)
 from app.session_export import (
     build_public_session_export_bundle,
     build_session_export_bundle,
@@ -80,7 +86,22 @@ async def main() -> None:
             session_mode="baseline",
             run_config={"safety_max_turns": 50, "player_strategy": "balanced"},
         )
+        batch = BatchExperiment(
+            batch_uuid="00000000-0000-0000-0000-000000000001",
+            name="CI batch smoke",
+            config={"concurrency": 2, "random_seed": 42},
+            total_runs=2,
+        )
+        db.add(batch)
         await db.flush()
+        db.add_all([
+            BatchExperimentRun(
+                batch_id=batch.id, scenario_id=scenario.id, condition="test", repetition=1
+            ),
+            BatchExperimentRun(
+                batch_id=batch.id, scenario_id=scenario.id, condition="baseline", repetition=1
+            ),
+        ])
 
         db.add_all([
             SessionMessage(
@@ -164,6 +185,8 @@ async def main() -> None:
 
         modes = set((await db.execute(select(GameSession.session_mode))).scalars().all())
         assert modes == {"participation", "test", "baseline"}
+        batch_modes = set((await db.execute(select(BatchExperimentRun.condition))).scalars().all())
+        assert batch_modes == {"test", "baseline"}
         await db.rollback()
 
     print("dual-mode PostgreSQL smoke test: ok")
