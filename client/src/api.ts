@@ -66,6 +66,33 @@ export interface ChatMessage {
   streamKey?: string;
 }
 
+export interface BatchExperimentRun {
+  id: number;
+  scenario_id: number;
+  condition: "roommind" | "baseline";
+  session_mode: "test" | "baseline";
+  repetition: number;
+  status: string;
+  session_uuid: string | null;
+  result: Record<string, unknown>;
+  error: string | null;
+}
+
+export interface BatchExperiment {
+  batch_uuid: string;
+  name: string;
+  status: string;
+  config: Record<string, unknown>;
+  total_runs: number;
+  completed_runs: number;
+  failed_runs: number;
+  cancelled_runs: number;
+  created_at?: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  runs?: BatchExperimentRun[];
+}
+
 export interface NPCReply {
   type: string;
   speaker_id: string;
@@ -310,6 +337,46 @@ export async function runExternalEvaluation(sessionUuid: string): Promise<Record
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "Failed to run external evaluation");
   }
+  return res.json();
+}
+
+export async function listBatchExperiments(): Promise<BatchExperiment[]> {
+  const res = await fetchReadWithRetry("/api/game/batch-experiments");
+  if (!res.ok) throw new Error("Failed to load batch experiments");
+  return res.json();
+}
+
+export async function getBatchExperiment(batchUuid: string): Promise<BatchExperiment> {
+  const res = await fetchReadWithRetry(`/api/game/batch-experiments/${batchUuid}`);
+  if (!res.ok) throw new Error("Failed to load batch experiment");
+  return res.json();
+}
+
+export async function createBatchExperiment(input: {
+  name: string;
+  scenario_ids: number[];
+  conditions: ("test" | "baseline")[];
+  repetitions: number;
+  concurrency: number;
+  safety_max_turns: number;
+  locale?: string;
+  random_seed: number;
+}): Promise<BatchExperiment> {
+  const res = await fetch("/api/game/batch-experiments", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || "Failed to create batch experiment");
+  }
+  return res.json();
+}
+
+export async function cancelBatchExperiment(batchUuid: string): Promise<BatchExperiment> {
+  const res = await fetch(`/api/game/batch-experiments/${batchUuid}/cancel`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to cancel batch experiment");
   return res.json();
 }
 
