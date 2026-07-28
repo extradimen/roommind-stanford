@@ -103,7 +103,7 @@ main() {
   echo ""
   echo "  查看状态: ./status.sh"
   echo "  停止服务: ./stop.sh"
-  echo "  查看日志: tail -f logs/api.log logs/admin.log logs/client.log"
+  echo "  查看日志: tail -f logs/api.log logs/telemetry.log logs/admin.log logs/client.log"
   echo "  开机自启: bash scripts/install-systemd.sh"
 }
 

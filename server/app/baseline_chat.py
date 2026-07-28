@@ -26,6 +26,7 @@ from app.player_agent import (
     normalize_player_content,
 )
 from app.scenario_side import resolve_player_side_goal
+from app.telemetry import emit
 
 
 @dataclass
@@ -212,6 +213,18 @@ async def process_baseline_step(
         meta={"intent": player_move.intent, "generation_model": player_move.model_label},
         created_at=datetime.now(timezone.utc),
     ))
+    emit(
+        "dialogue.message.recorded",
+        session_uuid=session.session_uuid,
+        scenario_id=session.scenario_id,
+        session_mode=session.session_mode,
+        turn_id=turn_id,
+        sequence_no=next_sequence,
+        speaker_id="user",
+        speaker_type="user",
+        speaker_source="ai",
+        content=player_move.content,
+    )
     public_messages = [*messages, {
         "speaker_id": "user",
         "speaker_type": "user",
@@ -235,6 +248,20 @@ async def process_baseline_step(
             meta={"baseline_model": result.model_label},
             created_at=datetime.now(timezone.utc),
         ))
+        emit(
+            "dialogue.message.recorded",
+            session_uuid=session.session_uuid,
+            scenario_id=session.scenario_id,
+            session_mode=session.session_mode,
+            turn_id=turn_id,
+            sequence_no=next_sequence + index,
+            speaker_id=reply["speaker_id"],
+            speaker_type="npc",
+            speaker_source="ai",
+            content=reply["content"],
+            emotion=reply["emotion"],
+            gesture=reply["gesture"],
+        )
     session.current_phase = result.declared_phase
     session.updated_at = datetime.now(timezone.utc)
     await db.flush()

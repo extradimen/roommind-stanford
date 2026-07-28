@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import patch
 
+import httpx
+
 from app.llm.client import LLMClient
 from app.player_agent import bounded_dialogue
 from app.external_evaluator import _normalize_evaluation, _public_transcript
@@ -22,7 +24,7 @@ class FakeResponse:
 
 
 class FakeAsyncClient:
-    responses: list[FakeResponse] = []
+    responses: list[FakeResponse | Exception] = []
     requested_budgets: list[int] = []
 
     def __init__(self, *args, **kwargs):
@@ -36,7 +38,10 @@ class FakeAsyncClient:
 
     async def post(self, url, *, json, headers):
         self.requested_budgets.append(json["max_tokens"])
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 def completion(content: str | None, finish_reason: str) -> FakeResponse:
@@ -49,7 +54,7 @@ def completion(content: str | None, finish_reason: str) -> FakeResponse:
     )
 
 
-async def call_client(responses: list[FakeResponse], max_tokens: int = 200) -> str:
+async def call_client(responses: list[FakeResponse | Exception], max_tokens: int = 200) -> str:
     FakeAsyncClient.responses = list(responses)
     FakeAsyncClient.requested_budgets = []
     client = LLMClient()
@@ -71,6 +76,13 @@ async def main() -> None:
     )
     assert result == "recovered"
     assert FakeAsyncClient.requested_budgets == [200, 1024]
+
+    result = await call_client([
+        httpx.ReadTimeout("simulated timeout"),
+        completion("recovered after timeout", "stop"),
+    ])
+    assert result == "recovered after timeout"
+    assert FakeAsyncClient.requested_budgets == [200, 200]
 
     try:
         await call_client(

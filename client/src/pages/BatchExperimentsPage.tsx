@@ -157,6 +157,8 @@ export default function BatchExperimentsPage() {
             <div className="result-actions">
               {!terminal.has(selected.status) && <button onClick={async () => { await cancelBatchExperiment(selected.batch_uuid); setSelected(await getBatchExperiment(selected.batch_uuid)); }}>Cancel</button>}
               <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/results.csv`}>Download CSV</a>
+              <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/transcripts.csv`}>All dialogue CSV</a>
+              <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/transcripts.json`}>All dialogue JSON</a>
               {Boolean(selected.config.human_validation_enabled) && <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/human-review.json`}>Human review JSON</a>}
               <button onClick={() => { const blob = new Blob([JSON.stringify(selected, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `batch-${selected.batch_uuid}.json`; a.click(); URL.revokeObjectURL(url); }}>Download JSON</button>
             </div>

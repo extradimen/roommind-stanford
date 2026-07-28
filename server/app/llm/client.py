@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 import asyncio
 import json
+import time
 from typing import Any
 
 import httpx
@@ -16,6 +17,7 @@ from app.platform_llm import (
     resolve_siliconflow_api_key,
     resolve_siliconflow_base_url,
 )
+from app.telemetry import emit, monotonic_ms
 
 
 class LLMClient:
@@ -116,11 +118,55 @@ class LLMClient:
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             for attempt in range(self.MAX_RETRIES):
-                resp = await client.post(url, json=payload, headers=headers)
+                started = time.monotonic()
+                emit(
+                    "llm.request.started",
+                    provider=resolved_provider,
+                    model=resolved_model,
+                    attempt=attempt + 1,
+                    max_attempts=self.MAX_RETRIES,
+                    max_tokens=payload.get("max_tokens"),
+                    message_count=len(messages),
+                    input_characters=sum(len(str(row.get("content") or "")) for row in messages),
+                    response_format=(response_format or {}).get("type"),
+                )
+                try:
+                    resp = await client.post(url, json=payload, headers=headers)
+                except httpx.TransportError as exc:
+                    emit(
+                        "llm.request.transport_error",
+                        provider=resolved_provider,
+                        model=resolved_model,
+                        attempt=attempt + 1,
+                        exception_type=type(exc).__name__,
+                        error=repr(exc)[:1000],
+                        duration_ms=monotonic_ms(started),
+                        retrying=attempt < self.MAX_RETRIES - 1,
+                    )
+                    if attempt < self.MAX_RETRIES - 1:
+                        await asyncio.sleep(1.0 * (attempt + 1))
+                        continue
+                    raise RuntimeError(
+                        f"LLM transport failed after {self.MAX_RETRIES} attempts: "
+                        f"{type(exc).__name__}: {exc!r}"
+                    ) from exc
                 if resp.status_code < 400:
                     data = resp.json()
                     content = data["choices"][0]["message"].get("content")
                     if isinstance(content, str) and content.strip():
+                        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+                        emit(
+                            "llm.request.succeeded",
+                            provider=resolved_provider,
+                            model=resolved_model,
+                            attempt=attempt + 1,
+                            duration_ms=monotonic_ms(started),
+                            output_characters=len(content),
+                            prompt_tokens=usage.get("prompt_tokens"),
+                            completion_tokens=usage.get("completion_tokens"),
+                            total_tokens=usage.get("total_tokens"),
+                            finish_reason=data.get("choices", [{}])[0].get("finish_reason"),
+                        )
                         return content
                     finish_reason = data.get("choices", [{}])[0].get("finish_reason")
                     if finish_reason == "length" and attempt < self.MAX_RETRIES - 1:
@@ -134,13 +180,46 @@ class LLMClient:
                             ),
                             self.LENGTH_RETRY_MAX_TOKENS,
                         )
+                        emit(
+                            "llm.request.length_retry",
+                            provider=resolved_provider,
+                            model=resolved_model,
+                            attempt=attempt + 1,
+                            duration_ms=monotonic_ms(started),
+                            next_max_tokens=payload["max_tokens"],
+                        )
                         continue
+                    emit(
+                        "llm.request.empty",
+                        provider=resolved_provider,
+                        model=resolved_model,
+                        attempt=attempt + 1,
+                        finish_reason=finish_reason,
+                        duration_ms=monotonic_ms(started),
+                    )
                     raise RuntimeError(
                         f"LLM API returned no visible content (finish_reason={finish_reason!r})"
                     )
                 if resp.status_code in self.RETRYABLE_STATUS and attempt < self.MAX_RETRIES - 1:
+                    emit(
+                        "llm.request.http_retry",
+                        provider=resolved_provider,
+                        model=resolved_model,
+                        attempt=attempt + 1,
+                        status_code=resp.status_code,
+                        duration_ms=monotonic_ms(started),
+                    )
                     await asyncio.sleep(1.0 * (attempt + 1))
                     continue
+                emit(
+                    "llm.request.http_error",
+                    provider=resolved_provider,
+                    model=resolved_model,
+                    attempt=attempt + 1,
+                    status_code=resp.status_code,
+                    duration_ms=monotonic_ms(started),
+                    response_preview=resp.text[:500],
+                )
                 raise RuntimeError(f"LLM API error {resp.status_code}: {resp.text[:500]}")
             raise RuntimeError("LLM API request failed after retries")
 

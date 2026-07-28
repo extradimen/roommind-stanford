@@ -1,4 +1,6 @@
 import logging
+import time
+import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +25,7 @@ from app.seed import (
     sync_scenario_side_goals,
     sync_scenario_player_characters,
 )
+from app.telemetry import configure_telemetry, emit, monotonic_ms, telemetry_context
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -42,6 +45,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def request_telemetry(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    started = time.monotonic()
+    with telemetry_context(request_id=request_id, method=request.method, path=request.url.path):
+        emit("http.request.started")
+        try:
+            response = await call_next(request)
+            response.headers["x-request-id"] = request_id
+            emit(
+                "http.request.finished",
+                status_code=response.status_code,
+                duration_ms=monotonic_ms(started),
+            )
+            return response
+        except Exception as exc:
+            logger.exception("Unhandled HTTP request failure request_id=%s", request_id)
+            emit(
+                "http.request.failed",
+                exception_type=type(exc).__name__,
+                error=repr(exc)[:2000],
+                duration_ms=monotonic_ms(started),
+            )
+            raise
+
 app.include_router(admin_router)
 app.include_router(game_router)
 app.include_router(batch_experiments_router)
@@ -54,6 +83,7 @@ app.mount("/static/props", StaticFiles(directory=str(PROPS_DIR)), name="prop_ass
 
 @app.on_event("startup")
 async def startup() -> None:
+    telemetry_path = configure_telemetry()
     reload_settings()
     ensure_platform_llm_defaults()
     await init_db()
@@ -69,6 +99,7 @@ async def startup() -> None:
     await resume_batch_experiments()
     reload_settings()
     logger.info("RoomMind API started on port %s", settings.api_port)
+    logger.info("Structured telemetry log: %s", telemetry_path)
 
 
 @app.get("/health")

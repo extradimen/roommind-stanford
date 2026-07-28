@@ -157,6 +157,7 @@ async def main() -> None:
         assert [row["sequence_no"] for row in bundle["messages"]] == [1, 2]
         assert bundle["messages"][0]["speaker_source"] == "ai"
         assert bundle["dialogue_turns"][0]["turn_id"] == 1
+        assert bundle["performance_trace"] == []
         assert "AI player move" in transcript_csv(bundle)
         assert '"speaker_source": "ai"' in transcript_jsonl(bundle)
 
@@ -169,6 +170,7 @@ async def main() -> None:
         assert "meta" not in public_bundle["messages"][0]
         assert public_bundle["messages"][0]["speaker_source"] == "ai"
         assert public_bundle["task_result"]["completion_status"] == "in_progress"
+        assert public_bundle["performance_trace"] == []
         assert "shared_state" not in public_bundle
 
         baseline_bundle = await build_session_export_bundle(db, baseline_session)

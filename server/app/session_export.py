@@ -19,7 +19,7 @@ from app.player_character import resolve_player_character
 from app.task_state import public_task_result
 
 SESSION_EXPORT_FORMAT = "roommind-session-bundle"
-SESSION_EXPORT_VERSION = 2
+SESSION_EXPORT_VERSION = 3
 
 
 TRANSCRIPT_COLUMNS = [
@@ -321,6 +321,7 @@ async def build_session_export_bundle(db: AsyncSession, session: GameSession) ->
         "test_result": dict(shared.get("_test_state") or {}),
         "baseline_result": dict(shared.get("_baseline_state") or {}),
         "external_evaluation": dict(shared.get("_external_evaluation") or {}),
+        "performance_trace": list(shared.get("_performance_trace") or []),
     }
     bundle["external_observation"] = build_external_observation(bundle)
     return bundle
@@ -373,4 +374,5 @@ def build_public_session_export_bundle(full: dict[str, Any]) -> dict[str, Any]:
         "baseline_result": full.get("baseline_result") or {},
         "external_observation": full.get("external_observation") or {},
         "external_evaluation": full.get("external_evaluation") or {},
+        "performance_trace": full.get("performance_trace") or [],
     }

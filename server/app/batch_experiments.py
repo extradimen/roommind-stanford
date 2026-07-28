@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 import csv
 import io
+import logging
 import random
+import time
+import traceback
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -22,6 +25,7 @@ from app.memory.service import memory_service
 from app.models.db import BatchExperiment, BatchExperimentRun, ScenarioTemplate
 from app.orchestrator.common import orch_support
 from app.session_export import build_public_session_export_bundle, build_session_export_bundle
+from app.telemetry import emit, monotonic_ms, telemetry_context
 
 router = APIRouter(prefix="/api/game/batch-experiments", tags=["batch-experiments"])
 
@@ -30,6 +34,9 @@ MAX_CONCURRENCY = 4
 MAX_RUNS_PER_BATCH = 500
 _tasks: dict[str, asyncio.Task] = {}
 _global_run_semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
+logger = logging.getLogger(__name__)
+AUTONOMOUS_STEP_TIMEOUT_SECONDS = 900
+EXTERNAL_EVALUATION_TIMEOUT_SECONDS = 600
 
 
 class BatchCreateIn(BaseModel):
@@ -51,6 +58,32 @@ def _now() -> datetime:
 def _optional_float(value: Any) -> float | None:
     if value is None:
         return None
+
+
+def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
+    events = [event for row in trace for event in (row.get("llm_events") or [])]
+    successes = [event for event in events if event.get("event") == "llm.request.succeeded"]
+    return {
+        "recorded_stage_count": len(trace),
+        "total_stage_duration_ms": sum(int(row.get("duration_ms") or 0) for row in trace),
+        "llm_request_attempt_count": sum(
+            event.get("event") == "llm.request.started" for event in events
+        ),
+        "llm_success_count": len(successes),
+        "llm_retry_event_count": sum(
+            event.get("event") in {
+                "llm.request.length_retry",
+                "llm.request.http_retry",
+                "llm.request.transport_error",
+            }
+            and bool(event.get("retrying", True))
+            for event in events
+        ),
+        "llm_total_duration_ms": sum(int(event.get("duration_ms") or 0) for event in successes),
+        "prompt_tokens": sum(int(event.get("prompt_tokens") or 0) for event in successes),
+        "completion_tokens": sum(int(event.get("completion_tokens") or 0) for event in successes),
+        "total_tokens": sum(int(event.get("total_tokens") or 0) for event in successes),
+    }
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -124,6 +157,8 @@ async def _batch_cancelled(batch_id: int) -> bool:
 
 async def _execute_run(run_id: int, safety_max_turns: int, locale: str | None) -> None:
     session_uuid: str | None = None
+    stage = "initialization"
+    performance_trace: list[dict[str, Any]] = []
     try:
         async with async_session_factory() as db:
             run = await db.get(BatchExperimentRun, run_id)
@@ -133,6 +168,16 @@ async def _execute_run(run_id: int, safety_max_turns: int, locale: str | None) -
             run.started_at = _now()
             scenario_id, condition = run.scenario_id, run.condition
             repetition = run.repetition
+            batch_id = run.batch_id
+            emit(
+                "batch.run.started",
+                batch_run_id=run_id,
+                batch_id=batch_id,
+                scenario_id=scenario_id,
+                condition=condition,
+                repetition=repetition,
+            )
+            stage = "session_creation"
             session = await memory_service.create_session(
                 db,
                 scenario_id,
@@ -155,31 +200,130 @@ async def _execute_run(run_id: int, safety_max_turns: int, locale: str | None) -
             await db.commit()
 
         # Commit each autonomous turn so progress survives a process restart.
-        for _ in range(safety_max_turns):
-            if await _batch_cancelled(run.batch_id):
+        for turn_index in range(1, safety_max_turns + 1):
+            if await _batch_cancelled(batch_id):
                 raise asyncio.CancelledError
-            async with async_session_factory() as db:
-                from app.api.game import _run_autonomous_step
+            stage = f"autonomous_turn_{turn_index}"
+            step: dict[str, Any] | None = None
+            for step_attempt in range(1, 3):
+                async with async_session_factory() as db:
+                    from app.api.game import _run_autonomous_step
 
-                step = await _run_autonomous_step(db, session_uuid, locale)
-                await db.commit()
+                    started = time.monotonic()
+                    turn_events: list[dict[str, Any]] = []
+                    with telemetry_context(
+                        batch_run_id=run_id,
+                        batch_id=batch_id,
+                        session_uuid=session_uuid,
+                        scenario_id=scenario_id,
+                        condition=condition,
+                        turn_index=turn_index,
+                        step_attempt=step_attempt,
+                        stage=stage,
+                        _collector=turn_events,
+                    ):
+                        emit("batch.turn.started")
+                        try:
+                            step = await asyncio.wait_for(
+                                _run_autonomous_step(db, session_uuid, locale),
+                                timeout=AUTONOMOUS_STEP_TIMEOUT_SECONDS,
+                            )
+                        except TimeoutError as exc:
+                            await db.rollback()
+                            emit(
+                                "batch.turn.timeout",
+                                duration_ms=monotonic_ms(started),
+                                timeout_seconds=AUTONOMOUS_STEP_TIMEOUT_SECONDS,
+                                retrying=step_attempt == 1,
+                            )
+                            performance_trace.append({
+                                "turn_index": turn_index,
+                                "step_attempt": step_attempt,
+                                "stage": stage,
+                                "duration_ms": monotonic_ms(started),
+                                "status": "timeout",
+                                "recorded_at": _now().isoformat(),
+                                "llm_events": [
+                                    row for row in turn_events
+                                    if str(row.get("event") or "").startswith("llm.")
+                                ],
+                            })
+                            if step_attempt == 1:
+                                await asyncio.sleep(2)
+                                continue
+                            raise RuntimeError(
+                                f"Autonomous turn {turn_index} timed out twice after "
+                                f"{AUTONOMOUS_STEP_TIMEOUT_SECONDS}s"
+                            ) from exc
+                        duration_ms = monotonic_ms(started)
+                        trace_row = {
+                            "turn_index": turn_index,
+                            "step_attempt": step_attempt,
+                            "stage": stage,
+                            "duration_ms": duration_ms,
+                            "status": step.get("status"),
+                            "stop_reason": (step.get("test_state") or {}).get("stop_reason"),
+                            "recorded_at": _now().isoformat(),
+                            "llm_events": [
+                                row for row in turn_events
+                                if str(row.get("event") or "").startswith("llm.")
+                            ],
+                        }
+                        performance_trace.append(trace_row)
+                        session_row = await memory_service.get_session(db, session_uuid)
+                        if session_row:
+                            shared = dict(session_row.shared_state or {})
+                            shared["_performance_trace"] = performance_trace[-200:]
+                            session_row.shared_state = shared
+                        emit("batch.turn.finished", **trace_row)
+                    await db.commit()
+                    break
+            if step is None:
+                raise RuntimeError(f"Autonomous turn {turn_index} produced no result")
             if step.get("status") != "active":
                 break
 
         async with async_session_factory() as db:
+            stage = "external_evaluation"
             session = await memory_service.get_session(db, session_uuid)
             if not session:
                 raise RuntimeError("Generated session disappeared")
             scenario = await orch_support.load_scenario(db, session.scenario_id)
             public = build_public_session_export_bundle(await build_session_export_bundle(db, session))
-            evaluation = await evaluate_public_transcript(
-                db,
-                scenario=scenario,
-                messages=public.get("messages") or [],
-                system_claim=(public.get("external_observation") or {}).get("system_claim") or {},
-            )
+            evaluation_started = time.monotonic()
+            evaluation_events: list[dict[str, Any]] = []
+            with telemetry_context(
+                batch_run_id=run_id,
+                batch_id=batch_id,
+                session_uuid=session_uuid,
+                scenario_id=scenario_id,
+                condition=condition,
+                stage=stage,
+                _collector=evaluation_events,
+            ):
+                emit("batch.evaluation.started")
+                evaluation = await asyncio.wait_for(
+                    evaluate_public_transcript(
+                        db,
+                        scenario=scenario,
+                        messages=public.get("messages") or [],
+                        system_claim=(public.get("external_observation") or {}).get("system_claim") or {},
+                    ),
+                    timeout=EXTERNAL_EVALUATION_TIMEOUT_SECONDS,
+                )
+                emit("batch.evaluation.finished", duration_ms=monotonic_ms(evaluation_started))
+            performance_trace.append({
+                "stage": stage,
+                "duration_ms": monotonic_ms(evaluation_started),
+                "recorded_at": _now().isoformat(),
+                "llm_events": [
+                    row for row in evaluation_events
+                    if str(row.get("event") or "").startswith("llm.")
+                ],
+            })
             shared = dict(session.shared_state or {})
             shared["_external_evaluation"] = evaluation
+            shared["_performance_trace"] = performance_trace[-200:]
             session.shared_state = shared
             messages = public.get("messages") or []
             turn_ids = {
@@ -197,12 +341,22 @@ async def _execute_run(run_id: int, safety_max_turns: int, locale: str | None) -
                 turn_count=len(turn_ids),
                 evaluation=evaluation,
             )
+            result.update(_performance_summary(performance_trace))
             run = await db.get(BatchExperimentRun, run_id)
             if run:
                 run.status = "completed"
                 run.result = result
                 run.finished_at = _now()
             await db.commit()
+            emit(
+                "batch.run.completed",
+                batch_run_id=run_id,
+                batch_id=batch_id,
+                session_uuid=session_uuid,
+                scenario_id=scenario_id,
+                condition=condition,
+                turn_count=len(turn_ids),
+            )
     except asyncio.CancelledError:
         async with async_session_factory() as db:
             run = await db.get(BatchExperimentRun, run_id)
@@ -212,15 +366,41 @@ async def _execute_run(run_id: int, safety_max_turns: int, locale: str | None) -
                 run.finished_at = _now()
             await db.commit()
     except Exception as exc:  # one failed cell must not abort the experiment
+        exception_type = type(exc).__name__
+        error_detail = f"{exception_type}: {exc!r}"
+        logger.exception(
+            "Batch run failed run_id=%s session_uuid=%s stage=%s",
+            run_id,
+            session_uuid,
+            stage,
+        )
+        emit(
+            "batch.run.failed",
+            batch_run_id=run_id,
+            session_uuid=session_uuid,
+            stage=stage,
+            exception_type=exception_type,
+            error=error_detail[:2000],
+        )
         async with async_session_factory() as db:
             run = await db.get(BatchExperimentRun, run_id)
             if run:
                 run.status = (
                     "evaluation_failed"
-                    if "External evaluator" in str(exc)
+                    if stage == "external_evaluation" or "External evaluator" in str(exc)
                     else "failed"
                 )
-                run.error = str(exc)[:4000]
+                run.error = error_detail[:4000]
+                run.result = {
+                    **dict(run.result or {}),
+                    "technical_failure": True,
+                    "failure_stage": stage,
+                    "exception_type": exception_type,
+                    "error": error_detail[:4000],
+                    "traceback": traceback.format_exc()[-12000:],
+                    "performance_trace": performance_trace[-200:],
+                    **_performance_summary(performance_trace),
+                }
                 run.finished_at = _now()
                 if session_uuid and not run.session_uuid:
                     run.session_uuid = session_uuid
@@ -551,3 +731,89 @@ async def batch_human_review(batch_uuid: str) -> dict[str, Any]:
         ],
         "packets": packets,
     }
+
+
+async def _batch_transcript_rows(batch_uuid: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    payload = await get_batch(batch_uuid)
+    exports: list[dict[str, Any]] = []
+    async with async_session_factory() as db:
+        for run in payload.get("runs") or []:
+            session_uuid = run.get("session_uuid")
+            if not session_uuid:
+                continue
+            session = await memory_service.get_session(db, session_uuid)
+            if not session:
+                continue
+            public = build_public_session_export_bundle(
+                await build_session_export_bundle(db, session)
+            )
+            exports.append({
+                "run_id": run["id"],
+                "condition": run["condition"],
+                "scenario_id": run["scenario_id"],
+                "repetition": run["repetition"],
+                "run_status": run["status"],
+                "run_error": run.get("error"),
+                "run_result": run.get("result") or {},
+                "session": public,
+            })
+    return payload, exports
+
+
+@router.get("/{batch_uuid}/transcripts.json")
+async def batch_transcripts_json(batch_uuid: str) -> dict[str, Any]:
+    """Export every available public utterance, including failed/running runs."""
+    payload, exports = await _batch_transcript_rows(batch_uuid)
+    return {
+        "batch_uuid": batch_uuid,
+        "batch_name": payload.get("name"),
+        "batch_status": payload.get("status"),
+        "config": payload.get("config") or {},
+        "exported_at": _now().isoformat(),
+        "runs": exports,
+    }
+
+
+@router.get("/{batch_uuid}/transcripts.csv", response_class=PlainTextResponse)
+async def batch_transcripts_csv(batch_uuid: str) -> PlainTextResponse:
+    """One row per utterance for statistical and qualitative analysis."""
+    payload, exports = await _batch_transcript_rows(batch_uuid)
+    rows: list[dict[str, Any]] = []
+    for export in exports:
+        session = export.get("session") or {}
+        for message in session.get("messages") or []:
+            speaker = message.get("speaker") or {}
+            rows.append({
+                "batch_uuid": batch_uuid,
+                "batch_name": payload.get("name"),
+                "run_id": export.get("run_id"),
+                "run_status": export.get("run_status"),
+                "condition": export.get("condition"),
+                "scenario_id": export.get("scenario_id"),
+                "repetition": export.get("repetition"),
+                "session_uuid": (session.get("session") or {}).get("session_uuid"),
+                "session_status": (session.get("session") or {}).get("status"),
+                "turn_id": message.get("turn_id"),
+                "sequence_no": message.get("sequence_no"),
+                "message_id": message.get("id"),
+                "speaker_id": message.get("speaker_id"),
+                "speaker_name": speaker.get("display_name"),
+                "speaker_role": speaker.get("role"),
+                "speaker_type": message.get("speaker_type"),
+                "speaker_source": message.get("speaker_source"),
+                "content": message.get("content"),
+                "emotion": message.get("emotion"),
+                "gesture": message.get("gesture"),
+                "created_at": message.get("created_at"),
+                "run_error": export.get("run_error"),
+            })
+    columns = list(dict.fromkeys(key for row in rows for key in row.keys()))
+    stream = io.StringIO()
+    writer = csv.DictWriter(stream, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(rows)
+    return PlainTextResponse(
+        "\ufeff" + stream.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="batch-{batch_uuid}-transcripts.csv"'},
+    )

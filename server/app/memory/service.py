@@ -15,6 +15,7 @@ from app.orchestrator.common import orch_support
 from app.orchestrator.defaults import ORCHESTRATION_MODE
 from app.orchestrator.generative import generative_orchestrator
 from app.task_state import initial_task_state, update_task_state
+from app.telemetry import emit
 
 settings = get_settings()
 
@@ -185,6 +186,18 @@ class MemoryService:
             created_at=datetime.now(timezone.utc),
         )
         db.add(user_msg)
+        emit(
+            "dialogue.message.recorded",
+            session_uuid=session_uuid,
+            scenario_id=session.scenario_id,
+            session_mode=session.session_mode,
+            turn_id=turn_id,
+            sequence_no=next_sequence,
+            speaker_id="user",
+            speaker_type="user",
+            speaker_source=speaker_source,
+            content=user_input,
+        )
         messages.append({
             "speaker_id": "user",
             "speaker_type": "user",
@@ -264,6 +277,20 @@ class MemoryService:
                 created_at=datetime.now(timezone.utc),
             )
             db.add(msg)
+            emit(
+                "dialogue.message.recorded",
+                session_uuid=session_uuid,
+                scenario_id=session.scenario_id,
+                session_mode=session.session_mode,
+                turn_id=turn_id,
+                sequence_no=next_sequence + reply_index,
+                speaker_id=reply.character_id,
+                speaker_type="npc",
+                speaker_source="ai",
+                content=reply.content,
+                emotion=reply.emotion,
+                gesture=reply.gesture,
+            )
             npc_records.append(reply)
 
         session.updated_at = datetime.now(timezone.utc)
