@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from app.llm.client import LLMClient
 from app.player_agent import bounded_dialogue
+from app.external_evaluator import _normalize_evaluation, _public_transcript
 
 
 class FakeResponse:
@@ -93,6 +94,22 @@ async def main() -> None:
     assert len(dialogue) <= 500
     assert "turn-79" in dialogue
     assert "turn-1-" not in dialogue
+
+    assert _normalize_evaluation('{"externally_validated_completion": true}') == {
+        "externally_validated_completion": True
+    }
+    assert _normalize_evaluation(
+        '```json\n{"evaluation":{"externally_validated_completion":false}}\n```'
+    ) == {"externally_validated_completion": False}
+    assert _normalize_evaluation('{"notes":"missing required decision"}') is None
+
+    transcript = _public_transcript([
+        {"speaker_type": "npc", "sequence_no": i, "turn_id": i, "speaker_id": "npc", "content": "x" * 1200}
+        for i in range(100)
+    ])
+    assert len(transcript) == 80
+    assert transcript[0]["sequence_no"] == 20
+    assert len(transcript[0]["content"]) == 900
 
     print("LLM resilience smoke test: ok")
 
