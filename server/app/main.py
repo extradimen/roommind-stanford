@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.admin import router as admin_router
 from app.api.game import router as game_router
+from app.batch_experiments import resume_batch_experiments, router as batch_experiments_router
 from app.avatar_assets import AVATAR_DIR, ensure_avatar_dir
 from app.prop_assets import PROPS_DIR, ensure_props_dir
 from app.config import get_settings, reload_settings
@@ -43,6 +44,7 @@ app.add_middleware(
 
 app.include_router(admin_router)
 app.include_router(game_router)
+app.include_router(batch_experiments_router)
 
 ensure_avatar_dir()
 ensure_props_dir()
@@ -64,6 +66,7 @@ async def startup() -> None:
     await sync_scenario_orchestration_config()
     await sync_dispatch_rule_keywords()
     await sync_llm_config_with_platform()
+    await resume_batch_experiments()
     reload_settings()
     logger.info("RoomMind API started on port %s", settings.api_port)
 
