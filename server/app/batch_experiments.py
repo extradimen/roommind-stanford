@@ -194,7 +194,11 @@ async def _execute_run(run_id: int, safety_max_turns: int, locale: str | None) -
         async with async_session_factory() as db:
             run = await db.get(BatchExperimentRun, run_id)
             if run:
-                run.status = "failed"
+                run.status = (
+                    "evaluation_failed"
+                    if "External evaluator" in str(exc)
+                    else "failed"
+                )
                 run.error = str(exc)[:4000]
                 run.finished_at = _now()
                 if session_uuid and not run.session_uuid:
@@ -215,9 +219,9 @@ async def _refresh_batch_counts(batch_id: int) -> None:
             ).scalars()
         )
         batch.completed_runs = sum(row.status == "completed" for row in rows)
-        batch.failed_runs = sum(row.status == "failed" for row in rows)
+        batch.failed_runs = sum(row.status in {"failed", "evaluation_failed"} for row in rows)
         batch.cancelled_runs = sum(row.status == "cancelled" for row in rows)
-        terminal = {"completed", "failed", "cancelled"}
+        terminal = {"completed", "failed", "evaluation_failed", "cancelled"}
         if rows and all(row.status in terminal for row in rows):
             batch.status = "cancelled" if any(row.status == "cancelled" for row in rows) else "completed"
             batch.finished_at = _now()
