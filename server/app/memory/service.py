@@ -195,7 +195,14 @@ class MemoryService:
         })
 
         user_turn_count = turn_id
-        orch_cfg = scenario.orchestration_config or {}
+        orch_cfg = dict(scenario.orchestration_config or {})
+        if (session.run_config or {}).get("comparison_lock_model"):
+            orch_cfg["_comparison_lock_model"] = True
+            agent_layer = dict(orch_cfg.get("agent") or {})
+            agent_layer["working_message_limit"] = int(
+                (session.run_config or {}).get("working_message_limit", 30)
+            )
+            orch_cfg["agent"] = agent_layer
         reply_language = detect_reply_language(user_input, ui_locale)
         shared_state = dict(session.shared_state or {})
         shared_state["_reply_language"] = reply_language

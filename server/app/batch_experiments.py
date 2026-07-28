@@ -17,6 +17,7 @@ from sqlalchemy import select
 
 from app.database import async_session_factory
 from app.external_evaluator import evaluate_public_transcript
+from app.external_observer import build_blinded_evaluation_packet
 from app.memory.service import memory_service
 from app.models.db import BatchExperiment, BatchExperimentRun, ScenarioTemplate
 from app.orchestrator.common import orch_support
@@ -40,17 +41,20 @@ class BatchCreateIn(BaseModel):
     safety_max_turns: int = Field(default=50, ge=10, le=100)
     locale: str | None = None
     random_seed: int = Field(default=20260728, ge=0, le=2_147_483_647)
+    human_validation_enabled: bool = False
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _average_role_consistency(value: Any) -> float | None:
-    if not isinstance(value, dict):
+def _optional_float(value: Any) -> float | None:
+    if value is None:
         return None
-    scores = [float(score) for score in value.values() if isinstance(score, (int, float))]
-    return round(sum(scores) / len(scores), 4) if scores else None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _flatten_result(
@@ -71,30 +75,41 @@ def _flatten_result(
         "condition": "roommind" if condition == "test" else "baseline",
         "session_mode": condition,
         "repetition": repetition,
+        "matched_pair_id": f"{scenario.slug}:r{repetition}",
         "session_uuid": session_uuid,
         "session_status": session_status,
         "message_count": message_count,
         "turn_count": turn_count,
         "externally_validated_completion": bool(evaluation.get("externally_validated_completion")),
         "premature_completion": bool(evaluation.get("premature_completion")),
-        "first_valid_completion_turn": evaluation.get("first_valid_completion_turn"),
-        "total_confirmation_count": int(evaluation.get("total_confirmation_count") or 0),
+        "first_valid_completion_turn_id": evaluation.get("first_valid_completion_turn_id"),
+        "valid_confirmation_count": int(evaluation.get("valid_confirmation_count") or 0),
+        "responsible_confirmation_count": int(
+            evaluation.get("responsible_confirmation_count") or 0
+        ),
+        "responsible_confirmer_rate": _optional_float(
+            evaluation.get("responsible_confirmer_rate")
+        ),
         "authority_violation_count": int(evaluation.get("authority_violation_count") or 0),
-        "authority_violation_rate": float(evaluation.get("authority_violation_rate") or 0),
-        "private_information_leakage_count": int(
-            evaluation.get("private_information_leakage_count") or 0
+        "authority_violation_rate": _optional_float(evaluation.get("authority_violation_rate")),
+        "protected_secret_leakage_count": int(
+            evaluation.get("protected_secret_leakage_count") or 0
         ),
-        "private_information_leakage_rate": float(
-            evaluation.get("private_information_leakage_rate") or 0
+        "protected_secret_leakage_rate": _optional_float(
+            evaluation.get("protected_secret_leakage_rate")
         ),
-        "contradiction_count": int(evaluation.get("contradiction_count") or 0),
-        "contradiction_rate": float(evaluation.get("contradiction_rate") or 0),
+        "cross_role_knowledge_contamination_count": int(
+            evaluation.get("cross_role_knowledge_contamination_count") or 0
+        ),
+        "cross_role_knowledge_contamination_rate": _optional_float(
+            evaluation.get("cross_role_knowledge_contamination_rate")
+        ),
+        "agreement_reversal_count": int(evaluation.get("agreement_reversal_count") or 0),
+        "agreement_retention_rate": _optional_float(evaluation.get("agreement_retention_rate")),
         "semantic_repetition_count": int(evaluation.get("semantic_repetition_count") or 0),
         "semantic_repetition_rate": float(evaluation.get("semantic_repetition_rate") or 0),
-        "responsibility_match_rate": float(evaluation.get("responsibility_match_rate") or 0),
-        "distinct_contribution_rate": float(evaluation.get("distinct_contribution_rate") or 0),
-        "role_consistency_mean": _average_role_consistency(evaluation.get("role_consistency")),
-        "closure_coherence": evaluation.get("closure_coherence"),
+        "responsibility_match_rate": _optional_float(evaluation.get("responsibility_match_rate")),
+        "distinct_contribution_rate": _optional_float(evaluation.get("distinct_contribution_rate")),
         "observer_model": evaluation.get("observer_model"),
         "evaluation_protocol": evaluation.get("protocol"),
         "notes": evaluation.get("notes") or "",
@@ -126,6 +141,12 @@ async def _execute_run(run_id: int, safety_max_turns: int, locale: str | None) -
                 run_config={
                     "safety_max_turns": safety_max_turns,
                     "player_strategy": "balanced",
+                    "player_temperature": 0.2,
+                    "player_max_tokens": 512,
+                    "working_message_limit": 30,
+                    "comparison_protocol": "roommind-vs-central-prompt-v2",
+                    "metrics_protocol": "roommind-core-outcomes-v2",
+                    "comparison_lock_model": True,
                     "batch_experiment_run_id": run.id,
                 },
             )
@@ -357,6 +378,14 @@ async def create_batch(body: BatchCreateIn) -> dict:
         if found != set(scenario_ids):
             raise HTTPException(422, "One or more scenarios do not exist or are unpublished")
         config = body.model_dump()
+        config.update({
+            "comparison_protocol": "roommind-vs-central-prompt-v2",
+            "metrics_protocol": "roommind-core-outcomes-v2",
+            "shared_player_policy": "public-only-comparison-player-v1",
+            "player_temperature": 0.2,
+            "working_message_limit": 30,
+            "comparison_lock_model": True,
+        })
         batch = BatchExperiment(
             batch_uuid=str(uuid.uuid4()),
             name=body.name.strip(),
@@ -451,6 +480,8 @@ async def batch_results_csv(batch_uuid: str) -> PlainTextResponse:
                 "batch_name": payload["name"],
                 "run_id": run["id"],
                 "run_status": run["status"],
+                "technical_failure": run["status"] == "failed",
+                "evaluation_failure": run["status"] == "evaluation_failed",
                 "error": run.get("error") or "",
                 "started_at": run.get("started_at") or "",
                 "finished_at": run.get("finished_at") or "",
@@ -459,6 +490,18 @@ async def batch_results_csv(batch_uuid: str) -> PlainTextResponse:
                 "session_mode": run["session_mode"],
                 "repetition": run["repetition"],
                 "session_uuid": run.get("session_uuid") or "",
+                "blind_review_code": str(
+                    uuid.uuid5(uuid.NAMESPACE_URL, f"{batch_uuid}:{run['id']}")
+                )[:12],
+                "comparison_protocol": (payload.get("config") or {}).get("comparison_protocol"),
+                "metrics_protocol": (payload.get("config") or {}).get("metrics_protocol"),
+                "shared_player_policy": (payload.get("config") or {}).get("shared_player_policy"),
+                "configured_max_turns": (payload.get("config") or {}).get("safety_max_turns"),
+                "configured_concurrency": (payload.get("config") or {}).get("concurrency"),
+                "random_seed": (payload.get("config") or {}).get("random_seed"),
+                "human_validation_enabled": (payload.get("config") or {}).get(
+                    "human_validation_enabled", False
+                ),
                 **(run.get("result") or {}),
             }
         )
@@ -472,3 +515,39 @@ async def batch_results_csv(batch_uuid: str) -> PlainTextResponse:
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="batch-{batch_uuid}.csv"'},
     )
+
+
+@router.get("/{batch_uuid}/human-review.json")
+async def batch_human_review(batch_uuid: str) -> dict[str, Any]:
+    """Optional condition-hidden packets; never required for automated metrics."""
+    payload = await get_batch(batch_uuid)
+    if not bool((payload.get("config") or {}).get("human_validation_enabled")):
+        raise HTTPException(409, "Human validation was not enabled for this batch")
+    packets: list[dict[str, Any]] = []
+    async with async_session_factory() as db:
+        for run in payload.get("runs") or []:
+            if run.get("status") != "completed" or not run.get("session_uuid"):
+                continue
+            session = await memory_service.get_session(db, run["session_uuid"])
+            if not session:
+                continue
+            public = build_public_session_export_bundle(
+                await build_session_export_bundle(db, session)
+            )
+            packet = build_blinded_evaluation_packet(public)
+            packet["run_label"] = str(
+                uuid.uuid5(uuid.NAMESPACE_URL, f"{batch_uuid}:{run['id']}")
+            )[:12]
+            packets.append(packet)
+    return {
+        "protocol": "optional-blinded-human-validation-v1",
+        "condition_hidden": True,
+        "required_for_primary_analysis": False,
+        "rating_scale": "1-5",
+        "rubric": [
+            "role_believability",
+            "realism_of_multiparticipant_conflict",
+            "perceived_coherence",
+        ],
+        "packets": packets,
+    }

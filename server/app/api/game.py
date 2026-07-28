@@ -24,7 +24,7 @@ from app.baseline_chat import generate_baseline_player_move, process_baseline_st
 from app.external_observer import build_blinded_evaluation_packet
 from app.external_evaluator import evaluate_public_transcript
 from app.player_character import resolve_player_character
-from app.player_agent import generate_player_move
+from app.player_agent import generate_comparison_player_move, generate_player_move
 from app.scenario_side import resolve_player_side_goal
 from app.task_state import task_progress_signature
 from app.schemas import (
@@ -66,7 +66,10 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
     ]
     before_task_state = ((session.shared_state or {}).get("task_state") or {})
     before_signature = task_progress_signature(before_task_state)
-    move = await generate_player_move(db, session, scenario, messages)
+    if (session.run_config or {}).get("comparison_protocol"):
+        move = await generate_comparison_player_move(db, session, scenario, messages)
+    else:
+        move = await generate_player_move(db, session, scenario, messages)
     turn_result: dict = {}
     async for event in memory_service.process_player_message_stream(
         db,
@@ -96,7 +99,7 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
         stop_reason = "completion_conditions_met"
     elif completed_turns >= safety_max_turns:
         stop_reason = "safety_limit_reached"
-    elif stagnant_turns >= max_stagnant_turns:
+    elif not (session.run_config or {}).get("comparison_protocol") and stagnant_turns >= max_stagnant_turns:
         stop_reason = "no_task_progress"
     if stop_reason:
         session.status = "completed" if task_complete else "stopped"

@@ -69,6 +69,17 @@ class GenerativeOrchestrator:
         beta               = float(cfg.get("retrieval_beta", 1.0))
         gamma              = float(cfg.get("retrieval_gamma", 1.0))
         msg_limit          = int(cfg.get("working_message_limit", 30))
+        comparison_lock_model = bool((orch_cfg or {}).get("_comparison_lock_model"))
+
+        def npc_llm_for(character: CharacterTemplate):
+            # In controlled comparisons all visible NPC speech uses the same
+            # global NPC binding; character-level model overrides are disabled.
+            return resolve_llm(
+                llm_cfg,
+                orch_cfg,
+                "npc_default" if comparison_lock_model else "npc",
+                None if comparison_lock_model else character,
+            )
 
         updated_state = dict(shared_state or {})
         timeline = WorldTimeline.from_shared_state(updated_state)
@@ -184,7 +195,7 @@ class GenerativeOrchestrator:
                 conversation_context=context,
                 current_phase=current_phase,
                 decision_llm=decision_llm,
-                npc_llm=resolve_llm(llm_cfg, orch_cfg, "npc", char),
+                npc_llm=npc_llm_for(char),
                 retrieval_k=retrieval_k,
                 retrieval_alpha=alpha,
                 retrieval_beta=beta,
@@ -195,7 +206,7 @@ class GenerativeOrchestrator:
                 reply_language=reply_language,
                 task_state=updated_state.get("task_state") or {},
             )
-            npc_llm_labels[cid] = resolve_llm(llm_cfg, orch_cfg, "npc", char).label()
+            npc_llm_labels[cid] = npc_llm_for(char).label()
 
             action_result = loop_result.action_result
             agent_debug[cid] = {
@@ -272,7 +283,7 @@ class GenerativeOrchestrator:
                     tick=tick,
                     conversation_context=context,
                     current_phase=current_phase,
-                    npc_llm=resolve_llm(llm_cfg, orch_cfg, "npc", char),
+                    npc_llm=npc_llm_for(char),
                     timeline=timeline,
                     reply_language=reply_language,
                 )

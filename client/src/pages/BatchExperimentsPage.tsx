@@ -30,6 +30,7 @@ export default function BatchExperimentsPage() {
   const [concurrency, setConcurrency] = useState(2);
   const [maxTurns, setMaxTurns] = useState(50);
   const [seed, setSeed] = useState(20260728);
+  const [humanValidation, setHumanValidation] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -77,6 +78,7 @@ export default function BatchExperimentsPage() {
         concurrency,
         safety_max_turns: maxTurns,
         random_seed: seed,
+        human_validation_enabled: humanValidation,
       });
       const detail = await getBatchExperiment(batch.batch_uuid);
       setSelected(detail);
@@ -133,6 +135,7 @@ export default function BatchExperimentsPage() {
             </select><small>Two balances throughput with model rate limits. Run order is randomized.</small></label>
             <label>Maximum turns<input type="number" min={10} max={100} value={maxTurns} onChange={(e) => setMaxTurns(Number(e.target.value))} /></label>
             <label>Randomization seed<input type="number" min={0} value={seed} onChange={(e) => setSeed(Number(e.target.value))} /><small>Keep this value for a reproducible run order.</small></label>
+            <label className="full"><input type="checkbox" checked={humanValidation} onChange={(e) => setHumanValidation(e.target.checked)} /> Prepare optional blinded human-validation packets<small>Off by default. Primary metrics remain automatic; reviewers may later score role believability, multi-party conflict realism, and coherence.</small></label>
             <div className="batch-submit full"><strong>{plannedRuns} total runs</strong><button disabled={busy || plannedRuns < 1 || plannedRuns > 500}>{busy ? "Creating…" : "Start background experiment"}</button></div>
           </form>
         </section>
@@ -154,15 +157,16 @@ export default function BatchExperimentsPage() {
             <div className="result-actions">
               {!terminal.has(selected.status) && <button onClick={async () => { await cancelBatchExperiment(selected.batch_uuid); setSelected(await getBatchExperiment(selected.batch_uuid)); }}>Cancel</button>}
               <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/results.csv`}>Download CSV</a>
+              {Boolean(selected.config.human_validation_enabled) && <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/human-review.json`}>Human review JSON</a>}
               <button onClick={() => { const blob = new Blob([JSON.stringify(selected, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `batch-${selected.batch_uuid}.json`; a.click(); URL.revokeObjectURL(url); }}>Download JSON</button>
             </div>
           </div>
           <div className="progress-track"><span style={{ width: `${selected.total_runs ? 100 * (selected.completed_runs + selected.failed_runs + (selected.cancelled_runs || 0)) / selected.total_runs : 0}%` }} /></div>
           <div className="batch-table-wrap"><table className="batch-table"><thead><tr>
-            <th>Scenario</th><th>Condition</th><th>Rep.</th><th>Status</th><th>Valid</th><th>Premature</th><th>Turn</th><th>Confirmations</th><th>Authority</th><th>Leaks</th><th>Contradictions</th><th>Repetition</th><th>Responsibility</th><th>Distinct</th><th>Role</th><th>Closure</th><th>Error</th>
+            <th>Scenario</th><th>Condition</th><th>Rep.</th><th>Status</th><th>Valid completion</th><th>Premature</th><th>Valid turn</th><th>Responsible confirmer</th><th>Authority violations</th><th>Agreement retention</th><th>Cross-role contamination</th><th>Protected leaks</th><th>Repetition</th><th>Responsibility match</th><th>Distinct contribution</th><th>Error</th>
           </tr></thead><tbody>{(selected.runs || []).map((run) => <tr key={run.id}>
             <td>{scenarioNames.get(run.scenario_id) || run.scenario_id}</td><td>{run.condition}</td><td>{run.repetition}</td><td>{run.status}</td>
-            <td>{value(run.result.externally_validated_completion)}</td><td>{value(run.result.premature_completion)}</td><td>{value(run.result.first_valid_completion_turn)}</td><td>{value(run.result.total_confirmation_count)}</td><td>{value(run.result.authority_violation_count)}</td><td>{value(run.result.private_information_leakage_count)}</td><td>{value(run.result.contradiction_count)}</td><td>{value(run.result.semantic_repetition_count)}</td><td>{value(run.result.responsibility_match_rate)}</td><td>{value(run.result.distinct_contribution_rate)}</td><td>{value(run.result.role_consistency_mean)}</td><td>{value(run.result.closure_coherence)}</td><td className="error-cell" title={run.error || ""}>{run.error || ""}</td>
+            <td>{value(run.result.externally_validated_completion)}</td><td>{value(run.result.premature_completion)}</td><td>{value(run.result.first_valid_completion_turn_id)}</td><td>{value(run.result.responsible_confirmer_rate)}</td><td>{value(run.result.authority_violation_count)}</td><td>{value(run.result.agreement_retention_rate)}</td><td>{value(run.result.cross_role_knowledge_contamination_count)}</td><td>{value(run.result.protected_secret_leakage_count)}</td><td>{value(run.result.semantic_repetition_rate)}</td><td>{value(run.result.responsibility_match_rate)}</td><td>{value(run.result.distinct_contribution_rate)}</td><td className="error-cell" title={run.error || ""}>{run.error || ""}</td>
           </tr>)}</tbody></table></div>
         </section>}
       </div>

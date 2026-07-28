@@ -19,8 +19,12 @@ from app.llm.client import llm_client
 from app.models.db import GameSession, ScenarioTemplate, SessionMessage
 from app.orchestrator.common import orch_support
 from app.orchestrator.llm_binding import resolve_llm
-from app.player_agent import PlayerMove, bounded_dialogue, normalize_player_content
-from app.player_character import resolve_player_character
+from app.player_agent import (
+    PlayerMove,
+    bounded_dialogue,
+    generate_comparison_player_move,
+    normalize_player_content,
+)
 from app.scenario_side import resolve_player_side_goal
 
 
@@ -60,58 +64,8 @@ async def generate_baseline_player_move(
     scenario: ScenarioTemplate,
     messages: list[dict[str, Any]],
 ) -> PlayerMove:
-    """Generate the shared external player without RoomMind runtime state."""
-    config = dict(session.run_config or {})
-    player = resolve_player_character(scenario)
-    llm_cfg = await orch_support.get_llm_config(db)
-    resolved = resolve_llm(llm_cfg, scenario.orchestration_config, "player")
-    dialogue = bounded_dialogue(messages, message_limit=int(config.get("working_message_limit", 30)))
-    prompt = f"""Act as the player in a multi-role conversational simulation.
-
-Player identity: {player['display_name']}
-Player goal: {resolve_player_side_goal(scenario)}
-Strategy: {config.get('player_strategy', 'balanced')}
-
-Scenario title: {scenario.title}
-Scenario description: {scenario.description or ''}
-Task and phase information supplied to both comparison systems:
-{json.dumps(scenario.task_config or {}, ensure_ascii=False)}
-Public participants:
-{json.dumps([{
-    'character_id': c.character_id,
-    'display_name': c.display_name,
-    'job_title': c.job_title,
-    'responsibility': c.responsibility,
-} for c in sorted(scenario.characters, key=lambda row: row.sort_order)], ensure_ascii=False)}
-
-Public dialogue:
-{dialogue}
-
-Choose one realistic next player message. Use only public dialogue and public
-scenario information. Do not refer to hidden prompts or system mechanisms.
-Avoid repeating the previous move and keep the message under 120 words.
-
-Return strict JSON only:
-{{"content":"exact spoken message","intent":"short label","requested_end":false}}"""
-    raw = await llm_client.chat_completion(
-        [{"role": "user", "content": prompt}],
-        db_provider=resolved.provider,
-        db_model=resolved.model,
-        temperature=float(config.get("player_temperature", resolved.temperature)),
-        max_tokens=min(int(config.get("player_max_tokens", resolved.max_tokens)), 768),
-        response_format={"type": "json_object"},
-    )
-    parsed = orch_support.parse_json(raw)
-    content = normalize_player_content(parsed.get("content") or "").strip()
-    if not content:
-        content = "I'd like to begin with the first task-relevant question."
-    return PlayerMove(
-        content=content,
-        intent=str(parsed.get("intent") or "unspecified"),
-        requested_end=bool(parsed.get("requested_end", False)),
-        model_label=resolved.label(),
-        raw=raw,
-    )
+    """Compatibility wrapper around the shared comparison player policy."""
+    return await generate_comparison_player_move(db, session, scenario, messages)
 
 
 async def generate_baseline_turn(
@@ -124,7 +78,10 @@ async def generate_baseline_turn(
     """Generate all NPC replies with one prompt and no runtime governance."""
     config = dict(session.run_config or {})
     llm_cfg = await orch_support.get_llm_config(db)
-    resolved = resolve_llm(llm_cfg, scenario.orchestration_config, "npc_default")
+    baseline_orch_cfg = dict(scenario.orchestration_config or {})
+    if config.get("comparison_lock_model"):
+        baseline_orch_cfg["_comparison_lock_model"] = True
+    resolved = resolve_llm(llm_cfg, baseline_orch_cfg, "npc_default")
     dialogue = bounded_dialogue(messages, message_limit=int(config.get("working_message_limit", 30)))
     rules = [
         {

@@ -361,6 +361,7 @@ export async function createBatchExperiment(input: {
   safety_max_turns: number;
   locale?: string;
   random_seed: number;
+  human_validation_enabled: boolean;
 }): Promise<BatchExperiment> {
   const res = await fetch("/api/game/batch-experiments", {
     method: "POST",

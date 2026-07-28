@@ -7,7 +7,7 @@
   "player_side_goal": "Lead an evidence-based decision, secure explicit functional commitments, and approve a defensible launch plan.",
   "opponent_side_goal": "Protect revenue opportunity, operational reliability, and financial discipline within each executive's authority.",
   "task_config": {
-    "config_version": 3,
+    "config_version": 4,
     "task_type": "cross_functional_decision",
     "player_objective": "Confirm market readiness, operational readiness, and budget approval, then obtain joint approval for a phased launch decision.",
     "counterpart_objective": "Reach a launch decision without hiding material commercial, operational, or financial risk.",
@@ -121,6 +121,7 @@
       "tendency": {"risk": "medium_high", "cooperation": "high", "aggression": "medium"},
       "private_state": {
         "goal": "Protect two strategic customer commitments and the quarterly revenue target.",
+        "protected_secrets": ["Two major customers privately expect availability this quarter."],
         "hidden_agenda": ["Two major customers expect availability this quarter."],
         "redlines": ["An indefinite delay without a customer communication plan."]
       },
@@ -148,6 +149,7 @@
       "tendency": {"risk": "very_low", "cooperation": "medium", "aggression": "low"},
       "private_state": {
         "goal": "Avoid an uncontrolled support surge while preserving a credible launch path.",
+        "discoverable_information": ["The support team is short two trained specialists for a national launch."],
         "hidden_agenda": ["The support team is short two trained specialists for a national launch."],
         "redlines": ["A full national launch without monitoring, rollback criteria, and on-call coverage."]
       },
@@ -175,6 +177,7 @@
       "tendency": {"risk": "low", "cooperation": "medium", "aggression": "low"},
       "private_state": {
         "goal": "Limit downside while preserving a measurable route to revenue.",
+        "protected_secrets": ["A contingency reserve is available only if exposure is capped and reviewed after 30 days."],
         "hidden_agenda": ["A contingency reserve is available if exposure is capped and reviewed after 30 days."],
         "redlines": ["Open-ended launch spending", "A launch decision without measurable stop criteria"]
       },

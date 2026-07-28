@@ -238,3 +238,82 @@ Return strict JSON only:
         model_label=player_llm.label(),
         raw=raw,
     )
+
+
+async def generate_comparison_player_move(
+    db: AsyncSession,
+    session: GameSession,
+    scenario: ScenarioTemplate,
+    messages: list[dict[str, Any]],
+) -> PlayerMove:
+    """Shared, public-only player policy for controlled batch comparisons.
+
+    Both conditions call this exact function. It deliberately cannot inspect
+    RoomMind task state, phases, private memories, plans, or baseline internals.
+    """
+    config = dict(session.run_config or {})
+    player = resolve_player_character(scenario)
+    llm_cfg = await orch_support.get_llm_config(db)
+    comparison_orch_cfg = dict(scenario.orchestration_config or {})
+    comparison_orch_cfg["_comparison_lock_model"] = True
+    resolved = resolve_llm(llm_cfg, comparison_orch_cfg, "player")
+    dialogue = bounded_dialogue(
+        messages,
+        message_limit=int(config.get("working_message_limit", 30)),
+    )
+    prompt = f"""Act as the external player in a controlled comparison of two
+multi-role dialogue systems. The player policy must be identical in both
+conditions and may use public information only.
+
+Player identity: {player['display_name']}
+Player goal: {resolve_player_side_goal(scenario)}
+Strategy: {config.get('player_strategy', 'balanced')}
+
+Public scenario title: {scenario.title}
+Public scenario description: {scenario.description or ''}
+Public task specification: {json.dumps(scenario.task_config or {}, ensure_ascii=False)}
+Public participants: {json.dumps(_public_character_context(scenario), ensure_ascii=False)}
+
+Public dialogue:
+{dialogue}
+
+Choose one realistic next player message. Do not infer or mention hidden state,
+private memories, agent architecture, internal phase, or system completion.
+Advance an unresolved issue, preserve explicit agreements, avoid repetition,
+and keep the message under 120 words. Use the dialogue language, default English.
+
+Return strict JSON only:
+{{"content":"exact spoken message","intent":"short label","requested_end":false}}"""
+    raw = ""
+    parsed: dict[str, Any] = {}
+    content = ""
+    rejection = ""
+    for attempt in range(2):
+        repair = (
+            f"\nPrevious output was rejected ({rejection}). Return exactly one complete JSON object."
+            if attempt else ""
+        )
+        raw = await llm_client.chat_completion(
+            [{"role": "user", "content": prompt + repair}],
+            db_provider=resolved.provider,
+            db_model=resolved.model,
+            temperature=float(config.get("player_temperature", 0.2)),
+            max_tokens=min(int(config.get("player_max_tokens", 512)), 768),
+            response_format={"type": "json_object"},
+        )
+        parsed = orch_support.parse_json(raw)
+        content = normalize_player_content(parsed.get("content") or "").strip()
+        rejection = player_speech_rejection_reason(content) or ""
+        if content and not rejection and isinstance(parsed.get("requested_end", False), bool):
+            break
+        rejection = rejection or "invalid_json_fields"
+    if not content or rejection:
+        content = "Could you clarify the most important unresolved issue and the evidence needed to resolve it?"
+        parsed = {"intent": "request_clarification", "requested_end": False}
+    return PlayerMove(
+        content=content,
+        intent=str(parsed.get("intent") or "unspecified"),
+        requested_end=bool(parsed.get("requested_end", False)),
+        model_label=resolved.label(),
+        raw=raw,
+    )

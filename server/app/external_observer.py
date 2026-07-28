@@ -88,13 +88,13 @@ def build_external_observation(bundle: dict[str, Any]) -> dict[str, Any]:
             "externally_validated_completion",
             "premature_completion",
             "authority_violation_rate",
-            "private_information_leakage_rate",
-            "contradiction_rate",
-            "dispatch_responsibility_match",
+            "responsible_confirmer_rate",
+            "agreement_retention_rate",
+            "cross_role_knowledge_contamination_rate",
+            "protected_secret_leakage_rate",
+            "responsibility_match_rate",
             "semantic_repetition_rate",
             "distinct_contribution_rate",
-            "role_consistency",
-            "closure_coherence",
         ],
     }
 
@@ -104,7 +104,7 @@ def build_blinded_evaluation_packet(bundle: dict[str, Any]) -> dict[str, Any]:
     scenario = bundle.get("scenario") or {}
     directory = bundle.get("speaker_directory") or {}
     return {
-        "evaluation_protocol": "roommind-comparative-observer-v1",
+        "evaluation_protocol": "optional-blinded-human-validation-v1",
         "run_label": "anonymous",
         "gold_specification": {
             "scenario_id": scenario.get("id"),
@@ -132,4 +132,12 @@ def build_blinded_evaluation_packet(bundle: dict[str, Any]) -> dict[str, Any]:
             if row.get("speaker_type") in {"user", "npc"}
         ],
         "system_claim": (bundle.get("external_observation") or {}).get("system_claim") or {},
+        "human_rating_form": {
+            "scale": "1-5",
+            "role_believability": None,
+            "realism_of_multiparticipant_conflict": None,
+            "perceived_coherence": None,
+            "reviewer_id": "",
+            "notes": "",
+        },
     }

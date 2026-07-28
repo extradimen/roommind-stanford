@@ -107,9 +107,9 @@ async def main() -> None:
         {"speaker_type": "npc", "sequence_no": i, "turn_id": i, "speaker_id": "npc", "content": "x" * 1200}
         for i in range(100)
     ])
-    assert len(transcript) == 80
-    assert transcript[0]["sequence_no"] == 20
-    assert len(transcript[0]["content"]) == 900
+    assert len(transcript) == 50
+    assert transcript[0]["sequence_no"] == 50
+    assert len(transcript[0]["content"]) == 650
 
     print("LLM resilience smoke test: ok")
 
