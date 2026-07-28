@@ -23,7 +23,10 @@ temperature, randomization seed, and evaluator model constant across conditions.
 
 The batch, each run, the generated session UUID, the external evaluation, and any
 error are stored in PostgreSQL. Each dialogue turn is committed independently. A
-failed run is recorded as a failed row and does not abort other cells. CSV exports
+failed run is recorded as a failed row and does not abort other cells. An
+`evaluation_failed` status means that the dialogue finished but the independent
+observer failed after its bounded retries; it is an infrastructure exclusion, not a
+task failure. CSV exports
 include completed, failed, and cancelled rows so exclusions remain auditable.
 
 ## Analysis
