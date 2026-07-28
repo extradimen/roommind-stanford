@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -35,18 +36,44 @@ def _gold_specification(scenario: ScenarioTemplate) -> dict[str, Any]:
     }
 
 
-def _public_transcript(messages: list[dict[str, Any]], limit: int = 100) -> list[dict[str, Any]]:
+EVALUATOR_ATTEMPTS = 3
+
+
+def _public_transcript(messages: list[dict[str, Any]], limit: int = 80) -> list[dict[str, Any]]:
     rows = [
         {
             "sequence_no": row.get("sequence_no"),
             "turn_id": row.get("turn_id"),
             "speaker_id": row.get("speaker_id"),
-            "content": str(row.get("content") or "")[:1500],
+            "content": str(row.get("content") or "")[:900],
         }
         for row in messages
         if row.get("speaker_type") in {"user", "npc"}
     ]
-    return rows[-max(1, min(limit, 150)):]
+    return rows[-max(1, min(limit, 100)):]
+
+
+def _normalize_evaluation(raw: str) -> dict[str, Any] | None:
+    """Accept harmless wrappers while rejecting prose or incomplete output."""
+    parsed = orch_support.parse_json(raw)
+    if not isinstance(parsed, dict):
+        return None
+    for wrapper in ("evaluation", "result", "metrics"):
+        nested = parsed.get(wrapper)
+        if isinstance(nested, dict):
+            parsed = nested
+            break
+    if "externally_validated_completion" not in parsed:
+        return None
+    return parsed
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().casefold() in {"true", "yes", "1"}
+    return bool(value)
 
 
 async def evaluate_public_transcript(
@@ -94,20 +121,41 @@ Return strict JSON only using this schema:
 }}
 Rates must be between 0 and 1. Role consistency and closure coherence use 1-5.
 Use empty arrays when there are no violations."""
-    raw = await llm_client.chat_completion(
-        [{"role": "user", "content": prompt}],
-        db_provider=resolved.provider,
-        db_model=resolved.model,
-        temperature=0.0,
-        max_tokens=min(max(resolved.max_tokens, 2200), 3600),
-        response_format={"type": "json_object"},
-    )
-    parsed = orch_support.parse_json(raw)
-    if not isinstance(parsed, dict) or "externally_validated_completion" not in parsed:
-        raise RuntimeError("External evaluator returned an unusable response")
+    parsed: dict[str, Any] | None = None
+    last_shape = "empty"
+    for attempt in range(EVALUATOR_ATTEMPTS):
+        retry_instruction = ""
+        if attempt:
+            retry_instruction = (
+                "\nYour previous response could not be parsed. Return exactly one complete JSON "
+                "object. Do not use Markdown, prose, comments, or an outer wrapper."
+            )
+        raw = await llm_client.chat_completion(
+            [{"role": "user", "content": prompt + retry_instruction}],
+            db_provider=resolved.provider,
+            db_model=resolved.model,
+            temperature=0.0,
+            max_tokens=min(max(resolved.max_tokens, 2600 + attempt * 500), 4096),
+            response_format={"type": "json_object"},
+        )
+        parsed = _normalize_evaluation(raw)
+        if parsed is not None:
+            break
+        last_shape = f"nonempty={bool(raw.strip())}, chars={len(raw)}"
+        if attempt < EVALUATOR_ATTEMPTS - 1:
+            await asyncio.sleep(0.5 * (attempt + 1))
+    if parsed is None:
+        raise RuntimeError(
+            "External evaluator returned unusable JSON after "
+            f"{EVALUATOR_ATTEMPTS} attempts ({last_shape})"
+        )
     transcript = _public_transcript(messages)
     npc_message_count = sum(1 for row in messages if row.get("speaker_type") == "npc")
     public_message_count = len(transcript)
+    parsed["externally_validated_completion"] = _as_bool(
+        parsed.get("externally_validated_completion")
+    )
+    parsed["premature_completion"] = _as_bool(parsed.get("premature_completion"))
     for key in (
         "authority_violations",
         "private_information_leaks",
@@ -148,4 +196,6 @@ Use empty arrays when there are no violations."""
     parsed["protocol"] = "blinded-semantic-observer-v1"
     parsed["observer_model"] = resolved.label()
     parsed["condition_hidden"] = True
+    parsed["evaluation_attempts"] = attempt + 1
+    parsed["evaluated_public_message_count"] = public_message_count
     return parsed
