@@ -13,7 +13,9 @@ from app.models.db import ScenarioTemplate
 from app.orchestrator.common import orch_support
 from app.orchestrator.llm_binding import resolve_llm
 
-EVALUATOR_ATTEMPTS = 3
+EVALUATOR_ATTEMPTS = 2
+DIMENSION_TIMEOUT_SECONDS = 240
+DIMENSION_CONCURRENCY = 2
 
 REALISM_DIMENSIONS: dict[str, list[str]] = {
     "role_strategic_fidelity": [
@@ -86,7 +88,7 @@ def _public_transcript(
     } for row in source][-max(1, min(message_limit, 300)):]
 
 
-def _normalize_evaluation(raw: str) -> dict[str, Any] | None:
+def _normalize_evaluation(raw: str, dimension: str | None = None) -> dict[str, Any] | None:
     parsed = orch_support.parse_json(raw)
     if not isinstance(parsed, dict):
         return None
@@ -94,6 +96,13 @@ def _normalize_evaluation(raw: str) -> dict[str, Any] | None:
         if isinstance(parsed.get(wrapper), dict):
             parsed = parsed[wrapper]
             break
+    if dimension and isinstance(parsed.get(dimension), dict):
+        parsed = parsed[dimension]
+    if "dimension_score" not in parsed:
+        candidates = [value for value in parsed.values()
+                      if isinstance(value, dict) and "dimension_score" in value]
+        if len(candidates) == 1:
+            parsed = candidates[0]
     # New six-dimensional responses and legacy completion responses are both
     # accepted so old smoke tests and stored exports remain readable.
     if "dimension_score" not in parsed and "externally_validated_completion" not in parsed:
@@ -164,15 +173,20 @@ System claim (untrusted):
 Return strict JSON only:
 {{"dimension_score":4,"metrics":{{{','.join(json.dumps(name)+':{"score":4,"evidence_sequence_nos":[],"reason":"brief"}' for name in metrics)}}},"strengths":[],"issues":[],"notes":"brief"}}
 Do not add metrics or omit metrics."""
+    last_preview = ""
     for attempt in range(EVALUATOR_ATTEMPTS):
         suffix = "" if not attempt else "\nReturn one complete JSON object only; no Markdown or prose."
-        raw = await llm_client.chat_completion(
-            [{"role": "user", "content": prompt + suffix}],
-            db_provider=provider, db_model=model, temperature=0.0,
-            max_tokens=min(max(max_tokens, 1800 + attempt * 300), 3200),
-            response_format={"type": "json_object"},
+        raw = await asyncio.wait_for(
+            llm_client.chat_completion(
+                [{"role": "user", "content": prompt + suffix}],
+                db_provider=provider, db_model=model, temperature=0.0,
+                max_tokens=min(max(max_tokens, 1800 + attempt * 300), 3200),
+                response_format={"type": "json_object"},
+            ),
+            timeout=DIMENSION_TIMEOUT_SECONDS,
         )
-        parsed = _normalize_evaluation(raw)
+        last_preview = raw.strip()[:2000]
+        parsed = _normalize_evaluation(raw, dimension)
         if parsed and "dimension_score" in parsed:
             normalized_metrics: dict[str, Any] = {}
             source_metrics = parsed.get("metrics") if isinstance(parsed.get("metrics"), dict) else {}
@@ -189,7 +203,10 @@ Do not add metrics or omit metrics."""
             return parsed
         if attempt < EVALUATOR_ATTEMPTS - 1:
             await asyncio.sleep(0.5 * (attempt + 1))
-    raise RuntimeError(f"External evaluator returned unusable JSON for {dimension}")
+    raise RuntimeError(
+        f"External evaluator returned unusable JSON for {dimension}; "
+        f"response_preview={last_preview!r}"
+    )
 
 
 async def evaluate_public_transcript(
@@ -204,26 +221,38 @@ async def evaluate_public_transcript(
     gold = _gold_specification(scenario, dispatch_rules)
     dimensions: dict[str, Any] = {}
     evaluation_errors: dict[str, str] = {}
-    for dimension, metrics in REALISM_DIMENSIONS.items():
+    semaphore = asyncio.Semaphore(DIMENSION_CONCURRENCY)
+    async def evaluate_one(dimension: str, metrics: list[str]) -> tuple[str, dict[str, Any], str | None]:
         try:
-            dimensions[dimension] = await _evaluate_dimension(
-                dimension=dimension, metrics=metrics, gold=gold, transcript=transcript,
-                system_claim=system_claim, provider=resolved.provider, model=resolved.model,
-                max_tokens=resolved.max_tokens,
-            )
+            async with semaphore:
+                value = await _evaluate_dimension(
+                    dimension=dimension, metrics=metrics, gold=gold, transcript=transcript,
+                    system_claim=system_claim, provider=resolved.provider, model=resolved.model,
+                    max_tokens=resolved.max_tokens,
+                )
+            return dimension, value, None
         except Exception as exc:
             # One malformed judge response must not discard a completed dialogue
             # or the five other independent realism dimensions.
-            evaluation_errors[dimension] = f"{type(exc).__name__}: {exc}"[:1000]
-            dimensions[dimension] = {
+            error = f"{type(exc).__name__}: {exc}"[:3000]
+            value = {
                 "dimension_score": None,
                 "metrics": {name: {
                     "score": None, "evidence_sequence_nos": [],
                     "reason": "Evaluation unavailable after retries",
                 } for name in metrics},
-                "strengths": [], "issues": [], "notes": evaluation_errors[dimension],
+                "strengths": [], "issues": [], "notes": error,
                 "status": "evaluation_failed",
             }
+            return dimension, value, error
+
+    evaluated = await asyncio.gather(*(
+        evaluate_one(dimension, metrics) for dimension, metrics in REALISM_DIMENSIONS.items()
+    ))
+    for dimension, value, error in evaluated:
+        dimensions[dimension] = value
+        if error:
+            evaluation_errors[dimension] = error
 
     result: dict[str, Any] = {
         "protocol": "blinded-six-dimension-realism-v3",

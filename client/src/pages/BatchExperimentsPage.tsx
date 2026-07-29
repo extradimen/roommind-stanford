@@ -10,11 +10,12 @@ import {
   listScenarios,
   getBlindReviewQueue,
   submitBlindReview,
+  startBatchEvaluation,
   BlindReviewQueue,
   Scenario,
 } from "../api";
 
-const terminal = new Set(["completed", "cancelled"]);
+const terminal = new Set(["dialogue_completed", "evaluation_completed", "evaluation_partial", "completed", "cancelled"]);
 const realismDimensions = [
   "role_strategic_fidelity", "epistemic_fidelity", "temporal_coherence",
   "interaction_structure_fidelity", "multi_party_dynamics_fidelity", "procedural_fidelity",
@@ -131,6 +132,17 @@ export default function BatchExperimentsPage() {
     } catch (e) { setError(String(e)); }
   }
 
+  async function startEvaluation(retryAll = false) {
+    if (!selected) return;
+    setBusy(true); setError("");
+    try {
+      await startBatchEvaluation(selected.batch_uuid, { retry_all: retryAll, concurrency: 1 });
+      setSelected(await getBatchExperiment(selected.batch_uuid));
+      await refreshList();
+    } catch (e) { setError(String(e)); }
+    finally { setBusy(false); }
+  }
+
   return (
     <AppShell>
       <div className="batch-page">
@@ -138,7 +150,7 @@ export default function BatchExperimentsPage() {
           <div>
             <Link to="/">← Scenarios</Link>
             <h1>Batch Experiments</h1>
-            <p>Server-side runs continue after this page is closed. Results are evaluated externally and stored as one row per run.</p>
+            <p>Dialogue generation and external evaluation are independent server-side processes. Closing this page does not interrupt either process.</p>
           </div>
         </header>
 
@@ -197,7 +209,9 @@ export default function BatchExperimentsPage() {
           <div className="result-heading">
             <div><h2>{selected.name}</h2><p>Status: <strong>{selected.status}</strong> · completed {selected.completed_runs} · failed {selected.failed_runs} · cancelled {selected.cancelled_runs || 0} · total {selected.total_runs}</p></div>
             <div className="result-actions">
-              {!terminal.has(selected.status) && <button onClick={async () => { await cancelBatchExperiment(selected.batch_uuid); setSelected(await getBatchExperiment(selected.batch_uuid)); }}>Cancel</button>}
+              {!terminal.has(selected.status) && selected.status !== "evaluation_running" && <button onClick={async () => { await cancelBatchExperiment(selected.batch_uuid); setSelected(await getBatchExperiment(selected.batch_uuid)); }}>Cancel dialogue generation</button>}
+              {["dialogue_completed", "evaluation_partial"].includes(selected.status) && <button disabled={busy} onClick={() => startEvaluation(false)}>{busy ? "Starting…" : "Start automatic evaluation"}</button>}
+              {selected.status === "evaluation_completed" && <button disabled={busy} onClick={() => startEvaluation(true)}>Re-evaluate all dialogues</button>}
               <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/results.csv`}>Download CSV</a>
               <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/transcripts.csv`}>All dialogue CSV</a>
               <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/transcripts.json`}>All dialogue JSON</a>
@@ -209,9 +223,9 @@ export default function BatchExperimentsPage() {
           </div>
           <div className="progress-track"><span style={{ width: `${selected.total_runs ? 100 * (selected.completed_runs + selected.failed_runs + (selected.cancelled_runs || 0)) / selected.total_runs : 0}%` }} /></div>
           <div className="batch-table-wrap"><table className="batch-table"><thead><tr>
-            <th>Scenario</th><th>Condition</th><th>Rep.</th><th>Status</th>{realismDimensions.map((d) => <th key={d}>{dimensionLabels[d]}</th>)}<th>Error</th>
+            <th>Scenario</th><th>Condition</th><th>Rep.</th><th>Dialogue</th><th>AI evaluation</th>{realismDimensions.map((d) => <th key={d}>{dimensionLabels[d]}</th>)}<th>Error</th>
           </tr></thead><tbody>{(selected.runs || []).map((run) => <tr key={run.id}>
-            <td>{scenarioNames.get(run.scenario_id) || run.scenario_id}</td><td>{run.condition}</td><td>{run.repetition}</td><td>{run.status}</td>
+            <td>{scenarioNames.get(run.scenario_id) || run.scenario_id}</td><td>{run.condition}</td><td>{run.repetition}</td><td>{value(run.result.dialogue_status || (run.status.startsWith("dialogue_") ? run.status.replace("dialogue_", "") : run.session_uuid ? "completed" : run.status))}</td><td>{value(run.result.evaluation_status || (run.status.startsWith("evaluation_") ? run.status.replace("evaluation_", "") : "not started"))}</td>
             {realismDimensions.map((d) => <td key={d}>{value(run.result[`ai_${d}`])}</td>)}<td className="error-cell" title={run.error || ""}>{run.error || ""}</td>
           </tr>)}</tbody></table></div>
         </section>}

@@ -33,10 +33,11 @@ DEFAULT_CONCURRENCY = 2
 MAX_CONCURRENCY = 4
 MAX_RUNS_PER_BATCH = 500
 _tasks: dict[str, asyncio.Task] = {}
+_evaluation_tasks: dict[str, asyncio.Task] = {}
 _global_run_semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
 logger = logging.getLogger(__name__)
 AUTONOMOUS_STEP_TIMEOUT_SECONDS = 900
-EXTERNAL_EVALUATION_TIMEOUT_SECONDS = 600
+EXTERNAL_EVALUATION_TIMEOUT_SECONDS = 1800
 
 
 class BatchCreateIn(BaseModel):
@@ -62,6 +63,12 @@ class HumanReviewIn(BaseModel):
     ratings: dict[str, float]
     evidence: dict[str, Any] = Field(default_factory=dict)
     notes: str = Field(default="", max_length=8000)
+
+
+class EvaluationStartIn(BaseModel):
+    run_ids: list[int] | None = None
+    retry_all: bool = False
+    concurrency: int = Field(default=1, ge=1, le=4)
 
 
 def _now() -> datetime:
@@ -305,45 +312,13 @@ async def _execute_run(run_id: int, safety_max_turns: int, locale: str | None) -
                 break
 
         async with async_session_factory() as db:
-            stage = "external_evaluation"
+            stage = "dialogue_persistence"
             session = await memory_service.get_session(db, session_uuid)
             if not session:
                 raise RuntimeError("Generated session disappeared")
             scenario = await orch_support.load_scenario(db, session.scenario_id)
             public = build_public_session_export_bundle(await build_session_export_bundle(db, session))
-            evaluation_started = time.monotonic()
-            evaluation_events: list[dict[str, Any]] = []
-            with telemetry_context(
-                batch_run_id=run_id,
-                batch_id=batch_id,
-                session_uuid=session_uuid,
-                scenario_id=scenario_id,
-                condition=condition,
-                stage=stage,
-                _collector=evaluation_events,
-            ):
-                emit("batch.evaluation.started")
-                evaluation = await asyncio.wait_for(
-                    evaluate_public_transcript(
-                        db,
-                        scenario=scenario,
-                        messages=public.get("messages") or [],
-                        system_claim=(public.get("external_observation") or {}).get("system_claim") or {},
-                    ),
-                    timeout=EXTERNAL_EVALUATION_TIMEOUT_SECONDS,
-                )
-                emit("batch.evaluation.finished", duration_ms=monotonic_ms(evaluation_started))
-            performance_trace.append({
-                "stage": stage,
-                "duration_ms": monotonic_ms(evaluation_started),
-                "recorded_at": _now().isoformat(),
-                "llm_events": [
-                    row for row in evaluation_events
-                    if str(row.get("event") or "").startswith("llm.")
-                ],
-            })
             shared = dict(session.shared_state or {})
-            shared["_external_evaluation"] = evaluation
             shared["_performance_trace"] = performance_trace[-200:]
             session.shared_state = shared
             messages = public.get("messages") or []
@@ -352,25 +327,26 @@ async def _execute_run(run_id: int, safety_max_turns: int, locale: str | None) -
                 for row in messages
                 if row.get("speaker_type") in {"user", "npc"} and row.get("turn_id") is not None
             }
-            result = _flatten_result(
-                scenario=scenario,
-                condition=condition,
-                repetition=repetition,
-                session_uuid=session_uuid,
-                session_status=session.status,
-                message_count=len(messages),
-                turn_count=len(turn_ids),
-                evaluation=evaluation,
-            )
+            result = {
+                "scenario_id": scenario.id, "scenario_slug": scenario.slug,
+                "scenario_title": scenario.title,
+                "condition": "roommind" if condition == "test" else "baseline",
+                "session_mode": condition, "repetition": repetition,
+                "matched_pair_id": f"{scenario.slug}:r{repetition}",
+                "session_uuid": session_uuid, "session_status": session.status,
+                "message_count": len(messages), "turn_count": len(turn_ids),
+                "dialogue_status": "completed", "evaluation_status": "not_started",
+                "dialogue_completed_at": _now().isoformat(),
+            }
             result.update(_performance_summary(performance_trace))
             run = await db.get(BatchExperimentRun, run_id)
             if run:
-                run.status = "completed"
+                run.status = "dialogue_completed"
                 run.result = result
                 run.finished_at = _now()
             await db.commit()
             emit(
-                "batch.run.completed",
+                "batch.dialogue.completed",
                 batch_run_id=run_id,
                 batch_id=batch_id,
                 session_uuid=session_uuid,
@@ -381,7 +357,7 @@ async def _execute_run(run_id: int, safety_max_turns: int, locale: str | None) -
     except asyncio.CancelledError:
         async with async_session_factory() as db:
             run = await db.get(BatchExperimentRun, run_id)
-            if run and run.status not in {"completed", "failed"}:
+            if run and run.status not in {"dialogue_completed", "dialogue_failed"}:
                 run.status = "cancelled"
                 run.error = "Batch cancelled"
                 run.finished_at = _now()
@@ -406,15 +382,13 @@ async def _execute_run(run_id: int, safety_max_turns: int, locale: str | None) -
         async with async_session_factory() as db:
             run = await db.get(BatchExperimentRun, run_id)
             if run:
-                run.status = (
-                    "evaluation_failed"
-                    if stage == "external_evaluation" or "External evaluator" in str(exc)
-                    else "failed"
-                )
+                run.status = "dialogue_failed"
                 run.error = error_detail[:4000]
                 run.result = {
                     **dict(run.result or {}),
                     "technical_failure": True,
+                    "dialogue_status": "failed",
+                    "evaluation_status": "not_started",
                     "failure_stage": stage,
                     "exception_type": exception_type,
                     "error": error_detail[:4000],
@@ -440,12 +414,23 @@ async def _refresh_batch_counts(batch_id: int) -> None:
                 )
             ).scalars()
         )
-        batch.completed_runs = sum(row.status == "completed" for row in rows)
-        batch.failed_runs = sum(row.status in {"failed", "evaluation_failed"} for row in rows)
+        dialogue_complete_statuses = {
+            "dialogue_completed", "evaluation_queued", "evaluation_running",
+            "evaluation_completed", "evaluation_partial", "evaluation_failed", "completed",
+        }
+        batch.completed_runs = sum(row.status in dialogue_complete_statuses for row in rows)
+        batch.failed_runs = sum(row.status in {"failed", "dialogue_failed"} for row in rows)
         batch.cancelled_runs = sum(row.status == "cancelled" for row in rows)
-        terminal = {"completed", "failed", "evaluation_failed", "cancelled"}
+        terminal = dialogue_complete_statuses | {"failed", "dialogue_failed", "cancelled"}
         if rows and all(row.status in terminal for row in rows):
-            batch.status = "cancelled" if any(row.status == "cancelled" for row in rows) else "completed"
+            if any(row.status in {"evaluation_queued", "evaluation_running"} for row in rows):
+                batch.status = "evaluation_running"
+            elif any(row.status in {"evaluation_partial", "evaluation_failed"} for row in rows):
+                batch.status = "evaluation_partial"
+            elif all(row.status == "evaluation_completed" for row in rows):
+                batch.status = "evaluation_completed"
+            else:
+                batch.status = "cancelled" if any(row.status == "cancelled" for row in rows) else "dialogue_completed"
             batch.finished_at = _now()
         await db.commit()
 
@@ -458,7 +443,10 @@ async def _execute_batch(batch_uuid: str) -> None:
                     select(BatchExperiment).where(BatchExperiment.batch_uuid == batch_uuid)
                 )
             ).scalar_one_or_none()
-            if not batch or batch.status in {"completed", "cancelled"}:
+            if not batch or batch.status in {
+                "dialogue_completed", "evaluation_running", "evaluation_completed",
+                "evaluation_partial", "completed", "cancelled",
+            }:
                 return
             batch.status = "running"
             batch.started_at = batch.started_at or _now()
@@ -509,6 +497,133 @@ def _schedule(batch_uuid: str) -> None:
     _tasks[batch_uuid] = asyncio.create_task(_execute_batch(batch_uuid))
 
 
+async def _evaluate_run(run_id: int) -> None:
+    """Evaluate one frozen dialogue without changing its dialogue outcome."""
+    started = time.monotonic()
+    evaluation_events: list[dict[str, Any]] = []
+    try:
+        async with async_session_factory() as db:
+            run = await db.get(BatchExperimentRun, run_id)
+            if not run or run.status != "evaluation_queued" or not run.session_uuid:
+                return
+            run.status = "evaluation_running"
+            existing = dict(run.result or {})
+            existing["dialogue_status"] = existing.get("dialogue_status") or "completed"
+            existing["evaluation_status"] = "running"
+            run.result = existing
+            run.error = None
+            await db.commit()
+
+            session = await memory_service.get_session(db, run.session_uuid)
+            if not session:
+                raise RuntimeError("Frozen dialogue session no longer exists")
+            scenario = await orch_support.load_scenario(db, session.scenario_id)
+            public = build_public_session_export_bundle(await build_session_export_bundle(db, session))
+            with telemetry_context(
+                batch_run_id=run.id, batch_id=run.batch_id, session_uuid=run.session_uuid,
+                scenario_id=run.scenario_id, condition=run.condition,
+                stage="independent_external_evaluation", _collector=evaluation_events,
+            ):
+                emit("batch.evaluation.started")
+                evaluation = await asyncio.wait_for(
+                    evaluate_public_transcript(
+                        db, scenario=scenario, messages=public.get("messages") or [],
+                        system_claim=(public.get("external_observation") or {}).get("system_claim") or {},
+                    ),
+                    timeout=EXTERNAL_EVALUATION_TIMEOUT_SECONDS,
+                )
+                emit("batch.evaluation.finished", duration_ms=monotonic_ms(started))
+
+            messages = public.get("messages") or []
+            turn_ids = {row.get("turn_id") for row in messages
+                        if row.get("speaker_type") in {"user", "npc"} and row.get("turn_id") is not None}
+            evaluated = _flatten_result(
+                scenario=scenario, condition=run.condition, repetition=run.repetition,
+                session_uuid=run.session_uuid, session_status=session.status,
+                message_count=len(messages), turn_count=len(turn_ids), evaluation=evaluation,
+            )
+            scores = evaluation.get("dimension_scores") or {}
+            completed_dimensions = sum(scores.get(name) is not None for name in REALISM_DIMENSIONS)
+            evaluation_status = (
+                "completed" if completed_dimensions == len(REALISM_DIMENSIONS)
+                else "partial" if completed_dimensions else "failed"
+            )
+            evaluation_trace = [{
+                "stage": "independent_external_evaluation", "duration_ms": monotonic_ms(started),
+                "recorded_at": _now().isoformat(),
+                "llm_events": [row for row in evaluation_events
+                               if str(row.get("event") or "").startswith("llm.")],
+            }]
+            merged = {**existing, **evaluated,
+                      "dialogue_status": "completed", "evaluation_status": evaluation_status,
+                      "evaluated_dimension_count": completed_dimensions,
+                      "evaluation_errors": evaluation.get("evaluation_errors") or {},
+                      "evaluation_performance_trace": evaluation_trace,
+                      "evaluation_completed_at": _now().isoformat()}
+            run = await db.get(BatchExperimentRun, run_id)
+            if run:
+                run.status = f"evaluation_{evaluation_status}"
+                run.result = merged
+                run.error = None if evaluation_status != "failed" else "All six realism dimensions failed evaluation"
+            shared = dict(session.shared_state or {})
+            shared["_external_evaluation"] = evaluation
+            session.shared_state = shared
+            await db.commit()
+    except Exception as exc:
+        logger.exception("Independent evaluation failed run_id=%s", run_id)
+        async with async_session_factory() as db:
+            run = await db.get(BatchExperimentRun, run_id)
+            if run:
+                existing = dict(run.result or {})
+                existing.update({
+                    "dialogue_status": existing.get("dialogue_status") or "completed",
+                    "evaluation_status": "failed", "evaluation_failure_stage": "external_evaluation",
+                    "evaluation_exception_type": type(exc).__name__,
+                    "evaluation_error": f"{type(exc).__name__}: {exc}"[:4000],
+                    "evaluation_traceback": traceback.format_exc()[-12000:],
+                })
+                run.status = "evaluation_failed"
+                run.result = existing
+                run.error = existing["evaluation_error"]
+            await db.commit()
+
+
+async def _execute_evaluation_batch(batch_uuid: str, concurrency: int) -> None:
+    try:
+        async with async_session_factory() as db:
+            batch = (await db.execute(select(BatchExperiment).where(
+                BatchExperiment.batch_uuid == batch_uuid
+            ))).scalar_one_or_none()
+            if not batch:
+                return
+            batch.status = "evaluation_running"
+            rows = list((await db.execute(select(BatchExperimentRun).where(
+                BatchExperimentRun.batch_id == batch.id,
+                BatchExperimentRun.status == "evaluation_queued",
+            ))).scalars())
+            batch_id = batch.id
+            await db.commit()
+        semaphore = asyncio.Semaphore(max(1, min(concurrency, MAX_CONCURRENCY)))
+        async def guarded(run_id: int) -> None:
+            async with semaphore:
+                async with _global_run_semaphore:
+                    await _evaluate_run(run_id)
+                await _refresh_batch_counts(batch_id)
+        await asyncio.gather(*(guarded(row.id) for row in rows))
+        await _refresh_batch_counts(batch_id)
+    finally:
+        _evaluation_tasks.pop(batch_uuid, None)
+
+
+def _schedule_evaluation(batch_uuid: str, concurrency: int) -> None:
+    existing = _evaluation_tasks.get(batch_uuid)
+    if existing and not existing.done():
+        return
+    _evaluation_tasks[batch_uuid] = asyncio.create_task(
+        _execute_evaluation_batch(batch_uuid, concurrency)
+    )
+
+
 async def resume_batch_experiments() -> None:
     """Resume queued/running work when the API process starts."""
     async with async_session_factory() as db:
@@ -521,6 +636,20 @@ async def resume_batch_experiments() -> None:
         )
     for batch in batches:
         _schedule(batch.batch_uuid)
+    async with async_session_factory() as db:
+        evaluation_batches = list((await db.execute(select(BatchExperiment).where(
+            BatchExperiment.status == "evaluation_running"
+        ))).scalars())
+        for batch in evaluation_batches:
+            rows = list((await db.execute(select(BatchExperimentRun).where(
+                BatchExperimentRun.batch_id == batch.id,
+                BatchExperimentRun.status == "evaluation_running",
+            ))).scalars())
+            for row in rows:
+                row.status = "evaluation_queued"
+        await db.commit()
+    for batch in evaluation_batches:
+        _schedule_evaluation(batch.batch_uuid, int((batch.config or {}).get("evaluation_concurrency", 1)))
 
 
 def _serialize_batch(batch: BatchExperiment, runs: list[BatchExperimentRun] | None = None) -> dict:
@@ -670,6 +799,50 @@ async def cancel_batch(batch_uuid: str) -> dict:
         return _serialize_batch(batch)
 
 
+@router.post("/{batch_uuid}/evaluate")
+async def start_batch_evaluation(batch_uuid: str, body: EvaluationStartIn) -> dict[str, Any]:
+    """Queue independent AI evaluation for frozen dialogue sessions."""
+    async with async_session_factory() as db:
+        batch = (await db.execute(select(BatchExperiment).where(
+            BatchExperiment.batch_uuid == batch_uuid
+        ))).scalar_one_or_none()
+        if not batch:
+            raise HTTPException(404, "Batch experiment not found")
+        rows = list((await db.execute(select(BatchExperimentRun).where(
+            BatchExperimentRun.batch_id == batch.id
+        ))).scalars())
+        requested = set(body.run_ids or [])
+        eligible_statuses = {
+            "dialogue_completed", "evaluation_failed", "evaluation_partial", "completed",
+        }
+        queued = 0
+        for row in rows:
+            if requested and row.id not in requested:
+                continue
+            if row.status in eligible_statuses or (body.retry_all and row.status == "evaluation_completed"):
+                if not row.session_uuid:
+                    continue
+                row.status = "evaluation_queued"
+                result = dict(row.result or {})
+                result["dialogue_status"] = result.get("dialogue_status") or "completed"
+                result["evaluation_status"] = "queued"
+                row.result = result
+                row.error = None
+                queued += 1
+        if not queued:
+            raise HTTPException(409, "No completed dialogues are eligible for evaluation")
+        config = dict(batch.config or {})
+        config["evaluation_concurrency"] = body.concurrency
+        batch.config = config
+        batch.status = "evaluation_running"
+        batch.finished_at = None
+        await db.commit()
+        payload = _serialize_batch(batch, rows)
+    emit("batch.evaluation.queued", batch_uuid=batch_uuid, run_count=queued)
+    _schedule_evaluation(batch_uuid, body.concurrency)
+    return {**payload, "queued_evaluation_runs": queued}
+
+
 @router.get("/{batch_uuid}/results.csv", response_class=PlainTextResponse)
 async def batch_results_csv(batch_uuid: str) -> PlainTextResponse:
     payload = await get_batch(batch_uuid)
@@ -681,7 +854,7 @@ async def batch_results_csv(batch_uuid: str) -> PlainTextResponse:
                 "batch_name": payload["name"],
                 "run_id": run["id"],
                 "run_status": run["status"],
-                "technical_failure": run["status"] == "failed",
+                "technical_failure": run["status"] in {"failed", "dialogue_failed"},
                 "evaluation_failure": run["status"] == "evaluation_failed",
                 "error": run.get("error") or "",
                 "started_at": run.get("started_at") or "",
@@ -727,7 +900,10 @@ async def batch_human_review(batch_uuid: str) -> dict[str, Any]:
     packets: list[dict[str, Any]] = []
     async with async_session_factory() as db:
         for run in payload.get("runs") or []:
-            if run.get("status") != "completed" or not run.get("session_uuid"):
+            if run.get("status") not in {
+                "dialogue_completed", "evaluation_queued", "evaluation_running",
+                "evaluation_completed", "evaluation_partial", "evaluation_failed", "completed",
+            } or not run.get("session_uuid"):
                 continue
             session = await memory_service.get_session(db, run["session_uuid"])
             if not session:
@@ -820,7 +996,10 @@ async def submit_human_review(batch_uuid: str, run_label: str, body: HumanReview
         run = next((row for row in runs if str(
             uuid.uuid5(uuid.NAMESPACE_URL, f"{batch_uuid}:{row.id}")
         )[:12] == run_label), None)
-        if not run or run.status != "completed":
+        if not run or run.status not in {
+            "dialogue_completed", "evaluation_queued", "evaluation_running",
+            "evaluation_completed", "evaluation_partial", "evaluation_failed", "completed",
+        }:
             raise HTTPException(404, "Anonymous review item not found")
         existing = (await db.execute(select(BatchHumanReview).where(
             BatchHumanReview.run_id == run.id,

@@ -395,6 +395,18 @@ export async function cancelBatchExperiment(batchUuid: string): Promise<BatchExp
   return res.json();
 }
 
+export async function startBatchEvaluation(
+  batchUuid: string,
+  input: { run_ids?: number[]; retry_all?: boolean; concurrency?: number } = {},
+): Promise<BatchExperiment> {
+  const res = await fetch(`/api/game/batch-experiments/${batchUuid}/evaluate`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ concurrency: 1, ...input }),
+  });
+  if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.detail || "Failed to start evaluation"); }
+  return res.json();
+}
+
 export async function getBlindReviewQueue(batchUuid: string): Promise<BlindReviewQueue> {
   const res = await fetchReadWithRetry(`/api/game/batch-experiments/${batchUuid}/review-queue`);
   if (!res.ok) throw new Error("Failed to load blinded review queue");

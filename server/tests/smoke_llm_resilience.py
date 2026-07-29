@@ -114,6 +114,11 @@ async def main() -> None:
         '```json\n{"evaluation":{"externally_validated_completion":false}}\n```'
     ) == {"externally_validated_completion": False}
     assert _normalize_evaluation('{"notes":"missing required decision"}') is None
+    wrapped_dimension = _normalize_evaluation(
+        '{"role_strategic_fidelity":{"dimension_score":6,"metrics":{}}}',
+        "role_strategic_fidelity",
+    )
+    assert wrapped_dimension and wrapped_dimension["dimension_score"] == 6
 
     transcript = _public_transcript([
         {"speaker_type": "npc", "sequence_no": i, "turn_id": i, "speaker_id": "npc", "content": "x" * 1200}

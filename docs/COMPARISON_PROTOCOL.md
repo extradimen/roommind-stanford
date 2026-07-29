@@ -4,7 +4,10 @@
 
 The persisted workflow has four stages: autonomous dialogue generation,
 condition-blinded AI evaluation, condition-blinded human review, and final
-six-dimension reporting. Evaluation is restricted to simulation realism;
+six-dimension reporting. Dialogue generation and AI evaluation are separate
+jobs: dialogue is frozen and exportable before evaluation begins, and evaluator
+failure never changes the dialogue outcome. The same frozen transcript can be
+re-evaluated under a new protocol or model without regenerating it. Evaluation is restricted to simulation realism;
 learning outcomes, task cost, latency, token use, and task success are not
 treated as realism measures.
 
