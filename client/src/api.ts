@@ -93,6 +93,20 @@ export interface BatchExperiment {
   runs?: BatchExperimentRun[];
 }
 
+export interface BlindReviewPacket {
+  run_label: string;
+  gold_specification: Record<string, unknown>;
+  public_transcript: Array<{ sequence_no?: number; turn_id?: number; speaker_id?: string; content?: string }>;
+  fixed_window_transcript?: Array<{ sequence_no?: number; turn_id?: number; speaker_id?: string; content?: string }>;
+  system_claim: Record<string, unknown>;
+}
+
+export interface BlindReviewQueue {
+  protocol: string;
+  packets: BlindReviewPacket[];
+  saved_reviews: Record<string, Array<{ reviewer_id: string; ratings: Record<string, number> }>>;
+}
+
 export interface NPCReply {
   type: string;
   speaker_id: string;
@@ -379,6 +393,22 @@ export async function cancelBatchExperiment(batchUuid: string): Promise<BatchExp
   const res = await fetch(`/api/game/batch-experiments/${batchUuid}/cancel`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to cancel batch experiment");
   return res.json();
+}
+
+export async function getBlindReviewQueue(batchUuid: string): Promise<BlindReviewQueue> {
+  const res = await fetchReadWithRetry(`/api/game/batch-experiments/${batchUuid}/review-queue`);
+  if (!res.ok) throw new Error("Failed to load blinded review queue");
+  return res.json();
+}
+
+export async function submitBlindReview(
+  batchUuid: string, runLabel: string,
+  input: { reviewer_id: string; ratings: Record<string, number>; evidence: Record<string, unknown>; notes: string },
+): Promise<void> {
+  const res = await fetch(`/api/game/batch-experiments/${batchUuid}/reviews/${runLabel}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+  });
+  if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.detail || "Failed to save review"); }
 }
 
 export function connectGameWS(sessionUuid: string, wsBase: string): WebSocket {

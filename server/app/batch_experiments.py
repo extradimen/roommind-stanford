@@ -22,7 +22,7 @@ from app.database import async_session_factory
 from app.external_evaluator import evaluate_public_transcript
 from app.external_observer import build_blinded_evaluation_packet
 from app.memory.service import memory_service
-from app.models.db import BatchExperiment, BatchExperimentRun, ScenarioTemplate
+from app.models.db import BatchExperiment, BatchExperimentRun, BatchHumanReview, ScenarioTemplate
 from app.orchestrator.common import orch_support
 from app.session_export import build_public_session_export_bundle, build_session_export_bundle
 from app.telemetry import emit, monotonic_ms, telemetry_context
@@ -48,7 +48,20 @@ class BatchCreateIn(BaseModel):
     safety_max_turns: int = Field(default=50, ge=10, le=100)
     locale: str | None = None
     random_seed: int = Field(default=20260728, ge=0, le=2_147_483_647)
-    human_validation_enabled: bool = False
+    human_validation_enabled: bool = True
+
+
+REALISM_DIMENSIONS = [
+    "role_strategic_fidelity", "epistemic_fidelity", "temporal_coherence",
+    "interaction_structure_fidelity", "multi_party_dynamics_fidelity", "procedural_fidelity",
+]
+
+
+class HumanReviewIn(BaseModel):
+    reviewer_id: str = Field(min_length=1, max_length=128)
+    ratings: dict[str, float]
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    notes: str = Field(default="", max_length=8000)
 
 
 def _now() -> datetime:
@@ -57,6 +70,10 @@ def _now() -> datetime:
 
 def _optional_float(value: Any) -> float | None:
     if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
         return None
 
 
@@ -84,10 +101,6 @@ def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
         "completion_tokens": sum(int(event.get("completion_tokens") or 0) for event in successes),
         "total_tokens": sum(int(event.get("total_tokens") or 0) for event in successes),
     }
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _flatten_result(
@@ -101,7 +114,7 @@ def _flatten_result(
     turn_count: int,
     evaluation: dict[str, Any],
 ) -> dict[str, Any]:
-    return {
+    row = {
         "scenario_id": scenario.id,
         "scenario_slug": scenario.slug,
         "scenario_title": scenario.title,
@@ -147,6 +160,14 @@ def _flatten_result(
         "evaluation_protocol": evaluation.get("protocol"),
         "notes": evaluation.get("notes") or "",
     }
+    dimension_scores = evaluation.get("dimension_scores") or {}
+    for dimension in REALISM_DIMENSIONS:
+        row[f"ai_{dimension}"] = _optional_float(dimension_scores.get(dimension))
+    row["realism_dimensions"] = evaluation.get("dimensions") or {}
+    dispatch = ((evaluation.get("deterministic_metrics") or {}).get("dispatch") or {})
+    row["dispatch_precision"] = _optional_float(dispatch.get("dispatch_precision"))
+    row["dispatch_recall"] = _optional_float(dispatch.get("dispatch_recall"))
+    return row
 
 
 async def _batch_cancelled(batch_id: int) -> bool:
@@ -190,7 +211,7 @@ async def _execute_run(run_id: int, safety_max_turns: int, locale: str | None) -
                     "player_max_tokens": 512,
                     "working_message_limit": 30,
                     "comparison_protocol": "roommind-vs-central-prompt-v2",
-                    "metrics_protocol": "roommind-core-outcomes-v2",
+                    "metrics_protocol": "six-dimension-simulation-realism-v3",
                     "comparison_lock_model": True,
                     "batch_experiment_run_id": run.id,
                 },
@@ -560,7 +581,7 @@ async def create_batch(body: BatchCreateIn) -> dict:
         config = body.model_dump()
         config.update({
             "comparison_protocol": "roommind-vs-central-prompt-v2",
-            "metrics_protocol": "roommind-core-outcomes-v2",
+            "metrics_protocol": "six-dimension-simulation-realism-v3",
             "shared_player_policy": "public-only-comparison-player-v1",
             "player_temperature": 0.2,
             "working_message_limit": 30,
@@ -715,21 +736,155 @@ async def batch_human_review(batch_uuid: str) -> dict[str, Any]:
                 await build_session_export_bundle(db, session)
             )
             packet = build_blinded_evaluation_packet(public)
+            scenario = await orch_support.load_scenario(db, session.scenario_id)
+            packet["gold_specification"]["scenario_description"] = scenario.description
+            packet["gold_specification"]["phases"] = scenario.phases or []
+            packet["gold_specification"]["role_cards"] = [{
+                "character_id": character.character_id,
+                "job_title": character.job_title,
+                "responsibility": character.responsibility,
+                "persona": character.persona,
+                "tendency": character.tendency or {},
+                "authority": character.authority or {},
+                "information_policy": {
+                    "protected_secrets": (character.private_state or {}).get("protected_secrets", []),
+                    "discoverable_information": (character.private_state or {}).get("discoverable_information", []),
+                    "role_disclosable_information": (character.private_state or {}).get("role_disclosable_information", []),
+                },
+            } for character in sorted(scenario.characters, key=lambda row: row.sort_order)]
             packet["run_label"] = str(
                 uuid.uuid5(uuid.NAMESPACE_URL, f"{batch_uuid}:{run['id']}")
             )[:12]
             packets.append(packet)
+    packets.sort(key=lambda row: row["run_label"])
     return {
-        "protocol": "optional-blinded-human-validation-v1",
+        "protocol": "blinded-six-dimension-human-review-v3",
         "condition_hidden": True,
-        "required_for_primary_analysis": False,
-        "rating_scale": "1-5",
-        "rubric": [
-            "role_believability",
-            "realism_of_multiparticipant_conflict",
-            "perceived_coherence",
-        ],
+        "required_for_final_analysis": True,
+        "rating_scale": "1-7",
+        "rubric": REALISM_DIMENSIONS + ["overall_believability"],
         "packets": packets,
+    }
+
+
+@router.get("/{batch_uuid}/review-queue")
+async def batch_review_queue(batch_uuid: str) -> dict[str, Any]:
+    """Return anonymous transcripts and saved reviews without revealing condition."""
+    packet_bundle = await batch_human_review(batch_uuid)
+    payload = await get_batch(batch_uuid)
+    code_to_run = {
+        str(uuid.uuid5(uuid.NAMESPACE_URL, f"{batch_uuid}:{run['id']}"))[:12]: run["id"]
+        for run in payload.get("runs") or []
+    }
+    async with async_session_factory() as db:
+        reviews = list((await db.execute(
+            select(BatchHumanReview).where(
+                BatchHumanReview.batch_id == (
+                    select(BatchExperiment.id).where(BatchExperiment.batch_uuid == batch_uuid).scalar_subquery()
+                )
+            )
+        )).scalars())
+    saved: dict[str, list[dict[str, Any]]] = {}
+    run_to_code = {run_id: code for code, run_id in code_to_run.items()}
+    for review in reviews:
+        code = run_to_code.get(review.run_id)
+        if code:
+            saved.setdefault(code, []).append({
+                "reviewer_id": review.reviewer_id, "ratings": review.ratings,
+                "evidence": review.evidence, "notes": review.notes,
+                "created_at": review.created_at,
+            })
+    packet_bundle["saved_reviews"] = saved
+    return packet_bundle
+
+
+@router.post("/{batch_uuid}/reviews/{run_label}")
+async def submit_human_review(batch_uuid: str, run_label: str, body: HumanReviewIn) -> dict[str, Any]:
+    """Persist one independent blinded review with optional sequence evidence."""
+    missing = [name for name in REALISM_DIMENSIONS if name not in body.ratings]
+    if missing:
+        raise HTTPException(422, f"Missing realism ratings: {', '.join(missing)}")
+    ratings = dict(body.ratings)
+    for key, score in ratings.items():
+        if key not in REALISM_DIMENSIONS + ["overall_believability"] or not 1 <= score <= 7:
+            raise HTTPException(422, f"Invalid 1-7 rating: {key}")
+    async with async_session_factory() as db:
+        batch = (await db.execute(
+            select(BatchExperiment).where(BatchExperiment.batch_uuid == batch_uuid)
+        )).scalar_one_or_none()
+        if not batch or not bool((batch.config or {}).get("human_validation_enabled")):
+            raise HTTPException(404, "Human review batch not found")
+        runs = list((await db.execute(
+            select(BatchExperimentRun).where(BatchExperimentRun.batch_id == batch.id)
+        )).scalars())
+        run = next((row for row in runs if str(
+            uuid.uuid5(uuid.NAMESPACE_URL, f"{batch_uuid}:{row.id}")
+        )[:12] == run_label), None)
+        if not run or run.status != "completed":
+            raise HTTPException(404, "Anonymous review item not found")
+        existing = (await db.execute(select(BatchHumanReview).where(
+            BatchHumanReview.run_id == run.id,
+            BatchHumanReview.reviewer_id == body.reviewer_id.strip(),
+        ))).scalar_one_or_none()
+        if existing:
+            existing.ratings, existing.evidence, existing.notes = ratings, body.evidence, body.notes
+        else:
+            db.add(BatchHumanReview(
+                batch_id=batch.id, run_id=run.id, reviewer_id=body.reviewer_id.strip(),
+                ratings=ratings, evidence=body.evidence, notes=body.notes,
+            ))
+        await db.commit()
+    emit("batch.human_review.saved", batch_uuid=batch_uuid, run_label=run_label)
+    return {"saved": True, "run_label": run_label}
+
+
+@router.get("/{batch_uuid}/final-evaluation")
+async def batch_final_evaluation(batch_uuid: str) -> dict[str, Any]:
+    """Merge AI and human evidence by dimension without inventing a total score."""
+    payload = await get_batch(batch_uuid)
+    run_ids = [run["id"] for run in payload.get("runs") or []]
+    async with async_session_factory() as db:
+        reviews = list((await db.execute(select(BatchHumanReview).where(
+            BatchHumanReview.run_id.in_(run_ids)
+        ))).scalars()) if run_ids else []
+    by_run: dict[int, list[BatchHumanReview]] = {}
+    for review in reviews:
+        by_run.setdefault(review.run_id, []).append(review)
+    rows = []
+    for run in payload.get("runs") or []:
+        human = by_run.get(run["id"], [])
+        human_means = {
+            dimension: (sum(float(r.ratings[dimension]) for r in human if dimension in r.ratings)
+                        / sum(dimension in r.ratings for r in human))
+            if any(dimension in r.ratings for r in human) else None
+            for dimension in REALISM_DIMENSIONS
+        }
+        rows.append({
+            "run_id": run["id"], "scenario_id": run["scenario_id"],
+            "condition": run["condition"], "repetition": run["repetition"],
+            "ai_scores": {d: (run.get("result") or {}).get(f"ai_{d}") for d in REALISM_DIMENSIONS},
+            "human_mean_scores": human_means, "human_review_count": len(human),
+            "status": "final" if human else "awaiting_human_review",
+        })
+    summaries: dict[str, Any] = {}
+    for condition in ("roommind", "baseline"):
+        selected_rows = [row for row in rows if row["condition"] == condition]
+        summaries[condition] = {}
+        for dimension in REALISM_DIMENSIONS:
+            ai_values = [float(row["ai_scores"][dimension]) for row in selected_rows
+                         if row["ai_scores"].get(dimension) is not None]
+            human_values = [float(row["human_mean_scores"][dimension]) for row in selected_rows
+                            if row["human_mean_scores"].get(dimension) is not None]
+            summaries[condition][dimension] = {
+                "ai_mean": sum(ai_values) / len(ai_values) if ai_values else None,
+                "ai_n": len(ai_values),
+                "human_mean": sum(human_values) / len(human_values) if human_values else None,
+                "human_rated_run_n": len(human_values),
+            }
+    return {
+        "protocol": "six-dimension-simulation-realism-final-v3",
+        "aggregation_rule": "AI and human scores remain separate; no composite total is computed.",
+        "dimensions": REALISM_DIMENSIONS, "condition_summaries": summaries, "runs": rows,
     }
 
 
@@ -771,6 +926,31 @@ async def batch_transcripts_json(batch_uuid: str) -> dict[str, Any]:
         "config": payload.get("config") or {},
         "exported_at": _now().isoformat(),
         "runs": exports,
+    }
+
+
+@router.get("/{batch_uuid}/debug-bundle.json")
+async def batch_debug_bundle(batch_uuid: str) -> dict[str, Any]:
+    """Full forensic export: dialogue, internal memories, decisions, state and traces."""
+    payload = await get_batch(batch_uuid)
+    exports: list[dict[str, Any]] = []
+    async with async_session_factory() as db:
+        for run in payload.get("runs") or []:
+            session_uuid = run.get("session_uuid")
+            if not session_uuid:
+                continue
+            session = await memory_service.get_session(db, session_uuid)
+            if not session:
+                continue
+            exports.append({
+                "run": run,
+                "full_session": await build_session_export_bundle(db, session),
+            })
+    emit("batch.debug_bundle.exported", batch_uuid=batch_uuid, run_count=len(exports))
+    return {
+        "format": "roommind-batch-forensic-debug-bundle-v1",
+        "warning": "Contains internal agent memories and state; do not provide to blinded reviewers.",
+        "batch": payload, "exported_at": _now().isoformat(), "runs": exports,
     }
 
 

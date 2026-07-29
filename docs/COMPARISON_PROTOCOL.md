@@ -1,4 +1,25 @@
-# RoomMind controlled comparison protocol (v2)
+# RoomMind controlled comparison protocol (v3)
+
+## Simulation realism evaluation
+
+The persisted workflow has four stages: autonomous dialogue generation,
+condition-blinded AI evaluation, condition-blinded human review, and final
+six-dimension reporting. Evaluation is restricted to simulation realism;
+learning outcomes, task cost, latency, token use, and task success are not
+treated as realism measures.
+
+The six dimensions are reported separately on a 1–7 scale: role and strategic
+fidelity, epistemic fidelity, temporal coherence, interaction-structure
+fidelity, multi-party dynamics fidelity, and procedural fidelity. Every AI
+metric cites public transcript sequence evidence. Human reviewers receive
+anonymous run codes, a fixed 20-turn window, and the full transcript, but never
+the RoomMind/baseline condition. AI and human scores remain separate and no
+composite realism score is computed.
+
+Public dialogue exports support statistical and qualitative analysis. The
+forensic debug bundle additionally contains internal memories, decisions,
+state, evaluation details, and performance traces and must not be given to
+blinded reviewers.
 
 The batch experiment compares two implementations under the same public case,
 AI player policy, platform model, history window, maximum player turns, run

@@ -104,7 +104,7 @@ def build_blinded_evaluation_packet(bundle: dict[str, Any]) -> dict[str, Any]:
     scenario = bundle.get("scenario") or {}
     directory = bundle.get("speaker_directory") or {}
     return {
-        "evaluation_protocol": "optional-blinded-human-validation-v1",
+        "evaluation_protocol": "blinded-six-dimension-human-review-v3",
         "run_label": "anonymous",
         "gold_specification": {
             "scenario_id": scenario.get("id"),
@@ -121,6 +121,16 @@ def build_blinded_evaluation_packet(bundle: dict[str, Any]) -> dict[str, Any]:
                 if row.get("role") == "npc"
             },
         },
+        "fixed_window_transcript": [
+            {
+                "sequence_no": row.get("sequence_no"),
+                "turn_id": row.get("turn_id"),
+                "speaker_id": row.get("speaker_id"),
+                "content": row.get("content"),
+            }
+            for row in bundle.get("messages") or []
+            if row.get("speaker_type") in {"user", "npc"} and int(row.get("turn_id") or 0) <= 20
+        ],
         "public_transcript": [
             {
                 "sequence_no": row.get("sequence_no"),
@@ -133,10 +143,14 @@ def build_blinded_evaluation_packet(bundle: dict[str, Any]) -> dict[str, Any]:
         ],
         "system_claim": (bundle.get("external_observation") or {}).get("system_claim") or {},
         "human_rating_form": {
-            "scale": "1-5",
-            "role_believability": None,
-            "realism_of_multiparticipant_conflict": None,
-            "perceived_coherence": None,
+            "scale": "1-7",
+            "role_strategic_fidelity": None,
+            "epistemic_fidelity": None,
+            "temporal_coherence": None,
+            "interaction_structure_fidelity": None,
+            "multi_party_dynamics_fidelity": None,
+            "procedural_fidelity": None,
+            "overall_believability": None,
             "reviewer_id": "",
             "notes": "",
         },

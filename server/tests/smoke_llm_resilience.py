@@ -9,7 +9,7 @@ import httpx
 
 from app.llm.client import LLMClient
 from app.player_agent import bounded_dialogue
-from app.external_evaluator import _normalize_evaluation, _public_transcript
+from app.external_evaluator import _dispatch_metrics, _normalize_evaluation, _public_transcript
 
 
 class FakeResponse:
@@ -119,9 +119,21 @@ async def main() -> None:
         {"speaker_type": "npc", "sequence_no": i, "turn_id": i, "speaker_id": "npc", "content": "x" * 1200}
         for i in range(100)
     ])
-    assert len(transcript) == 50
-    assert transcript[0]["sequence_no"] == 50
-    assert len(transcript[0]["content"]) == 650
+    assert len(transcript) == 100
+    assert transcript[0]["sequence_no"] == 0
+    assert len(transcript[0]["content"]) == 900
+
+    class Rule:
+        trigger_keywords = ["quality"]
+        priority_character_ids = ["quality_director"]
+        max_speakers = 1
+
+    dispatch = _dispatch_metrics([
+        {"turn_id": 1, "speaker_id": "user", "content": "Discuss quality"},
+        {"turn_id": 1, "speaker_id": "quality_director", "content": "Ready"},
+    ], [Rule()])
+    assert dispatch["dispatch_precision"] == 1.0
+    assert dispatch["dispatch_recall"] == 1.0
 
     print("LLM resilience smoke test: ok")
 

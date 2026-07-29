@@ -175,6 +175,25 @@ class BatchExperimentRun(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class BatchHumanReview(Base):
+    """Condition-blinded realism rating submitted after an autonomous run."""
+
+    __tablename__ = "batch_human_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[int] = mapped_column(
+        ForeignKey("batch_experiments.id", ondelete="CASCADE"), index=True
+    )
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("batch_experiment_runs.id", ondelete="CASCADE"), index=True
+    )
+    reviewer_id: Mapped[str] = mapped_column(String(128))
+    ratings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class SessionMessage(Base):
     __tablename__ = "session_messages"
 

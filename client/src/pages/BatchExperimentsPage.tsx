@@ -8,10 +8,22 @@ import {
   getBatchExperiment,
   listBatchExperiments,
   listScenarios,
+  getBlindReviewQueue,
+  submitBlindReview,
+  BlindReviewQueue,
   Scenario,
 } from "../api";
 
 const terminal = new Set(["completed", "cancelled"]);
+const realismDimensions = [
+  "role_strategic_fidelity", "epistemic_fidelity", "temporal_coherence",
+  "interaction_structure_fidelity", "multi_party_dynamics_fidelity", "procedural_fidelity",
+] as const;
+const dimensionLabels: Record<string, string> = {
+  role_strategic_fidelity: "Role & strategy", epistemic_fidelity: "Information boundaries",
+  temporal_coherence: "Temporal coherence", interaction_structure_fidelity: "Interaction structure",
+  multi_party_dynamics_fidelity: "Multi-party dynamics", procedural_fidelity: "Procedural fidelity",
+};
 
 function value(value: unknown): string {
   if (value === null || value === undefined) return "—";
@@ -30,9 +42,14 @@ export default function BatchExperimentsPage() {
   const [concurrency, setConcurrency] = useState(2);
   const [maxTurns, setMaxTurns] = useState(50);
   const [seed, setSeed] = useState(20260728);
-  const [humanValidation, setHumanValidation] = useState(false);
+  const [humanValidation, setHumanValidation] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [reviewQueue, setReviewQueue] = useState<BlindReviewQueue | null>(null);
+  const [reviewIndex, setReviewIndex] = useState(0);
+  const [reviewerId, setReviewerId] = useState("");
+  const [ratings, setRatings] = useState<Record<string, number>>(() => Object.fromEntries(realismDimensions.map((d) => [d, 4])));
+  const [reviewNotes, setReviewNotes] = useState("");
 
   const refreshList = () => listBatchExperiments().then(setBatches).catch((e) => setError(String(e)));
 
@@ -96,6 +113,24 @@ export default function BatchExperimentsPage() {
     catch (e) { setError(String(e)); }
   }
 
+  async function openReviews() {
+    if (!selected) return;
+    setError("");
+    try { setReviewQueue(await getBlindReviewQueue(selected.batch_uuid)); setReviewIndex(0); }
+    catch (e) { setError(String(e)); }
+  }
+
+  async function saveReview() {
+    if (!selected || !reviewQueue || !reviewerId.trim()) { setError("Enter a reviewer ID."); return; }
+    const packet = reviewQueue.packets[reviewIndex];
+    try {
+      await submitBlindReview(selected.batch_uuid, packet.run_label, { reviewer_id: reviewerId, ratings, evidence: {}, notes: reviewNotes });
+      setReviewQueue(await getBlindReviewQueue(selected.batch_uuid));
+      setReviewNotes("");
+      setReviewIndex((i) => Math.min(i + 1, reviewQueue.packets.length - 1));
+    } catch (e) { setError(String(e)); }
+  }
+
   return (
     <AppShell>
       <div className="batch-page">
@@ -106,6 +141,13 @@ export default function BatchExperimentsPage() {
             <p>Server-side runs continue after this page is closed. Results are evaluated externally and stored as one row per run.</p>
           </div>
         </header>
+
+        <section className="experiment-steps" aria-label="Experiment workflow">
+          <div><strong>1</strong><span>Configure & run dialogue</span></div>
+          <div><strong>2</strong><span>Automatic six-dimension evaluation</span></div>
+          <div><strong>3</strong><span>Blinded human review</span></div>
+          <div><strong>4</strong><span>Final evidence report</span></div>
+        </section>
 
         {error && <div className="error-banner">{error}</div>}
 
@@ -135,7 +177,7 @@ export default function BatchExperimentsPage() {
             </select><small>Two balances throughput with model rate limits. Run order is randomized.</small></label>
             <label>Maximum turns<input type="number" min={10} max={100} value={maxTurns} onChange={(e) => setMaxTurns(Number(e.target.value))} /></label>
             <label>Randomization seed<input type="number" min={0} value={seed} onChange={(e) => setSeed(Number(e.target.value))} /><small>Keep this value for a reproducible run order.</small></label>
-            <label className="full"><input type="checkbox" checked={humanValidation} onChange={(e) => setHumanValidation(e.target.checked)} /> Prepare optional blinded human-validation packets<small>Off by default. Primary metrics remain automatic; reviewers may later score role believability, multi-party conflict realism, and coherence.</small></label>
+            <label className="full"><input type="checkbox" checked={humanValidation} onChange={(e) => setHumanValidation(e.target.checked)} /> Enable blinded human review<small>Recommended. Reviewers score the same six realism dimensions on anonymous transcripts after automatic evaluation.</small></label>
             <div className="batch-submit full"><strong>{plannedRuns} total runs</strong><button disabled={busy || plannedRuns < 1 || plannedRuns > 500}>{busy ? "Creating…" : "Start background experiment"}</button></div>
           </form>
         </section>
@@ -159,18 +201,29 @@ export default function BatchExperimentsPage() {
               <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/results.csv`}>Download CSV</a>
               <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/transcripts.csv`}>All dialogue CSV</a>
               <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/transcripts.json`}>All dialogue JSON</a>
-              {Boolean(selected.config.human_validation_enabled) && <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/human-review.json`}>Human review JSON</a>}
+              <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/debug-bundle.json`}>Debug bundle</a>
+              {Boolean(selected.config.human_validation_enabled) && <button onClick={openReviews}>Open blind review</button>}
+              <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/final-evaluation`}>Final evaluation JSON</a>
               <button onClick={() => { const blob = new Blob([JSON.stringify(selected, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `batch-${selected.batch_uuid}.json`; a.click(); URL.revokeObjectURL(url); }}>Download JSON</button>
             </div>
           </div>
           <div className="progress-track"><span style={{ width: `${selected.total_runs ? 100 * (selected.completed_runs + selected.failed_runs + (selected.cancelled_runs || 0)) / selected.total_runs : 0}%` }} /></div>
           <div className="batch-table-wrap"><table className="batch-table"><thead><tr>
-            <th>Scenario</th><th>Condition</th><th>Rep.</th><th>Status</th><th>Valid completion</th><th>Premature</th><th>Valid turn</th><th>Responsible confirmer</th><th>Authority violations</th><th>Agreement retention</th><th>Cross-role contamination</th><th>Protected leaks</th><th>Repetition</th><th>Responsibility match</th><th>Distinct contribution</th><th>Error</th>
+            <th>Scenario</th><th>Condition</th><th>Rep.</th><th>Status</th>{realismDimensions.map((d) => <th key={d}>{dimensionLabels[d]}</th>)}<th>Error</th>
           </tr></thead><tbody>{(selected.runs || []).map((run) => <tr key={run.id}>
             <td>{scenarioNames.get(run.scenario_id) || run.scenario_id}</td><td>{run.condition}</td><td>{run.repetition}</td><td>{run.status}</td>
-            <td>{value(run.result.externally_validated_completion)}</td><td>{value(run.result.premature_completion)}</td><td>{value(run.result.first_valid_completion_turn_id)}</td><td>{value(run.result.responsible_confirmer_rate)}</td><td>{value(run.result.authority_violation_count)}</td><td>{value(run.result.agreement_retention_rate)}</td><td>{value(run.result.cross_role_knowledge_contamination_count)}</td><td>{value(run.result.protected_secret_leakage_count)}</td><td>{value(run.result.semantic_repetition_rate)}</td><td>{value(run.result.responsibility_match_rate)}</td><td>{value(run.result.distinct_contribution_rate)}</td><td className="error-cell" title={run.error || ""}>{run.error || ""}</td>
+            {realismDimensions.map((d) => <td key={d}>{value(run.result[`ai_${d}`])}</td>)}<td className="error-cell" title={run.error || ""}>{run.error || ""}</td>
           </tr>)}</tbody></table></div>
         </section>}
+
+        {reviewQueue?.packets.length ? <section className="batch-panel blind-review">
+          <div className="result-heading"><div><h2>Blinded human review</h2><p>Anonymous item {reviewIndex + 1} of {reviewQueue.packets.length}. System condition is hidden.</p></div><button onClick={() => setReviewQueue(null)}>Close</button></div>
+          <label>Reviewer ID<input value={reviewerId} onChange={(e) => setReviewerId(e.target.value)} placeholder="Reviewer code" /></label>
+          <div className="review-transcript">{reviewQueue.packets[reviewIndex].public_transcript.map((m) => <p key={m.sequence_no}><strong>#{m.sequence_no} · {m.speaker_id}</strong><br />{m.content}</p>)}</div>
+          <div className="review-ratings">{realismDimensions.map((d) => <label key={d}>{dimensionLabels[d]}<select value={ratings[d]} onChange={(e) => setRatings((v) => ({ ...v, [d]: Number(e.target.value) }))}>{[1,2,3,4,5,6,7].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>)}</div>
+          <label>Evidence / notes<textarea value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} placeholder="Cite sequence numbers and briefly justify the ratings." /></label>
+          <div className="result-actions"><button disabled={reviewIndex === 0} onClick={() => setReviewIndex((i) => i - 1)}>Previous</button><button onClick={saveReview}>Save review & next</button><button disabled={reviewIndex >= reviewQueue.packets.length - 1} onClick={() => setReviewIndex((i) => i + 1)}>Next</button></div>
+        </section> : null}
       </div>
     </AppShell>
   );
