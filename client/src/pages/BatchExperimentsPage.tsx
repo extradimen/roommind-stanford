@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import {
   BatchExperiment,
+  BatchExperimentRun,
   cancelBatchExperiment,
   createBatchExperiment,
   getBatchExperiment,
@@ -30,6 +31,18 @@ function value(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "boolean") return value ? "1" : "0";
   return String(value);
+}
+
+function dialogueStatus(run: BatchExperimentRun): string {
+  const persisted = run.result.dialogue_status;
+  if (typeof persisted === "string" && persisted) return persisted;
+  if (run.status === "running") return "running";
+  if (run.status === "queued") return "queued";
+  if (run.status === "cancelled") return "cancelled";
+  if (run.status === "failed" || run.status === "dialogue_failed") return "failed";
+  if (run.status.startsWith("dialogue_")) return run.status.replace("dialogue_", "");
+  if (run.status.startsWith("evaluation_") || run.status === "completed") return "completed";
+  return run.session_uuid ? "completed" : run.status;
 }
 
 export default function BatchExperimentsPage() {
@@ -225,7 +238,7 @@ export default function BatchExperimentsPage() {
           <div className="batch-table-wrap"><table className="batch-table"><thead><tr>
             <th>Scenario</th><th>Condition</th><th>Rep.</th><th>Dialogue</th><th>AI evaluation</th>{realismDimensions.map((d) => <th key={d}>{dimensionLabels[d]}</th>)}<th>Error</th>
           </tr></thead><tbody>{(selected.runs || []).map((run) => <tr key={run.id}>
-            <td>{scenarioNames.get(run.scenario_id) || run.scenario_id}</td><td>{run.condition}</td><td>{run.repetition}</td><td>{value(run.result.dialogue_status || (run.status.startsWith("dialogue_") ? run.status.replace("dialogue_", "") : run.session_uuid ? "completed" : run.status))}</td><td>{value(run.result.evaluation_status || (run.status.startsWith("evaluation_") ? run.status.replace("evaluation_", "") : "not started"))}</td>
+            <td>{scenarioNames.get(run.scenario_id) || run.scenario_id}</td><td>{run.condition}</td><td>{run.repetition}</td><td>{dialogueStatus(run)}</td><td>{value(run.result.evaluation_status || (run.status.startsWith("evaluation_") ? run.status.replace("evaluation_", "") : "not started"))}</td>
             {realismDimensions.map((d) => <td key={d}>{value(run.result[`ai_${d}`])}</td>)}<td className="error-cell" title={run.error || ""}>{run.error || ""}</td>
           </tr>)}</tbody></table></div>
         </section>}
