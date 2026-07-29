@@ -119,6 +119,12 @@ async def main() -> None:
         "role_strategic_fidelity",
     )
     assert wrapped_dimension and wrapped_dimension["dimension_score"] == 6
+    canonical_dimension = _normalize_evaluation(
+        '{"dimension_score":5,"metrics":{"role_consistency":{"score":6}}}',
+        "role_strategic_fidelity",
+    )
+    assert canonical_dimension and canonical_dimension["dimension_score"] == 5
+    assert canonical_dimension["metrics"]["role_consistency"]["score"] == 6
 
     transcript = _public_transcript([
         {"speaker_type": "npc", "sequence_no": i, "turn_id": i, "speaker_id": "npc", "content": "x" * 1200}

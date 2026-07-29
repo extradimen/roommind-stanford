@@ -92,10 +92,20 @@ def _normalize_evaluation(raw: str, dimension: str | None = None) -> dict[str, A
     parsed = orch_support.parse_json(raw)
     if not isinstance(parsed, dict):
         return None
-    for wrapper in ("evaluation", "result", "metrics"):
+    # ``metrics`` is part of the canonical six-dimension response itself.  Do
+    # not unwrap it when the top-level response already contains the score,
+    # otherwise a perfectly valid evaluation loses ``dimension_score`` and is
+    # incorrectly rejected as unusable.
+    for wrapper in ("evaluation", "result"):
         if isinstance(parsed.get(wrapper), dict):
             parsed = parsed[wrapper]
             break
+    if (
+        "dimension_score" not in parsed
+        and isinstance(parsed.get("metrics"), dict)
+        and "dimension_score" in parsed["metrics"]
+    ):
+        parsed = parsed["metrics"]
     if dimension and isinstance(parsed.get(dimension), dict):
         parsed = parsed[dimension]
     if "dimension_score" not in parsed:
