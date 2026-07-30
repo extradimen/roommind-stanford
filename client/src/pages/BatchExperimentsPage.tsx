@@ -55,6 +55,7 @@ export default function BatchExperimentsPage() {
   const [repetitions, setRepetitions] = useState(10);
   const [concurrency, setConcurrency] = useState(2);
   const [maxTurns, setMaxTurns] = useState(50);
+  const [maxStagnantTurns, setMaxStagnantTurns] = useState(8);
   const [seed, setSeed] = useState(20260728);
   const [humanValidation, setHumanValidation] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -108,6 +109,7 @@ export default function BatchExperimentsPage() {
         repetitions,
         concurrency,
         safety_max_turns: maxTurns,
+        max_stagnant_turns: maxStagnantTurns,
         random_seed: seed,
         human_validation_enabled: humanValidation,
       });
@@ -201,6 +203,7 @@ export default function BatchExperimentsPage() {
               <option value={1}>1 · safest</option><option value={2}>2 · recommended</option><option value={3}>3</option><option value={4}>4 · server maximum</option>
             </select><small>Two balances throughput with model rate limits. Run order is randomized.</small></label>
             <label>Maximum turns<input type="number" min={10} max={100} value={maxTurns} onChange={(e) => setMaxTurns(Number(e.target.value))} /></label>
+            <label>Stagnation window<input type="number" min={4} max={25} value={maxStagnantTurns} onChange={(e) => setMaxStagnantTurns(Number(e.target.value))} /><small>Stop a RoomMind run after this many turns without material state, work-item, or outcome progress.</small></label>
             <label>Randomization seed<input type="number" min={0} value={seed} onChange={(e) => setSeed(Number(e.target.value))} /><small>Keep this value for a reproducible run order.</small></label>
             <label className="full"><input type="checkbox" checked={humanValidation} onChange={(e) => setHumanValidation(e.target.checked)} /> Enable blinded human review<small>Recommended. Reviewers score the same six realism dimensions on anonymous transcripts after automatic evaluation.</small></label>
             <div className="batch-submit full"><strong>{plannedRuns} total runs</strong><button disabled={busy || plannedRuns < 1 || plannedRuns > 500}>{busy ? "Creating…" : "Start background experiment"}</button></div>

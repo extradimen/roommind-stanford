@@ -47,6 +47,7 @@ class BatchCreateIn(BaseModel):
     repetitions: int = Field(default=10, ge=1, le=100)
     concurrency: int = Field(default=DEFAULT_CONCURRENCY, ge=1, le=MAX_CONCURRENCY)
     safety_max_turns: int = Field(default=50, ge=10, le=100)
+    max_stagnant_turns: int = Field(default=8, ge=4, le=25)
     locale: str | None = None
     random_seed: int = Field(default=20260728, ge=0, le=2_147_483_647)
     human_validation_enabled: bool = True
@@ -183,7 +184,9 @@ async def _batch_cancelled(batch_id: int) -> bool:
         return not batch or batch.status in {"cancelling", "cancelled"}
 
 
-async def _execute_run(run_id: int, safety_max_turns: int, locale: str | None) -> None:
+async def _execute_run(
+    run_id: int, safety_max_turns: int, max_stagnant_turns: int, locale: str | None
+) -> None:
     session_uuid: str | None = None
     stage = "initialization"
     performance_trace: list[dict[str, Any]] = []
@@ -213,6 +216,7 @@ async def _execute_run(run_id: int, safety_max_turns: int, locale: str | None) -
                 session_mode=condition,
                 run_config={
                     "safety_max_turns": safety_max_turns,
+                    "max_stagnant_turns": max_stagnant_turns,
                     "player_strategy": "balanced",
                     "player_temperature": 0.2,
                     "player_max_tokens": 512,
@@ -480,6 +484,7 @@ async def _execute_batch(batch_uuid: str) -> None:
                         await _execute_run(
                             run_id,
                             int(config.get("safety_max_turns", 50)),
+                            int(config.get("max_stagnant_turns", 8)),
                             config.get("locale"),
                         )
                 await _refresh_batch_counts(batch_id)

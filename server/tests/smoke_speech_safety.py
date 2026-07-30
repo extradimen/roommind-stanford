@@ -12,9 +12,11 @@ from app.task_state import (
     advance_phase,
     apply_evaluator_updates,
     evaluate_conditions,
+    finalize_stalled_task_state,
     initial_task_state,
     normalize_evaluator_payload,
     public_task_result,
+    set_progress_metadata,
     task_progress_signature,
 )
 from app.player_agent import normalize_player_content
@@ -176,6 +178,60 @@ def main() -> None:
         npc_turns=[{"speaker_id": "owner", "content": "I need more information."}],
     )
     assert bad_state["variables"]["outcome"]["status"] != "confirmed"
+
+    # Generic event governance is scenario-neutral. A promise is distinct from
+    # delivery, duplicate promises do not create progress, and explicit
+    # deferral is a valid terminal outcome for open-ended simulations.
+    event_state = initial_task_state({
+        "state_schema": {}, "phases": [{"phase_id": "active"}],
+        "completion_conditions": {"all": []},
+    })
+    apply_evaluator_updates(
+        task_config={"state_schema": {}, "phases": [{"phase_id": "active"}], "completion_conditions": {"all": []}},
+        state=event_state,
+        parsed={"updates": [], "events": [{
+            "event_type": "artifact_offered", "subject": "capacity evidence",
+            "status": "proposed", "actor_id": "owner",
+            "summary": "Owner promises the evidence.",
+            "evidence": [{"speaker_id": "owner", "quote": "I will send the capacity evidence"}],
+        }]},
+        characters=[owner], player_text="",
+        npc_turns=[{"speaker_id": "owner", "content": "I will send the capacity evidence."}],
+    )
+    assert event_state["work_items"]["capacity_evidence"]["status"] == "promised"
+    promised_signature = task_progress_signature(event_state)
+    apply_evaluator_updates(
+        task_config={"state_schema": {}, "phases": [{"phase_id": "active"}], "completion_conditions": {"all": []}},
+        state=event_state,
+        parsed={"updates": [], "events": [{
+            "event_type": "artifact_offered", "subject": "capacity evidence",
+            "status": "proposed", "actor_id": "owner",
+            "summary": "Same promise again.",
+            "evidence": [{"speaker_id": "owner", "quote": "I will send the capacity evidence"}],
+        }]},
+        characters=[owner], player_text="",
+        npc_turns=[{"speaker_id": "owner", "content": "I will send the capacity evidence."}],
+    )
+    assert task_progress_signature(event_state) == promised_signature
+    apply_evaluator_updates(
+        task_config={"state_schema": {}, "phases": [{"phase_id": "active"}], "completion_conditions": {"all": []}},
+        state=event_state,
+        parsed={"updates": [], "events": [{
+            "event_type": "artifact_submitted", "subject": "capacity evidence",
+            "status": "completed", "actor_id": "owner",
+            "summary": "Capacity evidence delivered with figures.",
+            "evidence": [{"speaker_id": "owner", "quote": "Here is the capacity evidence"}],
+        }]},
+        characters=[owner], player_text="",
+        npc_turns=[{"speaker_id": "owner", "content": "Here is the capacity evidence: 5,200 units monthly."}],
+    )
+    assert event_state["work_items"]["capacity_evidence"]["status"] == "completed"
+    assert task_progress_signature(event_state) != promised_signature
+    set_progress_metadata(event_state, stagnant_turns=3, turn_id=7, progress_made=False)
+    assert public_task_result(event_state)["progress"]["stagnant_turns"] == 3
+    stalled = finalize_stalled_task_state(event_state, turn_id=10)
+    assert stalled["completion_status"] == "stalled"
+    assert stalled["outcome"]["type"] == "stalled"
 
     chars = [
         SimpleNamespace(character_id="first", display_name="First", character_name="First", job_title="Lead", aliases=[], sort_order=0),

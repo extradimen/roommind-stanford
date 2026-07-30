@@ -26,7 +26,12 @@ from app.external_evaluator import evaluate_public_transcript
 from app.player_character import resolve_player_character
 from app.player_agent import generate_comparison_player_move, generate_player_move
 from app.scenario_side import resolve_player_side_goal
-from app.task_state import task_progress_signature
+from app.task_state import (
+    TERMINAL_OUTCOMES,
+    finalize_stalled_task_state,
+    set_progress_metadata,
+    task_progress_signature,
+)
 from app.schemas import (
     AgentMemoryNodeOut,
     AgentMemoryNodeUpdate,
@@ -94,16 +99,37 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
     previous_test_state = dict((session.shared_state or {}).get("_test_state") or {})
     stagnant_turns = 0 if after_signature != before_signature else int(previous_test_state.get("stagnant_turns", 0)) + 1
     max_stagnant_turns = max(4, min(int((session.run_config or {}).get("max_stagnant_turns", 10)), 25))
-    task_complete = after_task_state.get("completion_status") == "completed"
-    if task_complete:
-        stop_reason = "completion_conditions_met"
+    completion_status = str(after_task_state.get("completion_status") or "in_progress")
+    task_terminal = completion_status in TERMINAL_OUTCOMES
+    if task_terminal:
+        stop_reason = (
+            "completion_conditions_met" if completion_status == "completed"
+            else f"terminal_outcome_{completion_status}"
+        )
     elif completed_turns >= safety_max_turns:
         stop_reason = "safety_limit_reached"
-    elif not (session.run_config or {}).get("comparison_protocol") and stagnant_turns >= max_stagnant_turns:
+        after_task_state = finalize_stalled_task_state(
+            after_task_state,
+            turn_id=completed_turns,
+            reason="The autonomous simulation reached its configured safety turn limit before a terminal outcome.",
+        )
+        completion_status = "stalled"
+        task_terminal = True
+    elif stagnant_turns >= max_stagnant_turns:
         stop_reason = "no_task_progress"
+        after_task_state = finalize_stalled_task_state(after_task_state, turn_id=completed_turns)
+        completion_status = "stalled"
+        task_terminal = True
+    after_task_state = set_progress_metadata(
+        after_task_state,
+        stagnant_turns=stagnant_turns,
+        turn_id=completed_turns,
+        progress_made=after_signature != before_signature,
+    )
     if stop_reason:
-        session.status = "completed" if task_complete else "stopped"
+        session.status = "completed" if completion_status in {"completed", "conditional"} else "stopped"
     shared = dict(session.shared_state or {})
+    shared["task_state"] = after_task_state
     shared["_test_state"] = {
         "completed_turns": completed_turns,
         "safety_max_turns": safety_max_turns,
@@ -112,6 +138,7 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
         "stagnant_turns": stagnant_turns,
         "max_stagnant_turns": max_stagnant_turns,
         "progress_made": after_signature != before_signature,
+        "completion_status": completion_status,
     }
     session.shared_state = shared
     await db.flush()

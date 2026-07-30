@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from copy import deepcopy
 from typing import Any
 
@@ -16,7 +17,19 @@ from app.models.db import CharacterTemplate
 
 
 ALLOWED_STATUSES = {"unknown", "proposed", "disputed", "confirmed", "rejected"}
+ALLOWED_EVENT_TYPES = {
+    "information_provided", "artifact_offered", "artifact_submitted",
+    "artifact_reviewed", "action_committed", "action_completed", "decision",
+    "blocker", "handoff", "schedule", "outcome",
+}
+ALLOWED_EVENT_STATUSES = {"proposed", "completed", "blocked", "rejected"}
+TERMINAL_OUTCOMES = {"completed", "conditional", "deferred", "failed", "stalled"}
 logger = logging.getLogger(__name__)
+
+
+def _subject_key(value: Any) -> str:
+    words = re.findall(r"[\w\-]+", str(value or "").casefold(), flags=re.UNICODE)
+    return "_".join(words[:12])[:96] or "unspecified"
 
 
 def task_progress_signature(task_state: dict[str, Any] | None) -> str:
@@ -34,6 +47,19 @@ def task_progress_signature(task_state: dict[str, Any] | None) -> str:
             }
             for field, item in sorted(variables.items())
             if isinstance(item, dict)
+        },
+        # Work items represent material progress (documents delivered, actions
+        # completed, blockers raised), not merely another differently worded
+        # conversational turn. Repeated promises therefore do not reset the
+        # stagnation counter.
+        "work_items": {
+            key: {"kind": item.get("kind"), "status": item.get("status")}
+            for key, item in sorted((state.get("work_items") or {}).items())
+            if isinstance(item, dict)
+        },
+        "outcome": {
+            "type": (state.get("outcome") or {}).get("type"),
+            "status": (state.get("outcome") or {}).get("status"),
         },
     }
     return json.dumps(compact, ensure_ascii=False, sort_keys=True, default=str)
@@ -57,6 +83,10 @@ def public_task_result(task_state: dict[str, Any] | None) -> dict[str, Any]:
         },
         "open_issues": list(state.get("open_issues") or []),
         "condition_results": list(state.get("condition_results") or []),
+        "work_items": deepcopy(state.get("work_items") or {}),
+        "recent_events": deepcopy((state.get("event_ledger") or [])[-30:]),
+        "outcome": deepcopy(state.get("outcome") or {}),
+        "progress": deepcopy(state.get("progress") or {}),
     }
 
 
@@ -149,12 +179,16 @@ def initial_task_state(task_config: dict[str, Any]) -> dict[str, Any]:
             "evidence": [],
         }
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "phase": first,
         "completion_status": "in_progress",
         "variables": variables,
         "open_issues": list(variables),
         "condition_results": [],
+        "event_ledger": [],
+        "work_items": {},
+        "outcome": {"type": None, "status": "open", "reason": "", "evidence": []},
+        "progress": {"stagnant_turns": 0, "last_progress_turn": 0},
     }
 
 
@@ -215,10 +249,131 @@ def evaluate_conditions(task_config: dict[str, Any], task_state: dict[str, Any])
     any_results = [_condition_result(c, variables) for c in root.get("any", [])]
     complete = all(r["met"] for r in all_results) and (not any_results or any(r["met"] for r in any_results))
     task_state["condition_results"] = all_results + any_results
-    task_state["completion_status"] = "completed" if complete and (all_results or any_results) else "in_progress"
-    task_state["open_issues"] = [name for name, value in variables.items() if value.get("status") != "confirmed"]
+    explicit_outcome = (task_state.get("outcome") or {}).get("type")
+    if complete and (all_results or any_results):
+        task_state["completion_status"] = "completed"
+    elif explicit_outcome in TERMINAL_OUTCOMES:
+        task_state["completion_status"] = explicit_outcome
+    else:
+        task_state["completion_status"] = "in_progress"
+    variable_issues = [name for name, value in variables.items() if value.get("status") != "confirmed"]
+    work_issues = [
+        f"work:{key}" for key, item in (task_state.get("work_items") or {}).items()
+        if isinstance(item, dict) and item.get("status") not in {"completed", "rejected"}
+    ]
+    task_state["open_issues"] = list(dict.fromkeys([*variable_issues, *work_issues]))
     advance_phase(task_config, task_state)
     return task_state
+
+
+def set_progress_metadata(
+    task_state: dict[str, Any], *, stagnant_turns: int, turn_id: int, progress_made: bool
+) -> dict[str, Any]:
+    """Persist convergence signals so every agent sees the same meeting state."""
+    progress = dict(task_state.get("progress") or {})
+    progress["stagnant_turns"] = max(0, int(stagnant_turns))
+    progress["last_checked_turn"] = max(0, int(turn_id))
+    if progress_made:
+        progress["last_progress_turn"] = max(0, int(turn_id))
+    task_state["progress"] = progress
+    return task_state
+
+
+def finalize_stalled_task_state(
+    task_state: dict[str, Any], *, turn_id: int, reason: str | None = None
+) -> dict[str, Any]:
+    """Close an autonomous simulation that cannot make material progress.
+
+    This is deliberately domain-neutral: a negotiation may be deferred, an
+    incident exercise may be blocked, and an interview may end incomplete.
+    """
+    state = deepcopy(task_state)
+    open_issues = list(state.get("open_issues") or [])
+    state["outcome"] = {
+        "type": "stalled",
+        "status": "system_closed",
+        "reason": reason or "No material state, work-item, or outcome progress within the configured window.",
+        "turn_id": int(turn_id),
+        "open_issues": open_issues,
+        "evidence": [],
+    }
+    state["completion_status"] = "stalled"
+    return state
+
+
+def _valid_public_evidence(
+    evidence: Any, turn_text: dict[str, str]
+) -> list[dict[str, Any]]:
+    valid: list[dict[str, Any]] = []
+    for row in evidence if isinstance(evidence, list) else []:
+        if not isinstance(row, dict):
+            continue
+        speaker_id = "user" if row.get("speaker_id") == "player" else str(row.get("speaker_id") or "")
+        quote = " ".join(str(row.get("quote") or "").split()).casefold()
+        public_text = " ".join(turn_text.get(speaker_id, "").split()).casefold()
+        if speaker_id and quote and quote in public_text:
+            valid.append({**row, "speaker_id": speaker_id})
+    return valid
+
+
+def apply_generic_events(
+    *, state: dict[str, Any], parsed: dict[str, Any], turn_text: dict[str, str]
+) -> None:
+    """Apply evidence-grounded events without assuming a negotiation domain."""
+    ledger = state.setdefault("event_ledger", [])
+    work_items = state.setdefault("work_items", {})
+    existing = {
+        (row.get("event_type"), row.get("subject_key"), row.get("status"), row.get("actor_id"))
+        for row in ledger if isinstance(row, dict)
+    }
+    for raw in parsed.get("events", []) if isinstance(parsed.get("events"), list) else []:
+        if not isinstance(raw, dict):
+            continue
+        event_type = str(raw.get("event_type") or "")
+        status = str(raw.get("status") or "")
+        if event_type not in ALLOWED_EVENT_TYPES or status not in ALLOWED_EVENT_STATUSES:
+            continue
+        evidence = _valid_public_evidence(raw.get("evidence"), turn_text)
+        if not evidence:
+            continue
+        actor_id = "user" if raw.get("actor_id") == "player" else str(raw.get("actor_id") or evidence[0]["speaker_id"])
+        subject = str(raw.get("subject") or raw.get("summary") or event_type).strip()[:240]
+        key = _subject_key(subject)
+        signature = (event_type, key, status, actor_id)
+        if signature in existing:
+            continue
+        event = {
+            "event_index": len(ledger) + 1,
+            "event_type": event_type, "subject": subject, "subject_key": key,
+            "status": status, "actor_id": actor_id,
+            "target_id": str(raw.get("target_id") or ""),
+            "summary": str(raw.get("summary") or subject).strip()[:500],
+            "evidence": evidence,
+        }
+        ledger.append(event)
+        existing.add(signature)
+        item = dict(work_items.get(key) or {})
+        item.update({"subject": subject, "kind": event_type, "owner_id": actor_id})
+        if event_type == "artifact_offered":
+            item["status"] = item.get("status") or "promised"
+        elif event_type == "artifact_submitted":
+            item["status"] = "completed" if status == "completed" else status
+        elif event_type in {"artifact_reviewed", "action_completed", "decision", "handoff", "schedule"}:
+            item["status"] = status
+        elif event_type in {"action_committed", "blocker"}:
+            item["status"] = status
+        work_items[key] = item
+    state["event_ledger"] = ledger[-100:]
+
+    raw_outcome = parsed.get("outcome")
+    if isinstance(raw_outcome, dict) and str(raw_outcome.get("type") or "") in TERMINAL_OUTCOMES:
+        evidence = _valid_public_evidence(raw_outcome.get("evidence"), turn_text)
+        if evidence:
+            state["outcome"] = {
+                "type": str(raw_outcome["type"]), "status": "explicit",
+                "reason": str(raw_outcome.get("reason") or "").strip()[:800],
+                "evidence": evidence,
+            }
 
 
 def apply_evaluator_updates(
@@ -307,6 +462,7 @@ def apply_evaluator_updates(
         current["status"] = status
         current["confirmations"] = confirmations
         current.setdefault("evidence", []).extend(valid_evidence)
+    apply_generic_events(state=state, parsed=parsed, turn_text=turn_text)
     return evaluate_conditions(task_config, state)
 
 
@@ -336,6 +492,15 @@ Current player turn: {player_text}
 Current participant replies:
 {json.dumps(npc_turns, ensure_ascii=False)}
 
+Also extract domain-neutral operational events. Distinguish a promise to provide
+something (artifact_offered/action_committed) from actually providing or doing
+it (artifact_submitted/action_completed). A statement such as "I will send it"
+is never artifact_submitted. Use an explicit terminal outcome only when the
+participants clearly close, defer, conditionally settle, fail, or abandon the
+current activity. Emit at most four events and only for material changes in the
+current turn. If an event concerns an existing work item, reuse that work item's
+exact subject so that it is updated instead of duplicated.
+
 Return strict JSON only:
 {{
   "phase": "one phase_id from task_config.phases",
@@ -346,7 +511,21 @@ Return strict JSON only:
     "proposed_by": "user or character_id",
     "confirmed_by": ["speaker ids that explicitly confirmed it"],
     "evidence": [{{"speaker_id":"...","quote":"short exact excerpt"}}]
-  }}]
+  }}],
+  "events": [{{
+    "event_type": "information_provided|artifact_offered|artifact_submitted|artifact_reviewed|action_committed|action_completed|decision|blocker|handoff|schedule|outcome",
+    "subject": "stable concise name for the information, artifact, action, decision, blocker, handoff, or schedule",
+    "status": "proposed|completed|blocked|rejected",
+    "actor_id": "user or character_id",
+    "target_id": "optional recipient character_id",
+    "summary": "brief public summary",
+    "evidence": [{{"speaker_id":"...","quote":"short exact excerpt"}}]
+  }}],
+  "outcome": null or {{
+    "type": "completed|conditional|deferred|failed|stalled",
+    "reason": "why the activity explicitly ended",
+    "evidence": [{{"speaker_id":"...","quote":"short exact excerpt"}}]
+  }}
 }}
 Follow each field's type and confirmation_policy. Preserve prior confirmed values unless explicit new evidence changes them.
 {chr(10).join(task_config.get('evaluator_instructions') or [])}"""

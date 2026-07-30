@@ -31,6 +31,7 @@ from app.scenario_side import initial_plan_goal_block, user_speaker_label
 from app.i18n.reply_language import decision_language_rule
 from app.orchestrator.common import orch_support
 from app.orchestrator.llm_binding import ResolvedLlm
+from app.task_state import public_task_result
 from app.world.perception import perceive_events
 from app.world.timeline import WorldEvent, WorldTimeline
 
@@ -215,6 +216,16 @@ async def run_agent_tick(
     )
     goal_block = initial_plan_goal_block(character, scenario)
     user_label = user_speaker_label(character)
+    governance_view = public_task_result(task_state or {})
+    stagnant_turns = int((governance_view.get("progress") or {}).get("stagnant_turns", 0))
+    convergence_rule = (
+        "Material progress has stalled. Do not repeat a promise or request. If you own "
+        "the missing information, artifact, decision, or action, provide/perform it now "
+        "with concrete public details. Otherwise name the blocker and propose a realistic "
+        "handoff, schedule, conditional outcome, or closure."
+        if stagnant_turns >= 2
+        else "Advance one unresolved issue with a new fact, proposal, objection, decision, or action."
+    )
 
     decision_prompt = f"""You are generative task-simulation agent "{character.display_name}".
 Every decision must follow your own goals and plan, not react blindly to the user.
@@ -254,7 +265,8 @@ Authority and action limits: {json.dumps(character.authority or {}, ensure_ascii
 Scenario: {scenario.title} | Phase: {current_phase}
 Task type: {(scenario.task_config or {}).get('task_type', 'simulation')}
 Task terminology: {json.dumps((scenario.task_config or {}).get('terminology', {}), ensure_ascii=False)}
-Shared task state (confirmed work and open issues): {json.dumps(task_state or {}, ensure_ascii=False)}
+Shared simulation ledger (state, work items, events, outcome): {json.dumps(governance_view, ensure_ascii=False)}
+Consecutive turns without material progress: {stagnant_turns}
 {user_label}: "{user_input}"
 {wait_guidance}
 {quota_guidance}
@@ -268,6 +280,12 @@ Priority:
 4. No repetition: do not repeat what you just said.
 5. State-aware: advance an open issue; do not reopen a confirmed issue without new evidence.
 6. Authority: never propose, accept, execute, or confirm an action outside your configured authority.
+7. Contribution gate: speak only to answer a direct question or add a new fact, proposal,
+   objection, authorized decision/action, or necessary coordination. Otherwise wait.
+8. Materialize work: if you control a requested document, analysis, test, approval,
+   action, or other artifact and it is available, provide or perform it now with concrete
+   public details. Do not repeatedly say that you will provide it later.
+9. Convergence: {convergence_rule}
 
 {decision_language_rule(reply_language)}
 

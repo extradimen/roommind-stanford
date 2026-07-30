@@ -53,3 +53,16 @@ ensure_initial_plan()    → 基于种子生成 active plan 节点
 | `server/app/agent/memory_stream.py` | 检索打分 |
 | `server/app/world/perception.py` | 感知与 importance |
 | `server/app/agent/act.py` | 行动与 NPC 台词 |
+
+## 8. 开放式仿真治理层
+
+Stanford式独立记忆解决“角色如何持续行动”，但不单独解决“多人活动如何形成可验证进展并结束”。RoomMind在Agent循环外增加通用治理层：
+
+- 类型化任务变量；
+- 材料、行动、决定、阻塞、交接和日程工作项；
+- 具有公开引文证据的事件账本；
+- 权限验证和跨轮确认；
+- 基于实质状态变化的停滞检测；
+- completed / conditional / deferred / failed / stalled 多结局。
+
+该治理层不包含谈判专用逻辑，可用于会议、面试、事故处置、评审、协作和其他开放场景。详细演进与问题记录见 `docs/SIMULATION_ARCHITECTURE_AND_LESSONS.md`。

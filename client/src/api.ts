@@ -315,7 +315,9 @@ export async function createSession(
     body: JSON.stringify({
       scenario_id: scenarioId,
       session_mode: sessionMode,
-      run_config: sessionMode !== "participation" ? { safety_max_turns: 50, player_strategy: "balanced" } : {},
+      run_config: sessionMode !== "participation"
+        ? { safety_max_turns: 50, max_stagnant_turns: 8, player_strategy: "balanced" }
+        : {},
     }),
   });
   if (!res.ok) throw new Error("Failed to create session");
@@ -373,6 +375,7 @@ export async function createBatchExperiment(input: {
   repetitions: number;
   concurrency: number;
   safety_max_turns: number;
+  max_stagnant_turns: number;
   locale?: string;
   random_seed: number;
   human_validation_enabled: boolean;

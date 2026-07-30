@@ -14,7 +14,7 @@ from app.models.db import GameSession, SessionMessage
 from app.orchestrator.common import orch_support
 from app.orchestrator.defaults import ORCHESTRATION_MODE
 from app.orchestrator.generative import generative_orchestrator
-from app.task_state import initial_task_state, update_task_state
+from app.task_state import TERMINAL_OUTCOMES, initial_task_state, update_task_state
 from app.telemetry import emit
 
 settings = get_settings()
@@ -256,8 +256,9 @@ class MemoryService:
         )
         updated_shared_state["task_state"] = task_state
         session.current_phase = task_state["phase"]
-        if task_state["completion_status"] == "completed":
-            session.status = "completed"
+        completion_status = str(task_state.get("completion_status") or "in_progress")
+        if completion_status in TERMINAL_OUTCOMES:
+            session.status = "completed" if completion_status in {"completed", "conditional"} else "stopped"
         session.shared_state = updated_shared_state
         session.orchestration_mode = ORCHESTRATION_MODE
 

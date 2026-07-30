@@ -136,10 +136,11 @@ async def generate_player_move(
     test_state = dict((session.shared_state or {}).get("_test_state") or {})
     stagnant_turns = int(test_state.get("stagnant_turns", 0))
     progress_guidance = (
-        "The structured task state has not changed for several turns. Do not repeat "
-        "prior confirmations or merely wait again. Ask for a concrete authorized action, "
-        "request the missing evidence, propose a bounded alternative, or explicitly explain "
-        "why progress is impossible."
+        "The simulation has made no material progress for several turns. Do not repeat "
+        "an earlier request, promise, confirmation, or waiting step. Ask the participant "
+        "who controls the blocker to perform the concrete action now; if that cannot happen "
+        "in this session, propose a realistic handoff, scheduled follow-up, conditional "
+        "outcome, or explicit closure."
         if stagnant_turns >= 2
         else "Advance one open issue and preserve already confirmed work."
     )
@@ -170,6 +171,10 @@ player's goal through realistic task-appropriate actions and communication.
 Avoid repeating the previous move. Keep the spoken content under 120
 words and use the same language as the dialogue, defaulting to English.
 Prioritize open issues, preserve confirmed items, and move toward the next configured phase.
+Treat a promise to provide a document, analysis, test, decision, or action as
+different from actually providing or completing it. Seek material execution,
+not another promise. Open-ended simulations may end through completion,
+conditional resolution, deferral, handoff, or acknowledged failure.
 Progress rule: {progress_guidance}
 
 Return strict JSON only:
