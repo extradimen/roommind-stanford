@@ -66,3 +66,5 @@ Stanford式独立记忆解决“角色如何持续行动”，但不单独解决
 - completed / conditional / deferred / failed / stalled 多结局。
 
 该治理层不包含谈判专用逻辑，可用于会议、面试、事故处置、评审、协作和其他开放场景。详细演进与问题记录见 `docs/SIMULATION_ARCHITECTURE_AND_LESSONS.md`。
+
+重大架构迭代的时间线、触发证据和对应验证要求见 `docs/ARCHITECTURE_ITERATION_HISTORY.md`。

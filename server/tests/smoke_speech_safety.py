@@ -19,7 +19,7 @@ from app.task_state import (
     set_progress_metadata,
     task_progress_signature,
 )
-from app.player_agent import normalize_player_content
+from app.player_agent import normalize_player_content, pending_public_questions
 
 
 def main() -> None:
@@ -225,13 +225,82 @@ def main() -> None:
         characters=[owner], player_text="",
         npc_turns=[{"speaker_id": "owner", "content": "Here is the capacity evidence: 5,200 units monthly."}],
     )
-    assert event_state["work_items"]["capacity_evidence"]["status"] == "completed"
+    assert event_state["work_items"]["capacity_evidence"]["status"] == "submitted"
     assert task_progress_signature(event_state) != promised_signature
+    submitted_signature = task_progress_signature(event_state)
+    apply_evaluator_updates(
+        task_config={"state_schema": {}, "phases": [{"phase_id": "active"}], "completion_conditions": {"all": []}},
+        state=event_state,
+        parsed={"updates": [], "events": [{
+            "event_type": "artifact_reviewed", "subject": "capacity evidence details",
+            "work_item_key": "capacity_evidence", "status": "completed", "actor_id": "owner",
+            "summary": "Capacity evidence reviewed.",
+            "evidence": [{"speaker_id": "owner", "quote": "I reviewed the capacity evidence"}],
+        }]},
+        characters=[owner], player_text="",
+        npc_turns=[{"speaker_id": "owner", "content": "I reviewed the capacity evidence."}],
+    )
+    assert event_state["work_items"]["capacity_evidence"]["status"] == "completed"
+    assert task_progress_signature(event_state) != submitted_signature
+
+    invalid_review_state = initial_task_state({
+        "state_schema": {}, "phases": [{"phase_id": "active"}],
+        "completion_conditions": {"all": []},
+    })
+    apply_evaluator_updates(
+        task_config={"state_schema": {}, "phases": [{"phase_id": "active"}], "completion_conditions": {"all": []}},
+        state=invalid_review_state,
+        parsed={"updates": [], "events": [{
+            "event_type": "artifact_reviewed", "subject": "unsubmitted report",
+            "status": "completed", "actor_id": "owner",
+            "summary": "Claims to review a missing report.",
+            "evidence": [{"speaker_id": "owner", "quote": "I reviewed the report"}],
+        }]},
+        characters=[owner], player_text="",
+        npc_turns=[{"speaker_id": "owner", "content": "I reviewed the report."}],
+    )
+    assert "unsubmitted_report" not in invalid_review_state["work_items"]
+    assert invalid_review_state["event_ledger"][-1]["transition_valid"] is False
+
+    info_state = initial_task_state({
+        "state_schema": {}, "phases": [{"phase_id": "active"}],
+        "completion_conditions": {"all": []},
+    })
+    apply_evaluator_updates(
+        task_config={"state_schema": {}, "phases": [{"phase_id": "active"}], "completion_conditions": {"all": []}},
+        state=info_state,
+        parsed={"updates": [], "events": [{
+            "event_type": "information_provided", "subject": "service impact details",
+            "status": "completed", "actor_id": "owner",
+            "summary": "Impact facts provided.",
+            "evidence": [{"speaker_id": "owner", "quote": "The outage affects payment traffic"}],
+        }]},
+        characters=[owner], player_text="",
+        npc_turns=[{"speaker_id": "owner", "content": "The outage affects payment traffic only."}],
+    )
+    assert info_state["work_items"]["service_impact"]["status"] == "completed"
+
+    closure_state = initial_task_state(cross_turn_config)
+    closure_state["variables"]["outcome"].update(value=True, status="proposed")
+    apply_evaluator_updates(
+        task_config=cross_turn_config, state=closure_state,
+        parsed={"updates": [], "events": []}, characters=[owner],
+        player_text="The meeting is now adjourned.", npc_turns=[],
+    )
+    assert closure_state["completion_status"] == "deferred"
+    assert closure_state["outcome"]["status"] == "explicit_closure"
     set_progress_metadata(event_state, stagnant_turns=3, turn_id=7, progress_made=False)
     assert public_task_result(event_state)["progress"]["stagnant_turns"] == 3
     stalled = finalize_stalled_task_state(event_state, turn_id=10)
     assert stalled["completion_status"] == "stalled"
     assert stalled["outcome"]["type"] == "stalled"
+
+    pending = pending_public_questions([
+        {"speaker_id": "user", "speaker_type": "user", "content": "Please advise."},
+        {"speaker_id": "first", "speaker_type": "npc", "content": "Can you provide the evidence?"},
+        {"speaker_id": "second", "speaker_type": "npc", "content": "What decision do you recommend?"},
+    ])
+    assert [row["speaker_id"] for row in pending] == ["first", "second"]
 
     chars = [
         SimpleNamespace(character_id="first", display_name="First", character_name="First", job_title="Lead", aliases=[], sort_order=0),

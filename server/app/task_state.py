@@ -24,12 +24,55 @@ ALLOWED_EVENT_TYPES = {
 }
 ALLOWED_EVENT_STATUSES = {"proposed", "completed", "blocked", "rejected"}
 TERMINAL_OUTCOMES = {"completed", "conditional", "deferred", "failed", "stalled"}
+MATERIAL_WORK_STATUSES = {"submitted", "completed", "blocked", "rejected"}
+_WORK_KEY_QUALIFIERS = {
+    "a", "an", "and", "the", "for", "of", "to", "with",
+    "draft", "details", "detail", "summary", "preparation", "update",
+}
 logger = logging.getLogger(__name__)
 
 
 def _subject_key(value: Any) -> str:
     words = re.findall(r"[\w\-]+", str(value or "").casefold(), flags=re.UNICODE)
     return "_".join(words[:12])[:96] or "unspecified"
+
+
+def _work_key_tokens(value: Any) -> set[str]:
+    return {
+        word for word in _subject_key(value).split("_")
+        if word and word not in _WORK_KEY_QUALIFIERS
+    }
+
+
+def _resolve_work_item_key(raw: dict[str, Any], work_items: dict[str, Any]) -> tuple[str, str]:
+    """Resolve a stable key and merge obvious wording variants deterministically."""
+    subject = str(raw.get("subject") or raw.get("summary") or raw.get("event_type") or "unspecified").strip()[:240]
+    supplied_key = raw.get("work_item_key")
+    requested = _subject_key(supplied_key or subject)
+    if requested in work_items:
+        return requested, subject
+    concise_words = [
+        word for word in requested.split("_")
+        if word and word not in _WORK_KEY_QUALIFIERS
+    ]
+    requested = "_".join(concise_words)[:96] or requested
+    if requested in work_items:
+        return requested, subject
+    requested_tokens = _work_key_tokens(requested)
+    best_key = ""
+    best_score = 0.0
+    for key in work_items:
+        existing_tokens = _work_key_tokens(key)
+        if not requested_tokens or not existing_tokens:
+            continue
+        overlap = requested_tokens & existing_tokens
+        score = len(overlap) / len(requested_tokens | existing_tokens)
+        subset_match = min(len(requested_tokens), len(existing_tokens)) >= 2 and (
+            requested_tokens <= existing_tokens or existing_tokens <= requested_tokens
+        )
+        if (score >= 0.67 or subset_match) and score > best_score:
+            best_key, best_score = key, score
+    return (best_key or requested), subject
 
 
 def task_progress_signature(task_state: dict[str, Any] | None) -> str:
@@ -41,9 +84,9 @@ def task_progress_signature(task_state: dict[str, Any] | None) -> str:
         "completion_status": state.get("completion_status"),
         "variables": {
             field: {
-                "value": item.get("value"),
-                "status": item.get("status"),
-                "confirmations": sorted(set(item.get("confirmations") or [])),
+                "value": item.get("value") if item.get("status") in {"confirmed", "rejected"} else None,
+                "status": item.get("status") if item.get("status") in {"confirmed", "rejected"} else "unresolved",
+                "confirmations": sorted(set(item.get("confirmations") or [])) if item.get("status") == "confirmed" else [],
             }
             for field, item in sorted(variables.items())
             if isinstance(item, dict)
@@ -53,9 +96,9 @@ def task_progress_signature(task_state: dict[str, Any] | None) -> str:
         # conversational turn. Repeated promises therefore do not reset the
         # stagnation counter.
         "work_items": {
-            key: {"kind": item.get("kind"), "status": item.get("status")}
+            key: {"status": item.get("status")}
             for key, item in sorted((state.get("work_items") or {}).items())
-            if isinstance(item, dict)
+            if isinstance(item, dict) and item.get("status") in MATERIAL_WORK_STATUSES
         },
         "outcome": {
             "type": (state.get("outcome") or {}).get("type"),
@@ -179,7 +222,7 @@ def initial_task_state(task_config: dict[str, Any]) -> dict[str, Any]:
             "evidence": [],
         }
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "phase": first,
         "completion_status": "in_progress",
         "variables": variables,
@@ -259,7 +302,8 @@ def evaluate_conditions(task_config: dict[str, Any], task_state: dict[str, Any])
     variable_issues = [name for name, value in variables.items() if value.get("status") != "confirmed"]
     work_issues = [
         f"work:{key}" for key, item in (task_state.get("work_items") or {}).items()
-        if isinstance(item, dict) and item.get("status") not in {"completed", "rejected"}
+        if isinstance(item, dict) and item.get("required") is True
+        and item.get("status") not in {"submitted", "completed", "rejected"}
     ]
     task_state["open_issues"] = list(dict.fromkeys([*variable_issues, *work_issues]))
     advance_phase(task_config, task_state)
@@ -324,8 +368,11 @@ def apply_generic_events(
     work_items = state.setdefault("work_items", {})
     existing = {
         (row.get("event_type"), row.get("subject_key"), row.get("status"), row.get("actor_id"))
-        for row in ledger if isinstance(row, dict)
+        for row in ledger if isinstance(row, dict) and row.get("transition_valid", True)
     }
+    next_event_index = max(
+        [int(row.get("event_index") or 0) for row in ledger if isinstance(row, dict)] or [0]
+    ) + 1
     for raw in parsed.get("events", []) if isinstance(parsed.get("events"), list) else []:
         if not isinstance(raw, dict):
             continue
@@ -337,31 +384,66 @@ def apply_generic_events(
         if not evidence:
             continue
         actor_id = "user" if raw.get("actor_id") == "player" else str(raw.get("actor_id") or evidence[0]["speaker_id"])
-        subject = str(raw.get("subject") or raw.get("summary") or event_type).strip()[:240]
-        key = _subject_key(subject)
+        key, subject = _resolve_work_item_key(raw, work_items)
         signature = (event_type, key, status, actor_id)
         if signature in existing:
             continue
+        item = dict(work_items.get(key) or {})
+        milestones = set(item.get("milestones") or [])
+        transition_valid = not (
+            event_type == "artifact_reviewed" and "artifact_submitted" not in milestones
+        )
         event = {
-            "event_index": len(ledger) + 1,
+            "event_index": next_event_index,
             "event_type": event_type, "subject": subject, "subject_key": key,
             "status": status, "actor_id": actor_id,
             "target_id": str(raw.get("target_id") or ""),
             "summary": str(raw.get("summary") or subject).strip()[:500],
             "evidence": evidence,
+            "transition_valid": transition_valid,
         }
+        next_event_index += 1
+        if not transition_valid:
+            event["transition_error"] = "artifact_review_requires_prior_submission"
         ledger.append(event)
+        if not transition_valid:
+            continue
         existing.add(signature)
-        item = dict(work_items.get(key) or {})
-        item.update({"subject": subject, "kind": event_type, "owner_id": actor_id})
+        aliases = list(dict.fromkeys([*(item.get("aliases") or []), subject]))[-12:]
+        item.update({
+            "subject": item.get("subject") or subject,
+            "kind": item.get("kind") or event_type,
+            "last_event_type": event_type,
+            "owner_id": actor_id,
+            "aliases": aliases,
+        })
+        milestones.add(event_type)
+        item["milestones"] = sorted(milestones)
+        if event_type in {"blocker", "artifact_offered", "action_committed"}:
+            item["required"] = True
         if event_type == "artifact_offered":
-            item["status"] = item.get("status") or "promised"
+            if item.get("status") not in {"blocked", "submitted", "completed"}:
+                item["status"] = "promised"
         elif event_type == "artifact_submitted":
+            item["status"] = "submitted"
+        elif event_type in {"artifact_reviewed", "action_completed"}:
+            item["status"] = "completed"
+        elif event_type == "information_provided":
+            # Describing a requirement or blocker is useful information, but
+            # does not itself satisfy an already required artifact/action.
+            if not item.get("required") or item.get("status") not in {"blocked", "promised"}:
+                item["status"] = "completed"
+        elif event_type == "outcome":
             item["status"] = "completed" if status == "completed" else status
-        elif event_type in {"artifact_reviewed", "action_completed", "decision", "handoff", "schedule"}:
-            item["status"] = status
-        elif event_type in {"action_committed", "blocker"}:
-            item["status"] = status
+        elif event_type in {"decision", "handoff", "schedule"}:
+            item["status"] = "completed" if status == "completed" else "proposed"
+            if status != "completed":
+                item["required"] = True
+        elif event_type == "action_committed":
+            if item.get("status") not in {"blocked", "completed"}:
+                item["status"] = "promised"
+        elif event_type == "blocker":
+            item["status"] = "blocked"
         work_items[key] = item
     state["event_ledger"] = ledger[-100:]
 
@@ -374,6 +456,44 @@ def apply_generic_events(
                 "reason": str(raw_outcome.get("reason") or "").strip()[:800],
                 "evidence": evidence,
             }
+
+
+_CLOSURE_PATTERNS = (
+    r"\bmeeting (?:(?:is (?:now )?)|has been )?(?:concluded|adjourned|closed)\b",
+    r"\bthis (?:meeting|interview|session) (?:is |has been )?(?:concluded|complete|closed)\b",
+    r"\bthis concludes (?:the|our) (?:meeting|interview|session)\b",
+    r"\bmeeting is now officially closed\b",
+)
+
+
+def apply_explicit_closure(
+    task_config: dict[str, Any], state: dict[str, Any], turn_text: dict[str, str]
+) -> None:
+    """Turn unambiguous public closure language into a terminal outcome."""
+    if (state.get("outcome") or {}).get("type") in TERMINAL_OUTCOMES:
+        return
+    closure_evidence: list[dict[str, str]] = []
+    for speaker_id, content in turn_text.items():
+        normalized = " ".join(str(content or "").split())
+        if any(re.search(pattern, normalized, flags=re.IGNORECASE) for pattern in _CLOSURE_PATTERNS):
+            closure_evidence.append({"speaker_id": speaker_id, "quote": normalized[:500]})
+    if not closure_evidence:
+        return
+    root = task_config.get("completion_conditions") or {"all": []}
+    variables = state.get("variables") or {}
+    results = [
+        *[_condition_result(condition, variables) for condition in root.get("all", [])],
+        *[_condition_result(condition, variables) for condition in root.get("any", [])],
+    ]
+    outcome_type = "completed" if conditions_met(root, variables) else (
+        "conditional" if any(row["met"] for row in results) else "deferred"
+    )
+    state["outcome"] = {
+        "type": outcome_type,
+        "status": "explicit_closure",
+        "reason": "Participants explicitly closed the current activity.",
+        "evidence": closure_evidence,
+    }
 
 
 def apply_evaluator_updates(
@@ -463,6 +583,8 @@ def apply_evaluator_updates(
         current["confirmations"] = confirmations
         current.setdefault("evidence", []).extend(valid_evidence)
     apply_generic_events(state=state, parsed=parsed, turn_text=turn_text)
+    evaluate_conditions(task_config, state)
+    apply_explicit_closure(task_config, state, turn_text)
     return evaluate_conditions(task_config, state)
 
 
@@ -499,7 +621,9 @@ is never artifact_submitted. Use an explicit terminal outcome only when the
 participants clearly close, defer, conditionally settle, fail, or abandon the
 current activity. Emit at most four events and only for material changes in the
 current turn. If an event concerns an existing work item, reuse that work item's
-exact subject so that it is updated instead of duplicated.
+exact key and subject so that it is updated instead of duplicated. Never report
+artifact_reviewed unless that same work item was actually submitted in a prior
+or current public turn.
 
 Return strict JSON only:
 {{
@@ -515,6 +639,7 @@ Return strict JSON only:
   "events": [{{
     "event_type": "information_provided|artifact_offered|artifact_submitted|artifact_reviewed|action_committed|action_completed|decision|blocker|handoff|schedule|outcome",
     "subject": "stable concise name for the information, artifact, action, decision, blocker, handoff, or schedule",
+    "work_item_key": "exact existing work_items key for the same item, otherwise a new concise stable key",
     "status": "proposed|completed|blocked|rejected",
     "actor_id": "user or character_id",
     "target_id": "optional recipient character_id",

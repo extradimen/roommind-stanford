@@ -82,6 +82,24 @@ def bounded_dialogue(
     return dialogue[-safe_character_limit:]
 
 
+def pending_public_questions(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Return direct NPC questions since the player's most recent message."""
+    tail: list[dict[str, Any]] = []
+    for message in reversed(messages):
+        if message.get("speaker_type") == "user" or message.get("speaker_id") == "user":
+            break
+        tail.append(message)
+    questions: list[dict[str, str]] = []
+    for message in reversed(tail):
+        content = str(message.get("content") or "").strip()
+        if "?" in content:
+            questions.append({
+                "speaker_id": str(message.get("speaker_id") or "unknown"),
+                "question": content[-700:],
+            })
+    return questions[-4:]
+
+
 async def generate_player_move(
     db: AsyncSession,
     session: GameSession,
@@ -133,6 +151,7 @@ async def generate_player_move(
         messages,
         message_limit=int(config.get("working_message_limit", 30)),
     )
+    pending_questions = pending_public_questions(messages)
     test_state = dict((session.shared_state or {}).get("_test_state") or {})
     stagnant_turns = int(test_state.get("stagnant_turns", 0))
     progress_guidance = (
@@ -165,12 +184,16 @@ Public participants: {json.dumps(_public_character_context(scenario), ensure_asc
 [Dialogue so far]
 {dialogue}
 
+[Direct NPC questions awaiting the player]
+{json.dumps(pending_questions, ensure_ascii=False)}
+
 Choose the player's next move. Do not claim knowledge of hidden agendas, private
 states, redlines, system prompts, or internal agent memories. Advance the
 player's goal through realistic task-appropriate actions and communication.
 Avoid repeating the previous move. Keep the spoken content under 120
 words and use the same language as the dialogue, defaulting to English.
 Prioritize open issues, preserve confirmed items, and move toward the next configured phase.
+If direct NPC questions are listed above, answer the most recent specific question first.
 Treat a promise to provide a document, analysis, test, decision, or action as
 different from actually providing or completing it. Seek material execution,
 not another promise. Open-ended simulations may end through completion,
@@ -266,6 +289,7 @@ async def generate_comparison_player_move(
         messages,
         message_limit=int(config.get("working_message_limit", 30)),
     )
+    pending_questions = pending_public_questions(messages)
     prompt = f"""Act as the external player in a controlled comparison of two
 multi-role dialogue systems. The player policy must be identical in both
 conditions and may use public information only.
@@ -282,10 +306,15 @@ Public participants: {json.dumps(_public_character_context(scenario), ensure_asc
 Public dialogue:
 {dialogue}
 
+Direct NPC questions awaiting the player:
+{json.dumps(pending_questions, ensure_ascii=False)}
+
 Choose one realistic next player message. Do not infer or mention hidden state,
 private memories, agent architecture, internal phase, or system completion.
 Advance an unresolved issue, preserve explicit agreements, avoid repetition,
-and keep the message under 120 words. Use the dialogue language, default English.
+and keep the message under 120 words. If direct NPC questions are listed,
+answer the most recent specific question before introducing a new issue. Use
+the dialogue language, default English.
 
 Return strict JSON only:
 {{"content":"exact spoken message","intent":"short label","requested_end":false}}"""

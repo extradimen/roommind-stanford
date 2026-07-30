@@ -1,0 +1,173 @@
+# RoomMind 重大架构迭代记录
+
+本文是RoomMind架构演进的长期索引。每次发生会改变系统研究假设、运行方式、评价方式或多人仿真语义的重大调整，都应在此新增一轮；普通缺陷修复不单独编号，但应归入对应轮次的“问题与验证”。
+
+## 记录规范
+
+每轮必须记录：
+
+1. 调整前的问题与证据；
+2. 新增或改变的架构机制；
+3. 保持不变的实验边界；
+4. 验证方法与观察结果；
+5. 新暴露的问题；
+6. 对论文研究问题、指标或有效性威胁的影响；
+7. 对应代码提交。
+
+## 第1轮：结构化多Agent场景
+
+**目标：** 从单一大模型角色提示词升级为可配置多人情境。
+
+**主要机制：**
+
+- 角色身份、职责、倾向和关系；
+- 私有状态、隐藏议程、红线和权限；
+- 多角色独立发言；
+- dispatch rules；
+- phases、state schema和completion conditions。
+
+**核心认识：** 语言风格不是角色真实性。真实角色还需要利益、知识边界、责任和不可越权的行动范围。
+
+## 第2轮：Participation/Test双模式与统一导出
+
+**目标：** 同时支持真人参与训练与AI对AI自动测试。
+
+**主要机制：**
+
+- participation mode：真人玩家与AI角色互动；
+- test mode：AI玩家自动推进；
+- `speaker_source=human|ai`；
+- session、turn、sequence、speaker和message统一导出；
+- 后台单步/连续运行。
+
+**主要问题：** AI玩家最初仍以`user`表示，容易与真人混淆；自动模式比参与模式产生更多模型调用和长上下文。
+
+## 第3轮：长对话与LLM韧性
+
+**触发证据：** `finish_reason=length`、空content、502、`ERR_EMPTY_RESPONSE`。
+
+**主要机制：**
+
+- 空内容和length finish识别；
+- 紧凑提示与有限历史窗口；
+- 重试和fallback；
+- 后端异常保护；
+- LLM调用、预览、错误和重试日志；
+- resilience smoke tests。
+
+**核心认识：** 自动多人会话的稳定性不能依赖一次模型调用成功；长对话必须有有界上下文和可诊断失败。
+
+## 第4轮：受控Baseline与批量实验
+
+**目标：** 不把RoomMind与一个被故意弱化的聊天机器人比较。
+
+**主要机制：**
+
+- 中央提示词式多角色Baseline；
+- RoomMind与Baseline共享公共场景、参与者、任务说明、玩家策略和模型锁定；
+- 场景×条件×重复次数批量运行；
+- 后台并发、恢复、取消和统一导出；
+- matched pair与固定随机种子。
+
+**核心认识：** Baseline必须获得同等公共信息，只缺少待检验的独立记忆、调度、状态治理等机制。
+
+## 第5轮：生成、AI评价、人工盲评解耦
+
+**目标：** 外部评价失败不能污染已经成功生成的对话。
+
+**主要机制：**
+
+1. 生成并冻结对话；
+2. 独立AI六维真实性评价；
+3. 可选人工盲评；
+4. 最终证据报告；
+5. forensic debug bundle。
+
+**六个维度：**
+
+- Role & strategic fidelity；
+- Information boundaries；
+- Temporal coherence；
+- Interaction structure；
+- Multi-party dynamics；
+- Procedural fidelity。
+
+**主要问题与修复：** evaluator曾将规范响应内部`metrics`误当包装层，造成全部评价失败；随后修复解析并保存每个维度的原始响应、错误和证据。
+
+## 第6轮：开放场景治理与收敛
+
+**触发证据：** 多个角色分别合理发言，但会议整体重复承诺、无限等待或运行到50轮。
+
+**主要机制：**
+
+- domain-neutral event ledger；
+- work items；
+- artifact offered/submitted/reviewed；
+- action committed/completed；
+- blocker、handoff、schedule、decision和outcome；
+- evidence-grounded状态变更；
+- progress signature和stagnation window；
+- completed、conditional、deferred、failed、stalled；
+- Agent contribution gate；
+- 开放场景治理数据导出。
+
+**对应提交：** `94d61fc Improve open scenario simulation convergence`
+
+**验证结果：** 最新四个RoomMind场景分别运行44、29、21、21轮。事件账本和多终局确实运行，但工作项碎片化、状态缺失和伪进展仍让停滞计数频繁归零。
+
+## 第7轮：事件语义规范化与强制收敛
+
+**触发证据：** 批次`c532e2e7-078e-446c-bbaf-3097e20aa384`的forensic debug bundle。
+
+发现：
+
+- 供应链会话44轮、28个事件、16个工作项，其中12个仍开放；
+- 产品发布29轮、20个工作项，其中16个仍开放；
+- `information_provided`和`outcome`工作项可能没有status；
+- 同一事项因`draft/details/summary`等措辞形成多个工作项；
+- `artifact_reviewed`可以在没有`artifact_submitted`的情况下发生；
+- 承诺和提案被计入进展；
+- 第21至29轮之间只有7个连续无事件回合，恰好绕过8轮停滞阈值；
+- 面试中多个NPC同轮提问，AI玩家回答了较旧问题；
+- 明确宣布会议结束后仍继续生成。
+
+**本轮机制：**
+
+- task state升级为schema v4；
+- 只有confirmed/rejected变量和submitted/completed/blocked/rejected工作项计入持久进展；
+- promise/proposal不再重置停滞计数；
+- 工作项支持稳定`work_item_key`、别名和确定性近似归并；
+- 补齐information/outcome等事件的工作项状态；
+- 只有required且未解决的工作项进入`open_issues`；
+- 工作项保存milestones和last event；
+- `artifact_reviewed`强制依赖`artifact_submitted`，非法转换保留在日志但不改变状态；
+- 明确的meeting/interview/session closure直接形成completed/conditional/deferred终局；
+- AI玩家提取本轮NPC直接问题，并优先回答最新具体问题；
+- 增加对应回归测试。
+
+**保持不变：**
+
+- 不加入谈判专用流程；
+- 不让后验评价影响对话生成；
+- Baseline与RoomMind继续使用同一公共AI玩家策略；
+- 角色私有记忆不进入共享治理状态。
+
+**待验证假设：**
+
+- 供应链和产品发布对话轮数应明显下降；
+- repeated promise不应重置stagnation；
+- 产品发布应在首次明确闭会时终止；
+- 面试玩家应优先回应本轮最后一个具体问题；
+- invalid artifact review应出现在forensic日志，但不进入完成状态。
+
+## 论文使用建议
+
+论文中应将这些轮次描述为“证据驱动的设计迭代”，而不是把每次修改都作为性能提升结果。每轮均应区分：
+
+- 设计目标；
+- 可观察失败；
+- 架构机制；
+- 验证数据；
+- 新的有效性威胁。
+
+最终系统评价必须使用第7轮之后重新生成的独立批次，不能把用于发现和修复问题的批次同时作为最终效果证据。
