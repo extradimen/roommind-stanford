@@ -33,15 +33,17 @@ order randomization, and blinded external evaluator.
 - **RoomMind**: independent per-role memory streams, role planning/reflection,
   responsibility-based dispatch, authority enforcement, structured task state,
   and completion checks.
-- **Prompt baseline**: one centralized model call, one shared public transcript,
-  and one prompt containing the same total scenario and character material. It
-  has no independent role memory, runtime dispatch, authority enforcement,
-  structured task state, or external completion gate.
+- **Traditional independent-agent baseline**: one model agent per NPC, each
+  receiving its own role prompt, private profile, participant roster, and
+  separately persisted rolling public conversation history. Agents independently
+  choose `speak` or `wait`. They have no structured observation, reflection,
+  planning, semantic memory retrieval, runtime dispatch, authority enforcement,
+  structured task state, evidence gate, or system completion correction.
 
-The baseline therefore receives the same total case information, but all role
-information is held by one centralized model. RoomMind partitions private
-information by role. That partitioning is an experimental mechanism, not an
-input-data advantage.
+Both conditions receive the same public case material, and private profiles are
+partitioned by role in both conditions. The experimental difference is that the
+baseline stops at conventional per-agent rolling chat memory, while RoomMind
+adds structured cognition and governance mechanisms.
 
 In batch comparisons both conditions call the exact same public-only AI player.
 The player cannot read RoomMind task state, phases, plans, memories, or baseline

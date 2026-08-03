@@ -156,7 +156,7 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
 
 
 async def _run_baseline_step(db: AsyncSession, session_uuid: str, locale: str | None = None) -> dict:
-    """Advance a prompt-only baseline without RoomMind runtime governance."""
+    """Advance independent conventional agents without RoomMind governance."""
     session = await memory_service.get_session(db, session_uuid)
     if not session:
         raise HTTPException(404, "Session not found")
@@ -190,6 +190,10 @@ async def _run_baseline_step(db: AsyncSession, session_uuid: str, locale: str | 
         stop_reason = "safety_limit_reached"
     shared = dict(session.shared_state or {})
     shared["_baseline_state"] = {
+        "architecture": "traditional_independent_agents",
+        "memory_type": "per_agent_rolling_public_history",
+        "structured_cognition": False,
+        "runtime_governance": False,
         "completed_turns": completed_turns,
         "safety_max_turns": safety_max_turns,
         "stop_reason": stop_reason,
@@ -197,6 +201,7 @@ async def _run_baseline_step(db: AsyncSession, session_uuid: str, locale: str | 
         "declared_complete": turn.declared_complete,
         "last_player_intent": move.intent,
         "model": turn.model_label,
+        "reply_count": len(turn.replies),
     }
     session.shared_state = shared
     await db.flush()

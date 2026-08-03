@@ -71,7 +71,7 @@ export default function Home() {
                 RoomMind AI Test
               </Link>
               <Link to={`/play/${s.id}?mode=baseline`} className="play-btn" style={{ marginLeft: "0.5rem", marginTop: "0.5rem" }}>
-                Prompt Baseline
+                Independent-Agent Baseline
               </Link>
             </div>
             );

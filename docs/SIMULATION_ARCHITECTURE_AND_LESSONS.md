@@ -315,6 +315,8 @@ RoomMind当前围绕六个真实性维度组织AI评价与人工盲评：
 - AI评价者的格式稳定性和评分偏好；
 - 单次运行样本过少；
 - RoomMind与Baseline对话长度不一致；
+- 第8轮以前的Baseline为集中式多角色模型，第8轮以后为传统独立智能体；
+  两种协议的数据不得混合；
 - 模型非确定性；
 - 场景配置质量影响系统表现；
 - 自动状态抽取仍依赖LLM；
@@ -344,6 +346,21 @@ RoomMind当前围绕六个真实性维度组织AI评价与人工盲评：
 - AI玩家优先回答本轮最新直接问题。
 
 此次更新把第6轮的“存在治理层”推进为“治理层具有可验证状态转换约束”。
+
+## 9.2 第8轮更新：传统独立智能体对照
+
+Baseline改为每个NPC独立模型调用、独立角色提示、独立私有资料和按角色保存的
+普通滚动公开对话记忆。它不拥有RoomMind的observation、reflection、planning、
+语义记忆检索、dispatch、authority enforcement、task state、event ledger、
+evidence gate和completion governance。
+
+这一设计使主要研究问题变为：
+
+> 当各角色已经是具有普通对话记忆的独立传统智能体时，RoomMind的结构化认知
+> 与治理机制是否进一步提升多人仿真的真实性、一致性和程序可靠性？
+
+协议标识更新为`roommind-vs-independent-memory-agents-v3`。所有最终论文批次
+必须使用该协议重新生成，旧的集中式Baseline仅可作为探索性或辅助结果。
 
 ## 10. 核心经验
 

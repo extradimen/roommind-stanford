@@ -147,7 +147,7 @@ async def main() -> None:
                 speaker_source="ai",
                 turn_id=1,
                 sequence_no=2,
-                content="Baseline prompt-only opponent reply",
+                content="Baseline independent-agent opponent reply",
             ),
         ])
         await db.flush()

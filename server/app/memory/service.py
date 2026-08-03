@@ -60,10 +60,13 @@ class MemoryService:
             scenario_id=scenario_id,
             user_id=user_id,
             current_phase=task_state["phase"],
-            orchestration_mode="prompt_baseline" if session_mode == "baseline" else ORCHESTRATION_MODE,
+            orchestration_mode=(
+                "independent_agent_baseline" if session_mode == "baseline" else ORCHESTRATION_MODE
+            ),
             session_mode=session_mode,
             run_config=run_config or {},
-            # The prompt-only baseline deliberately has no RoomMind task state.
+            # The conventional agent baseline has rolling chat memories only,
+            # initialized lazily, and deliberately has no RoomMind task state.
             shared_state={} if session_mode == "baseline" else {"task_state": task_state},
             status="active",
         )
@@ -142,7 +145,7 @@ class MemoryService:
         if session.session_mode == "test" and speaker_source != "ai":
             raise ValueError("Test sessions only accept AI player turns")
         if session.session_mode == "baseline":
-            raise ValueError("Baseline sessions must use the prompt-only baseline endpoint")
+            raise ValueError("Baseline sessions must use the independent-agent baseline endpoint")
         if session.session_mode == "participation" and speaker_source != "human":
             raise ValueError("Participation sessions only accept human player turns")
 

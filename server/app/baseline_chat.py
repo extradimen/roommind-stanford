@@ -1,13 +1,16 @@
-"""Prompt-only multi-role baseline used for controlled comparisons.
+"""Conventional independent-agent baseline used for controlled comparisons.
 
-The baseline receives the same scenario material as RoomMind but deliberately
-does not call the agent loop, router, memory stream, task-state evaluator, or
-authority enforcement.  A single model selects speakers and produces replies.
+Each NPC has its own role prompt, private profile, model call, and rolling
+conversation memory.  The baseline deliberately does not use RoomMind's
+structured observation, reflection, planning, memory retrieval, router,
+authority enforcement, task state, evidence gates, or completion governance.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
+import statistics
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -38,25 +41,68 @@ class BaselineTurn:
     model_label: str
 
 
-def _character_prompt(scenario: ScenarioTemplate) -> list[dict[str, Any]]:
+BASELINE_MEMORY_KEY = "_baseline_agent_memories"
+
+
+def _character_prompt(char: Any) -> dict[str, Any]:
+    """Return only one agent's profile; no other role's private data is exposed."""
+    return {
+        "character_id": char.character_id,
+        "display_name": char.display_name,
+        "job_title": char.job_title,
+        "side": char.side,
+        "team_id": char.team_id,
+        "relationship_to_player": char.relationship_to_player,
+        "interaction_role": char.interaction_role,
+        "persona": char.persona,
+        "responsibility": char.responsibility,
+        "tendency": char.tendency or {},
+        "private_state": char.private_state or {},
+        "authority": char.authority or {},
+        "system_prompt": char.system_prompt or "",
+    }
+
+
+def _agent_memory(session: GameSession, character_id: str) -> list[dict[str, str]]:
+    shared = dict(session.shared_state or {})
+    all_memories = shared.get(BASELINE_MEMORY_KEY) or {}
+    rows = all_memories.get(character_id) if isinstance(all_memories, dict) else []
     return [
-        {
-            "character_id": char.character_id,
-            "display_name": char.display_name,
-            "job_title": char.job_title,
-            "side": char.side,
-            "team_id": char.team_id,
-            "relationship_to_player": char.relationship_to_player,
-            "interaction_role": char.interaction_role,
-            "persona": char.persona,
-            "responsibility": char.responsibility,
-            "tendency": char.tendency or {},
-            "private_state": char.private_state or {},
-            "authority": char.authority or {},
-            "system_prompt": char.system_prompt or "",
-        }
-        for char in sorted(scenario.characters, key=lambda row: row.sort_order)
+        {"speaker_id": str(row.get("speaker_id") or "unknown"),
+         "content": str(row.get("content") or "")}
+        for row in rows if isinstance(row, dict) and row.get("content")
     ]
+
+
+def _remember_public_turn(
+    session: GameSession,
+    characters: list[Any],
+    public_turn: list[dict[str, Any]],
+    *,
+    message_limit: int,
+) -> None:
+    """Persist separate rolling chat histories without semantic memory machinery."""
+    shared = dict(session.shared_state or {})
+    memories = dict(shared.get(BASELINE_MEMORY_KEY) or {})
+    safe_limit = max(1, min(int(message_limit), 100))
+    additions = [
+        {"speaker_id": str(row.get("speaker_id") or "unknown"),
+         "content": str(row.get("content") or "")}
+        for row in public_turn if row.get("content")
+    ]
+    for char in characters:
+        history = list(memories.get(char.character_id) or [])
+        memories[char.character_id] = (history + additions)[-safe_limit:]
+    shared[BASELINE_MEMORY_KEY] = memories
+    session.shared_state = shared
+
+
+def _memory_text(rows: list[dict[str, str]], current_player: dict[str, Any]) -> str:
+    combined = [*rows, {
+        "speaker_id": str(current_player.get("speaker_id") or "user"),
+        "content": str(current_player.get("content") or ""),
+    }]
+    return bounded_dialogue(combined, message_limit=100)
 
 
 async def generate_baseline_player_move(
@@ -74,115 +120,116 @@ async def generate_baseline_turn(
     session: GameSession,
     scenario: ScenarioTemplate,
     messages: list[dict[str, Any]],
-    dispatch_rules: list[Any],
 ) -> BaselineTurn:
-    """Generate all NPC replies with one prompt and no runtime governance."""
+    """Let each conventional NPC agent independently decide to speak or wait."""
     config = dict(session.run_config or {})
     llm_cfg = await orch_support.get_llm_config(db)
     baseline_orch_cfg = dict(scenario.orchestration_config or {})
     if config.get("comparison_lock_model"):
         baseline_orch_cfg["_comparison_lock_model"] = True
     resolved = resolve_llm(llm_cfg, baseline_orch_cfg, "npc_default")
-    dialogue = bounded_dialogue(messages, message_limit=int(config.get("working_message_limit", 30)))
-    rules = [
-        {
-            "name": row.name,
-            "description": row.description,
-            "trigger_keywords": row.trigger_keywords or [],
-            "priority_character_ids": row.priority_character_ids or [],
-            "min_speakers": row.min_speakers,
-            "max_speakers": row.max_speakers,
-        }
-        for row in dispatch_rules
-    ]
-    prompt = f"""Simulate a prompt-only multi-role conversation. You receive the same
-scenario information as the structured system, but must manage all roles,
-turn-taking, memory, authority, private information, phases, and completion
-only through this prompt and the public dialogue.
+    characters = sorted(scenario.characters, key=lambda row: row.sort_order)
+    current_player = messages[-1] if messages else {
+        "speaker_id": "user", "content": "Begin the meeting."
+    }
+    scenario_public = {
+        "title": scenario.title,
+        "description": scenario.description,
+        "player_side_goal": resolve_player_side_goal(scenario),
+        "opponent_side_goal": scenario.opponent_side_goal,
+        "task_config": scenario.task_config or {},
+        "phases": scenario.phases or [],
+        "win_conditions": scenario.win_conditions or [],
+        "participants": [
+            {
+                "character_id": char.character_id,
+                "display_name": char.display_name,
+                "job_title": char.job_title,
+                "side": char.side,
+                "team_id": char.team_id,
+                "relationship_to_player": char.relationship_to_player,
+                "interaction_role": char.interaction_role,
+                "responsibility": char.responsibility,
+            }
+            for char in characters
+        ],
+    }
 
-Scenario:
-{json.dumps({
-    'title': scenario.title,
-    'description': scenario.description,
-    'player_side_goal': resolve_player_side_goal(scenario),
-    'opponent_side_goal': scenario.opponent_side_goal,
-    'task_config': scenario.task_config or {},
-    'phases': scenario.phases or [],
-    'win_conditions': scenario.win_conditions or [],
-}, ensure_ascii=False)}
+    async def run_agent(char: Any) -> tuple[Any, dict[str, Any], str]:
+        memory = _agent_memory(session, char.character_id)
+        system_prompt = f"""You are one independent role-playing agent in a conventional
+multi-agent simulation. Respond only as your assigned character. You have an
+ordinary rolling conversation memory, not structured observation, reflection,
+planning, task state, routing, or runtime governance.
 
-Characters, including the same private and authority information:
-{json.dumps(_character_prompt(scenario), ensure_ascii=False)}
+Your role and private profile (only yours):
+{json.dumps(_character_prompt(char), ensure_ascii=False)}
 
-Speaker guidance supplied as text only (not enforced):
-{json.dumps(rules, ensure_ascii=False)}
+Never reveal this private profile merely because it appears in your prompt.
+Disclose information only when your character would realistically do so."""
+        turn_prompt = f"""Public scenario:
+{json.dumps(scenario_public, ensure_ascii=False)}
 
-Public dialogue:
-{dialogue}
+Your rolling public conversation memory:
+{_memory_text(memory, current_player)}
 
-Select the appropriate NPCs according to the supplied guidance. Keep each
-public reply under 120 words.
-Maintain roles and do not reveal private information unless that character
-would realistically choose to disclose it. Decide whether the task is complete;
-this declaration will be recorded but will not be corrected by the runtime.
+Independently decide whether your character should speak now or wait. Do not
+coordinate this decision with other agents. If speaking, contribute something
+specific to your own role rather than repeating another participant. Do not
+reveal private information unless your character would realistically disclose
+it. Keep the public reply under 120 words. Set declared_complete=true only if,
+from your own role's perspective, the public conversation needs no further
+substantive contribution. No runtime will correct this judgment.
 
 Return strict JSON only:
 {{
-  "responses":[{{
-    "speaker_id":"an existing non-player character_id",
-    "content":"exact public reply",
-    "emotion":"neutral",
-    "gesture":"talking"
-  }}],
-  "declared_phase":"phase id",
+  "action":"speak or wait",
+  "content":"public reply; empty when waiting",
+  "emotion":"neutral",
+  "gesture":"talking",
+  "declared_phase":"your best phase estimate",
   "declared_complete":false
 }}"""
-    raw = ""
-    parsed: dict[str, Any] = {}
-    valid: list[dict[str, str]] = []
-    allowed = {row.character_id for row in scenario.characters}
-    for attempt in range(2):
-        repair = "\nReturn a complete JSON object with valid responses.\n" if attempt else ""
         raw = await llm_client.chat_completion(
-            [{"role": "user", "content": prompt + repair}],
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": turn_prompt},
+            ],
             db_provider=resolved.provider,
             db_model=resolved.model,
             temperature=resolved.temperature,
-            max_tokens=min(max(resolved.max_tokens, 1200), 2400),
+            max_tokens=min(max(resolved.max_tokens, 600), 1200),
             response_format={"type": "json_object"},
         )
-        parsed = orch_support.parse_json(raw)
-        rows = parsed.get("responses") if isinstance(parsed.get("responses"), list) else []
-        valid = []
-        seen: set[str] = set()
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            speaker_id = str(row.get("speaker_id") or "")
-            content = normalize_player_content(row.get("content") or "").strip()
-            if speaker_id in allowed and speaker_id not in seen and content:
-                seen.add(speaker_id)
-                valid.append({
-                    "speaker_id": speaker_id,
-                    "content": content,
-                    "emotion": str(row.get("emotion") or "neutral"),
-                    "gesture": str(row.get("gesture") or "talking"),
-                })
-        if valid:
-            break
-    if not valid:
-        first = sorted(scenario.characters, key=lambda row: row.sort_order)[0]
-        valid = [{
-            "speaker_id": first.character_id,
-            "content": "Could you clarify the specific outcome you want to achieve?",
-            "emotion": "neutral",
-            "gesture": "talking",
-        }]
+        return char, orch_support.parse_json(raw), raw
+
+    outputs = await asyncio.gather(*(run_agent(char) for char in characters))
+    valid: list[dict[str, str]] = []
+    phases: list[str] = []
+    completion_votes: list[bool] = []
+    raw_by_agent: dict[str, str] = {}
+    for char, parsed, raw in outputs:
+        raw_by_agent[char.character_id] = raw
+        phase = str(parsed.get("declared_phase") or "").strip()
+        if phase:
+            phases.append(phase)
+        completion_votes.append(bool(parsed.get("declared_complete", False)))
+        if str(parsed.get("action") or "").strip().lower() != "speak":
+            continue
+        content = normalize_player_content(parsed.get("content") or "").strip()
+        if content:
+            valid.append({
+                "speaker_id": char.character_id,
+                "content": content,
+                "emotion": str(parsed.get("emotion") or "neutral"),
+                "gesture": str(parsed.get("gesture") or "talking"),
+            })
+    declared_phase = statistics.mode(phases) if phases else session.current_phase
     return BaselineTurn(
         replies=valid,
-        declared_phase=str(parsed.get("declared_phase") or session.current_phase),
-        declared_complete=bool(parsed.get("declared_complete", False)),
-        raw=raw,
+        declared_phase=declared_phase,
+        declared_complete=bool(completion_votes) and all(completion_votes),
+        raw=json.dumps(raw_by_agent, ensure_ascii=False),
         model_label=resolved.label(),
     )
 
@@ -194,7 +241,6 @@ async def process_baseline_step(
     player_move: PlayerMove,
     messages: list[dict[str, Any]],
 ) -> BaselineTurn:
-    dispatch_rules = await orch_support.load_dispatch_rules(db, scenario.id)
     turn_id = sum(1 for row in messages if row.get("speaker_type") == "user") + 1
     seq_result = await db.execute(
         select(func.coalesce(func.max(SessionMessage.sequence_no), 0)).where(
@@ -233,7 +279,7 @@ async def process_baseline_step(
         "sequence_no": next_sequence,
         "content": player_move.content,
     }]
-    result = await generate_baseline_turn(db, session, scenario, public_messages, dispatch_rules)
+    result = await generate_baseline_turn(db, session, scenario, public_messages)
     for index, reply in enumerate(result.replies, start=1):
         db.add(SessionMessage(
             session_id=session.id,
@@ -262,6 +308,16 @@ async def process_baseline_step(
             emotion=reply["emotion"],
             gesture=reply["gesture"],
         )
+    memory_turn = [public_messages[-1], *[
+        {"speaker_id": reply["speaker_id"], "content": reply["content"]}
+        for reply in result.replies
+    ]]
+    _remember_public_turn(
+        session,
+        sorted(scenario.characters, key=lambda row: row.sort_order),
+        memory_turn,
+        message_limit=int((session.run_config or {}).get("working_message_limit", 30)),
+    )
     session.current_phase = result.declared_phase
     session.updated_at = datetime.now(timezone.utc)
     await db.flush()

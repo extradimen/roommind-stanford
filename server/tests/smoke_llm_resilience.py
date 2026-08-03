@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 
@@ -13,6 +13,13 @@ from app.llm.client import LLMClient
 from app.player_agent import bounded_dialogue
 from app.external_evaluator import _dispatch_metrics, _normalize_evaluation, _public_transcript
 from app.batch_experiments import _dialogue_retry_result
+from app.baseline_chat import (
+    BASELINE_MEMORY_KEY,
+    _agent_memory,
+    _character_prompt,
+    generate_baseline_turn,
+    _remember_public_turn,
+)
 
 
 class FakeResponse:
@@ -72,6 +79,82 @@ async def call_client(responses: list[FakeResponse | Exception], max_tokens: int
 
 
 async def main() -> None:
+    characters = [
+        SimpleNamespace(character_id="agent_a"),
+        SimpleNamespace(character_id="agent_b"),
+    ]
+    baseline_session = SimpleNamespace(shared_state={})
+    _remember_public_turn(
+        baseline_session, characters,
+        [{"speaker_id": "user", "content": "Public opening"}], message_limit=5,
+    )
+    assert set(baseline_session.shared_state[BASELINE_MEMORY_KEY]) == {"agent_a", "agent_b"}
+    assert _agent_memory(baseline_session, "agent_a") == [
+        {"speaker_id": "user", "content": "Public opening"}
+    ]
+    baseline_session.shared_state[BASELINE_MEMORY_KEY]["agent_a"].append({
+        "speaker_id": "agent_a", "content": "Private copy mutation",
+    })
+    assert len(_agent_memory(baseline_session, "agent_a")) == 2
+    assert len(_agent_memory(baseline_session, "agent_b")) == 1
+
+    profile = SimpleNamespace(
+        character_id="agent_a", display_name="Agent A", job_title="Director",
+        sort_order=1,
+        side="opponent", team_id="team_a", relationship_to_player="counterpart",
+        interaction_role="decision_maker", persona="Firm", responsibility="Decide",
+        tendency={}, private_state={"secret": "A-only"}, authority={}, system_prompt="",
+    )
+    assert _character_prompt(profile)["private_state"] == {"secret": "A-only"}
+
+    full_profiles = [
+        profile,
+        SimpleNamespace(
+            character_id="agent_b", display_name="Agent B", job_title="Manager",
+            sort_order=2,
+            side="opponent", team_id="team_b", relationship_to_player="counterpart",
+            interaction_role="advisor", persona="Careful", responsibility="Advise",
+            tendency={}, private_state={"secret": "B-only"}, authority={}, system_prompt="",
+        ),
+    ]
+    scenario = SimpleNamespace(
+        title="Independent baseline fixture", description="A public case",
+        player_side_goal="Reach a decision", business_goal="Reach a decision",
+        opponent_side_goal="Protect interests", task_config={}, phases=["opening"],
+        win_conditions=[], orchestration_config={}, characters=full_profiles,
+    )
+    baseline_session.run_config = {"working_message_limit": 5, "comparison_lock_model": True}
+    baseline_session.current_phase = "opening"
+    resolved = SimpleNamespace(
+        provider="ollama", model="fixture", temperature=0.2, max_tokens=600,
+        label=lambda: "ollama/fixture",
+    )
+    prompts: list[str] = []
+
+    async def independent_reply(messages, **kwargs):
+        assert [row["role"] for row in messages] == ["system", "user"]
+        prompt_text = "\n".join(row["content"] for row in messages)
+        prompts.append(prompt_text)
+        own_id = "agent_a" if "A-only" in prompt_text else "agent_b"
+        return (
+            '{"action":"speak","content":"Reply from ' + own_id
+            + '","declared_phase":"opening","declared_complete":false}'
+        )
+
+    with (
+        patch("app.baseline_chat.orch_support.get_llm_config", AsyncMock(return_value={})),
+        patch("app.baseline_chat.resolve_llm", return_value=resolved),
+        patch("app.baseline_chat.llm_client.chat_completion", side_effect=independent_reply),
+    ):
+        baseline_turn = await generate_baseline_turn(
+            None, baseline_session, scenario,
+            [{"speaker_id": "user", "content": "Please respond."}],
+        )
+    assert len(prompts) == 2
+    assert sum("A-only" in prompt_text for prompt_text in prompts) == 1
+    assert sum("B-only" in prompt_text for prompt_text in prompts) == 1
+    assert {row["speaker_id"] for row in baseline_turn.replies} == {"agent_a", "agent_b"}
+
     failed_at = datetime(2026, 8, 3, tzinfo=timezone.utc)
     failed_run = SimpleNamespace(
         result={

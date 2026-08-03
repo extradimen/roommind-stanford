@@ -798,7 +798,7 @@ export default function Game() {
             <span className="phase">{t.game.phase}: {phase}</span>
             <span className="orchestration-badge">{t.game.stanfordBadge}</span>
             <span className="orchestration-badge">
-              {sessionMode === "test" ? "RoomMind AI Test" : sessionMode === "baseline" ? "Prompt Baseline" : "Participation"}
+              {sessionMode === "test" ? "RoomMind AI Test" : sessionMode === "baseline" ? "Independent-Agent Baseline" : "Participation"}
             </span>
             <span className={`ws-badge ws-${wsMode}`}>{wsBadge}</span>
             <LanguageSwitcher className="inline-lang" />

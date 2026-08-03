@@ -221,7 +221,7 @@ export default function BatchExperimentsPage() {
               <legend>Conditions</legend>
               <div className="check-grid two">
                 <label><input type="checkbox" checked={conditions.includes("test")} onChange={(e) => setConditions((v) => e.target.checked ? [...v, "test"] : v.filter((x) => x !== "test"))} /> RoomMind AI Test</label>
-                <label><input type="checkbox" checked={conditions.includes("baseline")} onChange={(e) => setConditions((v) => e.target.checked ? [...v, "baseline"] : v.filter((x) => x !== "baseline"))} /> Prompt Baseline</label>
+                <label><input type="checkbox" checked={conditions.includes("baseline")} onChange={(e) => setConditions((v) => e.target.checked ? [...v, "baseline"] : v.filter((x) => x !== "baseline"))} /> Traditional Independent-Agent Baseline</label>
               </div>
             </fieldset>
             <label>Runs per combination<input type="number" min={1} max={100} value={repetitions} onChange={(e) => setRepetitions(Number(e.target.value))} /></label>

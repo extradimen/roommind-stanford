@@ -250,7 +250,10 @@ async def _execute_run(
                     "player_temperature": 0.2,
                     "player_max_tokens": 512,
                     "working_message_limit": 30,
-                    "comparison_protocol": "roommind-vs-central-prompt-v2",
+                    "comparison_protocol": "roommind-vs-independent-memory-agents-v3",
+                    "baseline_architecture": "traditional_independent_agents",
+                    "baseline_memory": "per_agent_rolling_public_history",
+                    "baseline_governance": "none_except_safety_stop",
                     "metrics_protocol": "six-dimension-simulation-realism-v3",
                     "comparison_lock_model": True,
                     "batch_experiment_run_id": run.id,
@@ -753,7 +756,10 @@ async def create_batch(body: BatchCreateIn) -> dict:
             raise HTTPException(422, "One or more scenarios do not exist or are unpublished")
         config = body.model_dump()
         config.update({
-            "comparison_protocol": "roommind-vs-central-prompt-v2",
+            "comparison_protocol": "roommind-vs-independent-memory-agents-v3",
+            "baseline_architecture": "traditional_independent_agents",
+            "baseline_memory": "per_agent_rolling_public_history",
+            "baseline_governance": "none_except_safety_stop",
             "metrics_protocol": "six-dimension-simulation-realism-v3",
             "shared_player_policy": "public-only-comparison-player-v1",
             "player_temperature": 0.2,
@@ -954,6 +960,13 @@ async def batch_results_csv(batch_uuid: str) -> PlainTextResponse:
                     uuid.uuid5(uuid.NAMESPACE_URL, f"{batch_uuid}:{run['id']}")
                 )[:12],
                 "comparison_protocol": (payload.get("config") or {}).get("comparison_protocol"),
+                "baseline_architecture": (payload.get("config") or {}).get(
+                    "baseline_architecture"
+                ),
+                "baseline_memory": (payload.get("config") or {}).get("baseline_memory"),
+                "baseline_governance": (payload.get("config") or {}).get(
+                    "baseline_governance"
+                ),
                 "metrics_protocol": (payload.get("config") or {}).get("metrics_protocol"),
                 "shared_player_policy": (payload.get("config") or {}).get("shared_player_policy"),
                 "configured_max_turns": (payload.get("config") or {}).get("safety_max_turns"),

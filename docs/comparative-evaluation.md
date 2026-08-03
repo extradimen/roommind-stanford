@@ -1,17 +1,19 @@
 # Comparative evaluation mode
 
-RoomMind exposes a prompt-only multi-role baseline for controlled experiments.
-It is intended as a competitive baseline, not as a deliberately weakened demo.
+RoomMind exposes a conventional independent-agent baseline for controlled
+experiments. It is intended as a competitive baseline, not as a deliberately
+weakened demo.
 
 ## Experimental conditions
 
 - `mode=test`: the RoomMind condition. It uses independent agent state,
   memories, dispatch, authority checks, task-state evaluation, phase progression,
   completion rules, and no-progress protection.
-- `mode=baseline`: the prompt-only condition. One model receives the same
-  scenario, character, private-state, authority, phase, completion, and speaker
-  guidance fields in one prompt. It selects all NPC speakers and declares phase
-  and completion without runtime enforcement.
+- `mode=baseline`: each NPC is an independent model agent with its own role
+  prompt, private profile, and rolling public conversation memory. Every agent
+  independently chooses `speak` or `wait`. It has no structured observation,
+  reflection, planning, memory retrieval, dispatch enforcement, authority
+  enforcement, task state, evidence gate, or system completion correction.
 
 Both autonomous conditions use an AI player and the same configured provider,
 model family, scenario, strategy label, maximum turns, and public transcript.
