@@ -221,6 +221,10 @@ async def _execute_run(
             if not run or run.status != "queued":
                 return
             run.status = "running"
+            current_result = dict(run.result or {})
+            current_result["dialogue_status"] = "running"
+            current_result["dialogue_started_at"] = _now().isoformat()
+            run.result = current_result
             run.started_at = _now()
             scenario_id, condition = run.scenario_id, run.condition
             repetition = run.repetition

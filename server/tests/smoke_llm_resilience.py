@@ -86,6 +86,7 @@ async def main() -> None:
     assert retried["dialogue_retry_history"][0]["session_uuid"] == "old-session"
     assert retried["dialogue_retry_history"][0]["failure_stage"] == "autonomous_turn_7"
     assert retried["evaluation_status"] == "not_started"
+    assert retried["dialogue_status"] == "queued"
 
     assert await call_client([completion("visible", "stop")]) == "visible"
 

@@ -35,12 +35,14 @@ function value(value: unknown): string {
 }
 
 function dialogueStatus(run: BatchExperimentRun): string {
-  const persisted = run.result.dialogue_status;
-  if (typeof persisted === "string" && persisted) return persisted;
+  // The run row is authoritative for live transitions. A retry keeps audit
+  // metadata in result, whose queued value can otherwise mask active work.
   if (run.status === "running") return "running";
   if (run.status === "queued") return "queued";
   if (run.status === "cancelled") return "cancelled";
   if (run.status === "failed" || run.status === "dialogue_failed") return "failed";
+  const persisted = run.result.dialogue_status;
+  if (typeof persisted === "string" && persisted) return persisted;
   if (run.status.startsWith("dialogue_")) return run.status.replace("dialogue_", "");
   if (run.status.startsWith("evaluation_") || run.status === "completed") return "completed";
   return run.session_uuid ? "completed" : run.status;
