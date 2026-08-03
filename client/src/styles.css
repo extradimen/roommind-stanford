@@ -98,6 +98,9 @@ footer a { color: var(--accent); }
 .batch-table th, .batch-table td { padding: 0.45rem 0.55rem; text-align: left; border-bottom: 1px solid var(--border); }
 .batch-table tr:hover td { background: var(--accent-subtle-bg); }
 .error-cell { max-width: 280px; overflow: hidden; text-overflow: ellipsis; color: var(--danger, #f85149); }
+.row-actions { display: flex; gap: 0.35rem; }
+.row-actions button { padding: 0.3rem 0.5rem; border: 1px solid var(--border); border-radius: 5px; background: var(--accent); color: #fff; cursor: pointer; white-space: nowrap; }
+.row-actions button:disabled { cursor: wait; opacity: 0.65; }
 @media (max-width: 900px) { .batch-form { grid-template-columns: repeat(2, 1fr); } .result-heading { flex-direction: column; } }
 @media (max-width: 900px) { .experiment-steps { grid-template-columns: repeat(2, 1fr); } .review-ratings { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .batch-form { grid-template-columns: 1fr; } .batch-form > * { grid-column: 1 !important; } .check-grid.two { grid-template-columns: 1fr; } }

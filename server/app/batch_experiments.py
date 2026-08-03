@@ -72,6 +72,30 @@ class EvaluationStartIn(BaseModel):
     concurrency: int = Field(default=1, ge=1, le=4)
 
 
+def _dialogue_retry_result(run: BatchExperimentRun) -> dict[str, Any]:
+    """Build a fresh run result while retaining a compact audit trail."""
+    previous = dict(run.result or {})
+    history = list(previous.get("dialogue_retry_history") or [])
+    attempt_count = max(1, int(previous.get("dialogue_attempt_count") or 1))
+    history.append({
+        "attempt_number": attempt_count,
+        "status": previous.get("dialogue_status") or run.status,
+        "session_uuid": run.session_uuid,
+        "error": run.error or previous.get("error"),
+        "failure_stage": previous.get("failure_stage"),
+        "exception_type": previous.get("exception_type"),
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+    })
+    return {
+        "dialogue_status": "queued",
+        "evaluation_status": "not_started",
+        "dialogue_attempt_count": attempt_count + 1,
+        "dialogue_retry_history": history,
+        "dialogue_retry_queued_at": _now().isoformat(),
+    }
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -345,8 +369,15 @@ async def _execute_run(
             result.update(_performance_summary(performance_trace))
             run = await db.get(BatchExperimentRun, run_id)
             if run:
+                retry_metadata = {
+                    key: value for key, value in dict(run.result or {}).items()
+                    if key in {
+                        "dialogue_attempt_count", "dialogue_retry_history",
+                        "dialogue_retry_queued_at",
+                    }
+                }
                 run.status = "dialogue_completed"
-                run.result = result
+                run.result = {**retry_metadata, **result}
                 run.finished_at = _now()
             await db.commit()
             emit(
@@ -390,6 +421,9 @@ async def _execute_run(
                 run.error = error_detail[:4000]
                 run.result = {
                     **dict(run.result or {}),
+                    "dialogue_attempt_count": int(
+                        (run.result or {}).get("dialogue_attempt_count") or 1
+                    ),
                     "technical_failure": True,
                     "dialogue_status": "failed",
                     "evaluation_status": "not_started",
@@ -804,6 +838,48 @@ async def cancel_batch(batch_uuid: str) -> dict:
         return _serialize_batch(batch)
 
 
+@router.post("/{batch_uuid}/runs/{run_id}/retry-dialogue")
+async def retry_failed_dialogue(batch_uuid: str, run_id: int) -> dict[str, Any]:
+    """Retry exactly one failed dialogue without rerunning successful cells."""
+    async with async_session_factory() as db:
+        batch = (await db.execute(select(BatchExperiment).where(
+            BatchExperiment.batch_uuid == batch_uuid
+        ))).scalar_one_or_none()
+        if not batch:
+            raise HTTPException(404, "Batch experiment not found")
+        run = await db.get(BatchExperimentRun, run_id)
+        if not run or run.batch_id != batch.id:
+            raise HTTPException(404, "Batch experiment run not found")
+        if run.status not in {"failed", "dialogue_failed"}:
+            raise HTTPException(409, "Only failed dialogue runs can be retried")
+        if batch.status in {"running", "queued", "cancelling", "evaluation_running"}:
+            raise HTTPException(409, "Wait for the current batch operation to finish before retrying")
+
+        previous_session_uuid = run.session_uuid
+        run.result = _dialogue_retry_result(run)
+        run.status = "queued"
+        run.session_uuid = None
+        run.error = None
+        run.started_at = None
+        run.finished_at = None
+        batch.status = "queued"
+        batch.finished_at = None
+        batch_id = batch.id
+        attempt_number = run.result["dialogue_attempt_count"]
+        await db.commit()
+    await _refresh_batch_counts(batch_id)
+    emit(
+        "batch.dialogue.retry_queued",
+        batch_uuid=batch_uuid,
+        batch_run_id=run_id,
+        previous_session_uuid=previous_session_uuid,
+        attempt_number=attempt_number,
+    )
+    payload = await get_batch(batch_uuid)
+    _schedule(batch_uuid)
+    return {**payload, "retried_run_id": run_id}
+
+
 @router.post("/{batch_uuid}/evaluate")
 async def start_batch_evaluation(batch_uuid: str, body: EvaluationStartIn) -> dict[str, Any]:
     """Queue independent AI evaluation for frozen dialogue sessions."""
@@ -1121,14 +1197,23 @@ async def batch_debug_bundle(batch_uuid: str) -> dict[str, Any]:
     async with async_session_factory() as db:
         for run in payload.get("runs") or []:
             session_uuid = run.get("session_uuid")
-            if not session_uuid:
-                continue
-            session = await memory_service.get_session(db, session_uuid)
-            if not session:
-                continue
+            session = await memory_service.get_session(db, session_uuid) if session_uuid else None
+            prior_attempts: list[dict[str, Any]] = []
+            history = (run.get("result") or {}).get("dialogue_retry_history") or []
+            for attempt in history:
+                prior_uuid = attempt.get("session_uuid")
+                if not prior_uuid:
+                    continue
+                prior_session = await memory_service.get_session(db, prior_uuid)
+                if prior_session:
+                    prior_attempts.append({
+                        "attempt": attempt,
+                        "full_session": await build_session_export_bundle(db, prior_session),
+                    })
             exports.append({
                 "run": run,
-                "full_session": await build_session_export_bundle(db, session),
+                "full_session": await build_session_export_bundle(db, session) if session else None,
+                "prior_attempt_sessions": prior_attempts,
             })
     emit("batch.debug_bundle.exported", batch_uuid=batch_uuid, run_count=len(exports))
     return {

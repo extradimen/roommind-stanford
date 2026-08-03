@@ -12,6 +12,7 @@ import {
   getBlindReviewQueue,
   submitBlindReview,
   startBatchEvaluation,
+  retryBatchDialogue,
   BlindReviewQueue,
   Scenario,
 } from "../api";
@@ -65,6 +66,7 @@ export default function BatchExperimentsPage() {
   const [reviewerId, setReviewerId] = useState("");
   const [ratings, setRatings] = useState<Record<string, number>>(() => Object.fromEntries(realismDimensions.map((d) => [d, 4])));
   const [reviewNotes, setReviewNotes] = useState("");
+  const [busyRunId, setBusyRunId] = useState<number | null>(null);
 
   const refreshList = () => listBatchExperiments().then(setBatches).catch((e) => setError(String(e)));
 
@@ -158,6 +160,28 @@ export default function BatchExperimentsPage() {
     finally { setBusy(false); }
   }
 
+  async function retryDialogue(run: BatchExperimentRun) {
+    if (!selected) return;
+    setBusyRunId(run.id); setError("");
+    try {
+      await retryBatchDialogue(selected.batch_uuid, run.id);
+      setSelected(await getBatchExperiment(selected.batch_uuid));
+      await refreshList();
+    } catch (e) { setError(String(e)); }
+    finally { setBusyRunId(null); }
+  }
+
+  async function retryEvaluation(run: BatchExperimentRun) {
+    if (!selected) return;
+    setBusyRunId(run.id); setError("");
+    try {
+      await startBatchEvaluation(selected.batch_uuid, { run_ids: [run.id], concurrency: 1 });
+      setSelected(await getBatchExperiment(selected.batch_uuid));
+      await refreshList();
+    } catch (e) { setError(String(e)); }
+    finally { setBusyRunId(null); }
+  }
+
   return (
     <AppShell>
       <div className="batch-page">
@@ -239,10 +263,13 @@ export default function BatchExperimentsPage() {
           </div>
           <div className="progress-track"><span style={{ width: `${selected.total_runs ? 100 * (selected.completed_runs + selected.failed_runs + (selected.cancelled_runs || 0)) / selected.total_runs : 0}%` }} /></div>
           <div className="batch-table-wrap"><table className="batch-table"><thead><tr>
-            <th>Scenario</th><th>Condition</th><th>Rep.</th><th>Dialogue</th><th>AI evaluation</th>{realismDimensions.map((d) => <th key={d}>{dimensionLabels[d]}</th>)}<th>Error</th>
+            <th>Scenario</th><th>Condition</th><th>Rep.</th><th>Dialogue</th><th>AI evaluation</th>{realismDimensions.map((d) => <th key={d}>{dimensionLabels[d]}</th>)}<th>Error</th><th>Actions</th>
           </tr></thead><tbody>{(selected.runs || []).map((run) => <tr key={run.id}>
             <td>{scenarioNames.get(run.scenario_id) || run.scenario_id}</td><td>{run.condition}</td><td>{run.repetition}</td><td>{dialogueStatus(run)}</td><td>{value(run.result.evaluation_status || (run.status.startsWith("evaluation_") ? run.status.replace("evaluation_", "") : "not started"))}</td>
-            {realismDimensions.map((d) => <td key={d}>{value(run.result[`ai_${d}`])}</td>)}<td className="error-cell" title={run.error || ""}>{run.error || ""}</td>
+            {realismDimensions.map((d) => <td key={d}>{value(run.result[`ai_${d}`])}</td>)}<td className="error-cell" title={run.error || ""}>{run.error || ""}</td><td><div className="row-actions">
+              {["failed", "dialogue_failed"].includes(run.status) && <button disabled={busyRunId === run.id} onClick={() => retryDialogue(run)}>{busyRunId === run.id ? "Queuing…" : "Retry dialogue"}</button>}
+              {["evaluation_failed", "evaluation_partial"].includes(run.status) && <button disabled={busyRunId === run.id} onClick={() => retryEvaluation(run)}>{busyRunId === run.id ? "Queuing…" : "Retry evaluation"}</button>}
+            </div></td>
           </tr>)}</tbody></table></div>
         </section>}
 

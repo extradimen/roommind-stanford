@@ -398,6 +398,17 @@ export async function cancelBatchExperiment(batchUuid: string): Promise<BatchExp
   return res.json();
 }
 
+export async function retryBatchDialogue(batchUuid: string, runId: number): Promise<BatchExperiment> {
+  const res = await fetch(`/api/game/batch-experiments/${batchUuid}/runs/${runId}/retry-dialogue`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || "Failed to retry dialogue");
+  }
+  return res.json();
+}
+
 export async function startBatchEvaluation(
   batchUuid: string,
   input: { run_ids?: number[]; retry_all?: boolean; concurrency?: number } = {},

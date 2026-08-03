@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import httpx
@@ -10,6 +12,7 @@ import httpx
 from app.llm.client import LLMClient
 from app.player_agent import bounded_dialogue
 from app.external_evaluator import _dispatch_metrics, _normalize_evaluation, _public_transcript
+from app.batch_experiments import _dialogue_retry_result
 
 
 class FakeResponse:
@@ -69,6 +72,21 @@ async def call_client(responses: list[FakeResponse | Exception], max_tokens: int
 
 
 async def main() -> None:
+    failed_at = datetime(2026, 8, 3, tzinfo=timezone.utc)
+    failed_run = SimpleNamespace(
+        result={
+            "dialogue_status": "failed", "failure_stage": "autonomous_turn_7",
+            "exception_type": "RuntimeError",
+        },
+        status="dialogue_failed", session_uuid="old-session", error="model timeout",
+        started_at=failed_at, finished_at=failed_at,
+    )
+    retried = _dialogue_retry_result(failed_run)
+    assert retried["dialogue_attempt_count"] == 2
+    assert retried["dialogue_retry_history"][0]["session_uuid"] == "old-session"
+    assert retried["dialogue_retry_history"][0]["failure_stage"] == "autonomous_turn_7"
+    assert retried["evaluation_status"] == "not_started"
+
     assert await call_client([completion("visible", "stop")]) == "visible"
 
     result = await call_client(
