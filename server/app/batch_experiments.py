@@ -122,6 +122,7 @@ def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
         "llm_retry_event_count": sum(
             event.get("event") in {
                 "llm.request.length_retry",
+                "llm.request.empty_retry",
                 "llm.request.http_retry",
                 "llm.request.transport_error",
             }

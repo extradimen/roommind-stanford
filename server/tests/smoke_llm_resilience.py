@@ -95,6 +95,12 @@ async def main() -> None:
     assert result == "recovered"
     assert FakeAsyncClient.requested_budgets == [200, 1024]
 
+    result = await call_client(
+        [completion("", "stop"), completion("recovered after empty stop", "stop")]
+    )
+    assert result == "recovered after empty stop"
+    assert FakeAsyncClient.requested_budgets == [200, 200]
+
     result = await call_client([
         httpx.ReadTimeout("simulated timeout"),
         completion("recovered after timeout", "stop"),
@@ -115,6 +121,16 @@ async def main() -> None:
     else:
         raise AssertionError("permanently empty output must fail safely")
     assert FakeAsyncClient.requested_budgets == [200, 1024, 2048]
+
+    try:
+        await call_client([
+            completion(None, "stop"), completion("", "stop"), completion("  ", "stop"),
+        ])
+    except RuntimeError as exc:
+        assert "finish_reason='stop'" in str(exc)
+    else:
+        raise AssertionError("permanently empty stop output must fail safely")
+    assert FakeAsyncClient.requested_budgets == [200, 200, 200]
 
     messages = [
         {"speaker_id": f"speaker-{i}", "content": f"turn-{i}-" + ("x" * 100)}

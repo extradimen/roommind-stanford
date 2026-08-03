@@ -169,25 +169,33 @@ class LLMClient:
                         )
                         return content
                     finish_reason = data.get("choices", [{}])[0].get("finish_reason")
-                    if finish_reason == "length" and attempt < self.MAX_RETRIES - 1:
-                        # Reasoning models may consume the entire small output budget
-                        # before emitting visible content. Jump to a useful floor on
-                        # the first retry, then grow normally while remaining bounded.
-                        payload["max_tokens"] = min(
-                            max(
-                                int(payload["max_tokens"]) * 2,
-                                self.LENGTH_RETRY_MIN_TOKENS,
-                            ),
-                            self.LENGTH_RETRY_MAX_TOKENS,
-                        )
+                    if attempt < self.MAX_RETRIES - 1:
+                        if finish_reason == "length":
+                            # Reasoning models may consume the entire small output
+                            # budget before emitting visible content.
+                            payload["max_tokens"] = min(
+                                max(
+                                    int(payload["max_tokens"]) * 2,
+                                    self.LENGTH_RETRY_MIN_TOKENS,
+                                ),
+                                self.LENGTH_RETRY_MAX_TOKENS,
+                            )
                         emit(
-                            "llm.request.length_retry",
+                            "llm.request.length_retry"
+                            if finish_reason == "length"
+                            else "llm.request.empty_retry",
                             provider=resolved_provider,
                             model=resolved_model,
                             attempt=attempt + 1,
+                            finish_reason=finish_reason,
                             duration_ms=monotonic_ms(started),
                             next_max_tokens=payload["max_tokens"],
                         )
+                        # A provider can occasionally return HTTP 200 and
+                        # finish_reason=stop with an empty message. Treat that as
+                        # a transient unusable response, just like a retryable
+                        # transport failure, instead of aborting the whole run.
+                        await asyncio.sleep(0.5 * (attempt + 1))
                         continue
                     emit(
                         "llm.request.empty",
