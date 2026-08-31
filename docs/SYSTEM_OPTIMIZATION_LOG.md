@@ -154,3 +154,14 @@ Other call sites use higher caps (`decision` up to 512, `npc` up to 256). Under 
 
 ### Implementation status
 ```
+---
+
+## 2026-09-01 — Runtime resilience and recovery
+
+- Added stale PostgreSQL connection validation and recycling.
+- Reconnected WebSockets after established connections drop, with bounded exponential backoff.
+- Replaced deleted browser-cached sessions automatically.
+- Added generic long-prompt compaction after repeated length truncation.
+- Added participation-only cross-provider LLM failover while preserving model-locked experiments.
+- Decoupled targeted failed-dialogue retries from batch evaluation state.
+- Replaced the non-supervising oneshot systemd unit with independently restarting services.

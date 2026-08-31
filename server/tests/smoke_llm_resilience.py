@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 
-from app.llm.client import LLMClient
+from app.llm.client import LLMClient, llm_provider_failover_enabled
 from app.player_agent import bounded_dialogue
 from app.external_evaluator import _dispatch_metrics, _normalize_evaluation, _public_transcript
 from app.batch_experiments import _dialogue_retry_result
@@ -79,6 +79,31 @@ async def call_client(responses: list[FakeResponse | Exception], max_tokens: int
 
 
 async def main() -> None:
+    compact_source = [
+        {"role": "system", "content": "S" * 20000},
+        *({"role": "user", "content": f"old-{i}-" + "x" * 4000} for i in range(20)),
+        {"role": "user", "content": "LATEST-" + "y" * 10000},
+    ]
+    compacted = LLMClient._compact_messages(compact_source)
+    assert len(compacted) == 13
+    assert compacted[0]["role"] == "system"
+    assert "older context compacted" in compacted[0]["content"]
+    assert "LATEST-" not in compacted[-1]["content"]  # bounded from the right
+    assert compacted[-1]["content"].endswith("y" * 100)
+
+    failover_client = LLMClient()
+    token = llm_provider_failover_enabled.set(True)
+    try:
+        with patch("app.llm.client.resolve_siliconflow_api_key", return_value="configured"), patch(
+            "app.llm.client.resolve_siliconflow_model_id", return_value="fallback-model"
+        ):
+            assert failover_client._fallback_target("ollama") == (
+                "siliconflow", "fallback-model"
+            )
+    finally:
+        llm_provider_failover_enabled.reset(token)
+    assert failover_client._fallback_target("ollama") is None
+
     characters = [
         SimpleNamespace(character_id="agent_a"),
         SimpleNamespace(character_id="agent_b"),

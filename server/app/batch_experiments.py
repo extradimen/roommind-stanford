@@ -34,6 +34,7 @@ MAX_CONCURRENCY = 4
 MAX_RUNS_PER_BATCH = 500
 _tasks: dict[str, asyncio.Task] = {}
 _evaluation_tasks: dict[str, asyncio.Task] = {}
+_retry_tasks: dict[int, asyncio.Task] = {}
 _global_run_semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
 logger = logging.getLogger(__name__)
 AUTONOMOUS_STEP_TIMEOUT_SECONDS = 900
@@ -544,6 +545,30 @@ def _schedule(batch_uuid: str) -> None:
     _tasks[batch_uuid] = asyncio.create_task(_execute_batch(batch_uuid))
 
 
+def _schedule_single_dialogue_retry(
+    *, batch_id: int, run_id: int, config: dict[str, Any]
+) -> None:
+    """Run one retried cell without waiting for unrelated evaluation work."""
+    existing = _retry_tasks.get(run_id)
+    if existing and not existing.done():
+        return
+
+    async def execute() -> None:
+        try:
+            async with _global_run_semaphore:
+                await _execute_run(
+                    run_id,
+                    int(config.get("safety_max_turns", 50)),
+                    int(config.get("max_stagnant_turns", 8)),
+                    config.get("locale"),
+                )
+            await _refresh_batch_counts(batch_id)
+        finally:
+            _retry_tasks.pop(run_id, None)
+
+    _retry_tasks[run_id] = asyncio.create_task(execute())
+
+
 async def _evaluate_run(run_id: int) -> None:
     """Evaluate one frozen dialogue without changing its dialogue outcome."""
     started = time.monotonic()
@@ -863,8 +888,8 @@ async def retry_failed_dialogue(batch_uuid: str, run_id: int) -> dict[str, Any]:
             raise HTTPException(404, "Batch experiment run not found")
         if run.status not in {"failed", "dialogue_failed"}:
             raise HTTPException(409, "Only failed dialogue runs can be retried")
-        if batch.status in {"running", "queued", "cancelling", "evaluation_running"}:
-            raise HTTPException(409, "Wait for the current batch operation to finish before retrying")
+        if batch.status == "cancelling":
+            raise HTTPException(409, "A cancelling batch cannot accept a dialogue retry")
 
         previous_session_uuid = run.session_uuid
         run.result = _dialogue_retry_result(run)
@@ -873,9 +898,14 @@ async def retry_failed_dialogue(batch_uuid: str, run_id: int) -> dict[str, Any]:
         run.error = None
         run.started_at = None
         run.finished_at = None
-        batch.status = "queued"
+        # Evaluation and a targeted dialogue retry are independent processes.
+        # Keep evaluation_running visible when applicable; otherwise expose the
+        # dialogue work as running immediately instead of leaving it "queued".
+        if batch.status != "evaluation_running":
+            batch.status = "running"
         batch.finished_at = None
         batch_id = batch.id
+        batch_config = dict(batch.config or {})
         attempt_number = run.result["dialogue_attempt_count"]
         await db.commit()
     await _refresh_batch_counts(batch_id)
@@ -887,7 +917,11 @@ async def retry_failed_dialogue(batch_uuid: str, run_id: int) -> dict[str, Any]:
         attempt_number=attempt_number,
     )
     payload = await get_batch(batch_uuid)
-    _schedule(batch_uuid)
+    _schedule_single_dialogue_retry(
+        batch_id=batch_id,
+        run_id=run_id,
+        config=batch_config,
+    )
     return {**payload, "retried_run_id": run_id}
 
 

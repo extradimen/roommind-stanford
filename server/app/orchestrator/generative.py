@@ -58,6 +58,16 @@ class GenerativeOrchestrator:
         reply_language: str = "en",
     ) -> AsyncIterator[dict[str, Any]]:
 
+        # Imported/legacy scenarios and partially recovered sessions may carry
+        # null JSON collections. Normalize at the orchestration boundary so a
+        # missing optional list cannot become ``NoneType is not iterable`` in
+        # the first autonomous turn.
+        characters = list(characters or [])
+        dispatch_rules = list(dispatch_rules or [])
+        messages = list(messages or [])
+        if not characters:
+            raise RuntimeError("Scenario has no characters; add at least one role before play")
+
         llm_cfg = await orch_support.get_llm_config(db)
         orch_cfg = orchestration_config
         cfg = agent_config(orchestration_config)

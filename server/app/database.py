@@ -5,7 +5,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.config import get_settings
 
 settings = get_settings()
-engine = create_async_engine(settings.database_url, echo=False)
+# Long-running batch jobs and idle browser sessions can leave PostgreSQL
+# connections in the pool after the server/database has closed them.  Validate
+# pooled connections before checkout and recycle them periodically so one stale
+# socket does not turn an otherwise healthy read request into a 500.
+engine = create_async_engine(
+    settings.database_url,
+    echo=False,
+    pool_pre_ping=True,
+    pool_recycle=300,
+)
 async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   ChatMessage,
+  ApiError,
   connectGameWSWithRetry,
   controlTestSession,
   createSession,
@@ -287,10 +288,22 @@ export default function Game() {
                 })),
               );
             }
-          } catch {
-            /* ignore history load errors */
+            uuid = cached;
+          } catch (historyError) {
+            if (!(historyError instanceof ApiError) || historyError.status !== 404) {
+              throw historyError;
+            }
+            // Databases are occasionally reset between staging runs. Never
+            // keep reconnecting a browser tab to a session that no longer
+            // exists; clear the stale cache and create a fresh session below.
+            sessionStorage.removeItem(cacheKey);
+            pushDebug("session", `缓存会话已不存在，自动新建`);
+            const session = await createSession(id, sessionMode);
+            if (cancelled) return;
+            sessionStorage.setItem(cacheKey, session.session_uuid);
+            setPhase(session.current_phase);
+            uuid = session.session_uuid;
           }
-          uuid = cached;
         } else {
           pushDebug("session", `创建会话 scenario=${id}`);
           const inflightKey = `${id}:${sessionMode}`;

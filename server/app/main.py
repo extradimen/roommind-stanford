@@ -5,6 +5,7 @@ import uuid
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from app.api.admin import router as admin_router
 from app.api.game import router as game_router
@@ -12,7 +13,7 @@ from app.batch_experiments import resume_batch_experiments, router as batch_expe
 from app.avatar_assets import AVATAR_DIR, ensure_avatar_dir
 from app.prop_assets import PROPS_DIR, ensure_props_dir
 from app.config import get_settings, reload_settings
-from app.database import init_db
+from app.database import async_session_factory, init_db
 from app.platform_llm import ensure_platform_llm_defaults
 from app.seed import (
     ensure_scenario_templates,
@@ -105,6 +106,32 @@ async def startup() -> None:
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "phase": "1-web3d-text"}
+
+
+@app.get("/ready")
+async def ready() -> dict:
+    """Dependency-aware readiness used by deployment checks."""
+    checks: dict[str, str] = {}
+    try:
+        async with async_session_factory() as db:
+            await db.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception as exc:
+        checks["database"] = f"error:{type(exc).__name__}"
+
+    try:
+        from app.memory.service import memory_service
+
+        redis = await memory_service.get_redis()
+        checks["redis"] = "ok" if await redis.ping() else "error:ping_failed"
+    except Exception as exc:
+        checks["redis"] = f"degraded:{type(exc).__name__}"
+
+    # Redis is a fail-open cache; PostgreSQL is the readiness gate.
+    return {
+        "status": "ready" if checks["database"] == "ok" else "not_ready",
+        "checks": checks,
+    }
 
 
 @app.get("/api/info")

@@ -128,7 +128,9 @@ async def generate_baseline_turn(
     if config.get("comparison_lock_model"):
         baseline_orch_cfg["_comparison_lock_model"] = True
     resolved = resolve_llm(llm_cfg, baseline_orch_cfg, "npc_default")
-    characters = sorted(scenario.characters, key=lambda row: row.sort_order)
+    characters = sorted(list(scenario.characters or []), key=lambda row: row.sort_order)
+    if not characters:
+        raise RuntimeError("Scenario has no characters; add at least one role before play")
     current_player = messages[-1] if messages else {
         "speaker_id": "user", "content": "Begin the meeting."
     }

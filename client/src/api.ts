@@ -122,6 +122,13 @@ export interface PlatformPorts {
   urls?: { api?: string; client?: string };
 }
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly status?: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 let cachedWsBase: string | null = null;
 
 const READ_RETRY_DELAYS_MS = [0, 250, 750];
@@ -134,7 +141,7 @@ async function fetchReadWithRetry(input: RequestInfo | URL): Promise<Response> {
       const response = await fetch(input, { cache: "no-store" });
       // Retry only transient gateway failures. Other HTTP responses are real
       // application results and must be handled by the caller.
-      if (![502, 503, 504].includes(response.status)) return response;
+      if (![500, 502, 503, 504].includes(response.status)) return response;
       lastError = new Error(`Transient gateway response (HTTP ${response.status})`);
     } catch (error) {
       // Vite's development proxy can occasionally close an idle/reused
@@ -213,20 +220,20 @@ export async function resolveServiceUrls(): Promise<{
 }
 
 export async function listScenarios(): Promise<Scenario[]> {
-  const res = await fetch("/api/game/scenarios");
+  const res = await fetchReadWithRetry("/api/game/scenarios");
   if (!res.ok) throw new Error("Failed to load scenarios");
   return res.json();
 }
 
 export async function getScenario(id: number): Promise<Scenario> {
-  const res = await fetch(`/api/game/scenarios/${id}?_=${Date.now()}`);
+  const res = await fetchReadWithRetry(`/api/game/scenarios/${id}?_=${Date.now()}`);
   if (!res.ok) throw new Error("Scenario not found");
   return res.json();
 }
 
 export async function getSessionMessages(sessionUuid: string): Promise<ChatMessage[]> {
   const res = await fetchReadWithRetry(`/api/game/sessions/${sessionUuid}/messages`);
-  if (!res.ok) throw new Error("Failed to load messages");
+  if (!res.ok) throw new ApiError("Failed to load messages", res.status);
   const rows = await res.json();
   return rows.map((m: ChatMessage) => ({
     speaker_id: m.speaker_id,
@@ -480,8 +487,8 @@ export function connectGameWSWithRetry(
   let active = true;
   let ws: WebSocket | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
-  let attempts = 0;
-  const maxAttempts = 3;
+  let consecutiveFailures = 0;
+  const maxConsecutiveFailures = 8;
 
   const cleanup = () => {
     active = false;
@@ -497,9 +504,9 @@ export function connectGameWSWithRetry(
 
   const tryConnect = async () => {
     if (!active) return;
-    attempts += 1;
+    consecutiveFailures += 1;
     onState("connecting");
-    onDebug?.(`尝试连接 #${attempts}`, "ws");
+    onDebug?.(`尝试连接 #${consecutiveFailures}`, "ws");
 
     try {
       const base = await resolveWsBase();
@@ -513,6 +520,7 @@ export function connectGameWSWithRetry(
       ws.onopen = () => {
         if (!active) return;
         opened = true;
+        consecutiveFailures = 0;
         onDebug?.("WebSocket 已连接", "ws");
         onState("connected", ws!);
       };
@@ -533,20 +541,26 @@ export function connectGameWSWithRetry(
       ws.onclose = (ev) => {
         if (!active) return;
         onDebug?.(`WebSocket 关闭 code=${ev.code} reason=${ev.reason || "—"}`, "ws");
-        if (opened) return;
-        // Ignore normal close from React StrictMode remount
-        if (ev.code === 1000 && attempts < maxAttempts) return;
-
-        if (attempts < maxAttempts) {
-          retryTimer = setTimeout(tryConnect, 400 * attempts);
+        ws = null;
+        // A server-initiated normal close is terminal. Component cleanup has
+        // already set active=false, so React StrictMode does not reconnect.
+        if (ev.code === 1000) {
+          onState("failed");
+          return;
+        }
+        if (opened) consecutiveFailures = 1;
+        if (consecutiveFailures < maxConsecutiveFailures) {
+          const delay = Math.min(10000, 500 * 2 ** Math.max(0, consecutiveFailures - 1));
+          retryTimer = setTimeout(tryConnect, delay);
         } else {
           onState("failed");
         }
       };
     } catch (err) {
       onDebug?.(`连接异常: ${String(err)}`, "ws");
-      if (active && attempts < maxAttempts) {
-        retryTimer = setTimeout(tryConnect, 400 * attempts);
+      if (active && consecutiveFailures < maxConsecutiveFailures) {
+        const delay = Math.min(10000, 500 * 2 ** Math.max(0, consecutiveFailures - 1));
+        retryTimer = setTimeout(tryConnect, delay);
       } else if (active) {
         onState("failed");
       }

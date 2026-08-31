@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
+from app.llm.client import llm_provider_failover_enabled
 from app.models.db import GameSession, SessionMessage
 from app.orchestrator.common import orch_support
 from app.orchestrator.defaults import ORCHESTRATION_MODE
@@ -18,6 +20,7 @@ from app.task_state import TERMINAL_OUTCOMES, initial_task_state, update_task_st
 from app.telemetry import emit
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 class MemoryService:
@@ -33,14 +36,39 @@ class MemoryService:
         return f"roommind:session:{session_uuid}:working"
 
     async def cache_working_memory(self, session_uuid: str, messages: list[dict[str, Any]]) -> None:
-        r = await self.get_redis()
-        await r.set(self._session_key(session_uuid), json.dumps(messages[-50:], ensure_ascii=False), ex=86400)
+        try:
+            r = await self.get_redis()
+            await r.set(
+                self._session_key(session_uuid),
+                json.dumps(messages[-50:], ensure_ascii=False),
+                ex=86400,
+            )
+        except Exception as exc:
+            # PostgreSQL is authoritative. A cache outage must not roll back a
+            # completed LLM turn or make the learner resend the same message.
+            logger.warning("Redis working-memory cache write skipped: %s", exc)
+            emit(
+                "cache.working_memory.write_failed",
+                session_uuid=session_uuid,
+                exception_type=type(exc).__name__,
+                error=repr(exc)[:500],
+            )
 
     async def get_working_memory(self, session_uuid: str) -> list[dict[str, Any]]:
-        r = await self.get_redis()
-        raw = await r.get(self._session_key(session_uuid))
-        if raw:
-            return json.loads(raw)
+        try:
+            r = await self.get_redis()
+            raw = await r.get(self._session_key(session_uuid))
+            if raw:
+                parsed = json.loads(raw)
+                return parsed if isinstance(parsed, list) else []
+        except Exception as exc:
+            logger.warning("Redis working-memory cache read skipped: %s", exc)
+            emit(
+                "cache.working_memory.read_failed",
+                session_uuid=session_uuid,
+                exception_type=type(exc).__name__,
+                error=repr(exc)[:500],
+            )
         return []
 
     async def create_session(
@@ -224,39 +252,47 @@ class MemoryService:
         shared_state["_reply_language"] = reply_language
 
         result: Any = None
-        async for event in generative_orchestrator.process_turn_stream(
-            db,
-            session_id=session.id,
-            scenario=scenario,
-            characters=scenario.characters,
-            dispatch_rules=dispatch_rules,
-            user_input=user_input,
-            messages=messages,
-            current_phase=session.current_phase,
-            shared_state=shared_state,
-            orchestration_config=orch_cfg,
-            user_turn_count=user_turn_count,
-            reply_language=reply_language,
-        ):
-            if event.get("type") == "turn_result":
-                result = event.pop("_result", None)
-                yield event
-            else:
-                yield event
+        failover_token = llm_provider_failover_enabled.set(session.session_mode == "participation")
+        try:
+            async for event in generative_orchestrator.process_turn_stream(
+                db,
+                session_id=session.id,
+                scenario=scenario,
+                characters=scenario.characters,
+                dispatch_rules=dispatch_rules,
+                user_input=user_input,
+                messages=messages,
+                current_phase=session.current_phase,
+                shared_state=shared_state,
+                orchestration_config=orch_cfg,
+                user_turn_count=user_turn_count,
+                reply_language=reply_language,
+            ):
+                if event.get("type") == "turn_result":
+                    result = event.pop("_result", None)
+                    yield event
+                else:
+                    yield event
+        finally:
+            llm_provider_failover_enabled.reset(failover_token)
 
         if result is None:
             raise RuntimeError("Stream ended without turn_result")
 
         updated_shared_state = dict(result.shared_state or {})
-        task_state = await update_task_state(
-            db,
-            task_config=scenario.task_config or {},
-            previous=updated_shared_state.get("task_state"),
-            player_text=user_input,
-            npc_turns=[{"speaker_id": reply.character_id, "content": reply.content} for reply in result.replies],
-            orchestration_config=orch_cfg,
-            characters=list(scenario.characters),
-        )
+        failover_token = llm_provider_failover_enabled.set(session.session_mode == "participation")
+        try:
+            task_state = await update_task_state(
+                db,
+                task_config=scenario.task_config or {},
+                previous=updated_shared_state.get("task_state"),
+                player_text=user_input,
+                npc_turns=[{"speaker_id": reply.character_id, "content": reply.content} for reply in result.replies],
+                orchestration_config=orch_cfg,
+                characters=list(scenario.characters),
+            )
+        finally:
+            llm_provider_failover_enabled.reset(failover_token)
         updated_shared_state["task_state"] = task_state
         session.current_phase = task_state["phase"]
         completion_status = str(task_state.get("completion_status") or "in_progress")
