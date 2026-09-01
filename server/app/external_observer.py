@@ -8,6 +8,13 @@ from collections import Counter
 from datetime import datetime
 from typing import Any
 
+from app.research_protocol import (
+    HUMAN_REVIEW_PROTOCOL_VERSION,
+    REALISM_RUBRIC,
+    public_transcript_rows,
+    transcript_provenance,
+)
+
 
 def _normalized(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().casefold())
@@ -103,9 +110,33 @@ def build_blinded_evaluation_packet(bundle: dict[str, Any]) -> dict[str, Any]:
     """Prepare a condition-hidden packet for an external human or AI judge."""
     scenario = bundle.get("scenario") or {}
     directory = bundle.get("speaker_directory") or {}
+    transcript = public_transcript_rows(bundle)
+    provenance = transcript_provenance(bundle)
+    # The source session id remains server-side so reviewers cannot correlate
+    # an anonymous packet with condition-bearing debug/session URLs.
+    public_provenance = {
+        key: value for key, value in provenance.items() if key != "session_uuid"
+    }
+    npc_ids = [speaker_id for speaker_id, row in directory.items() if row.get("role") == "npc"]
+    aliases = {speaker_id: f"Participant {chr(65 + index)}" for index, speaker_id in enumerate(sorted(npc_ids))}
+    for row in transcript:
+        if row.get("speaker_type") == "user":
+            aliases[str(row.get("speaker_id") or "user")] = "Player"
+    visible = [
+        {**row, "speaker_label": aliases.get(str(row.get("speaker_id")), "Participant")}
+        for row in transcript
+    ]
     return {
-        "evaluation_protocol": "blinded-six-dimension-human-review-v3",
+        "evaluation_protocol": HUMAN_REVIEW_PROTOCOL_VERSION,
         "run_label": "anonymous",
+        "condition_hidden": True,
+        "language_policy": {
+            "interface": ["zh-CN", "en"],
+            "transcript": "original_verbatim",
+            "notice_en": "The dialogue below is the exact stored transcript; it is not translated or regenerated.",
+            "notice_zh": "以下对话为系统当时保存的原始逐字记录，未翻译、未重写、未重新生成。",
+        },
+        "source_provenance": public_provenance,
         "gold_specification": {
             "scenario_id": scenario.get("id"),
             "scenario_slug": scenario.get("slug"),
@@ -121,27 +152,11 @@ def build_blinded_evaluation_packet(bundle: dict[str, Any]) -> dict[str, Any]:
                 if row.get("role") == "npc"
             },
         },
-        "fixed_window_transcript": [
-            {
-                "sequence_no": row.get("sequence_no"),
-                "turn_id": row.get("turn_id"),
-                "speaker_id": row.get("speaker_id"),
-                "content": row.get("content"),
-            }
-            for row in bundle.get("messages") or []
-            if row.get("speaker_type") in {"user", "npc"} and int(row.get("turn_id") or 0) <= 20
-        ],
-        "public_transcript": [
-            {
-                "sequence_no": row.get("sequence_no"),
-                "turn_id": row.get("turn_id"),
-                "speaker_id": row.get("speaker_id"),
-                "content": row.get("content"),
-            }
-            for row in bundle.get("messages") or []
-            if row.get("speaker_type") in {"user", "npc"}
-        ],
+        "speaker_aliases": aliases,
+        "fixed_window_transcript": [row for row in visible if int(row.get("turn_id") or 0) <= 20],
+        "public_transcript": visible,
         "system_claim": (bundle.get("external_observation") or {}).get("system_claim") or {},
+        "rubric": REALISM_RUBRIC,
         "human_rating_form": {
             "scale": "1-7",
             "role_strategic_fidelity": None,

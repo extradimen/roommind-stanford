@@ -61,6 +61,7 @@ export default function BatchExperimentsPage() {
   const [maxStagnantTurns, setMaxStagnantTurns] = useState(8);
   const [seed, setSeed] = useState(20260728);
   const [humanValidation, setHumanValidation] = useState(true);
+  const [studyPhase, setStudyPhase] = useState<"exploration" | "screening" | "confirmation">("exploration");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [reviewQueue, setReviewQueue] = useState<BlindReviewQueue | null>(null);
@@ -116,6 +117,7 @@ export default function BatchExperimentsPage() {
         max_stagnant_turns: maxStagnantTurns,
         random_seed: seed,
         human_validation_enabled: humanValidation,
+        study_phase: studyPhase,
       });
       const detail = await getBatchExperiment(batch.batch_uuid);
       setSelected(detail);
@@ -144,7 +146,16 @@ export default function BatchExperimentsPage() {
     if (!selected || !reviewQueue || !reviewerId.trim()) { setError("Enter a reviewer ID."); return; }
     const packet = reviewQueue.packets[reviewIndex];
     try {
-      await submitBlindReview(selected.batch_uuid, packet.run_label, { reviewer_id: reviewerId, ratings, evidence: {}, notes: reviewNotes });
+      const indicatorRatings = Object.fromEntries(
+        Object.entries(packet.rubric || {}).flatMap(([dimension, rubric]) =>
+          (rubric.indicators || []).map(([indicator]) => [indicator, ratings[dimension] || 4]),
+        ),
+      );
+      await submitBlindReview(selected.batch_uuid, packet.run_label, {
+        reviewer_id: reviewerId, ratings, evidence: { entry_point: "admin_inline" }, notes: reviewNotes,
+        transcript_sha256: packet.source_provenance.transcript_sha256,
+        indicator_ratings: indicatorRatings, interface_locale: "en", finalize: true,
+      });
       setReviewQueue(await getBlindReviewQueue(selected.batch_uuid));
       setReviewNotes("");
       setReviewIndex((i) => Math.min(i + 1, reviewQueue.packets.length - 1));
@@ -231,6 +242,7 @@ export default function BatchExperimentsPage() {
             <label>Maximum turns<input type="number" min={10} max={100} value={maxTurns} onChange={(e) => setMaxTurns(Number(e.target.value))} /></label>
             <label>Stagnation window<input type="number" min={4} max={25} value={maxStagnantTurns} onChange={(e) => setMaxStagnantTurns(Number(e.target.value))} /><small>Stop a RoomMind run after this many turns without material state, work-item, or outcome progress.</small></label>
             <label>Randomization seed<input type="number" min={0} value={seed} onChange={(e) => setSeed(Number(e.target.value))} /><small>Keep this value for a reproducible run order.</small></label>
+            <label>Study phase<select value={studyPhase} onChange={(e) => setStudyPhase(e.target.value as typeof studyPhase)}><option value="exploration">Exploration · development evidence</option><option value="screening">Screening · candidate selection</option><option value="confirmation">Confirmation · held-out evidence</option></select><small>The selected phase is frozen in the experiment manifest.</small></label>
             <label className="full"><input type="checkbox" checked={humanValidation} onChange={(e) => setHumanValidation(e.target.checked)} /> Enable blinded human review<small>Recommended. Reviewers score the same six realism dimensions on anonymous transcripts after automatic evaluation.</small></label>
             <div className="batch-submit full"><strong>{plannedRuns} total runs</strong><button disabled={busy || plannedRuns < 1 || plannedRuns > 500}>{busy ? "Creating…" : "Start background experiment"}</button></div>
           </form>
@@ -258,7 +270,8 @@ export default function BatchExperimentsPage() {
               <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/transcripts.csv`}>All dialogue CSV</a>
               <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/transcripts.json`}>All dialogue JSON</a>
               <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/debug-bundle.json`}>Debug bundle</a>
-              {Boolean(selected.config.human_validation_enabled) && <button onClick={openReviews}>Open blind review</button>}
+              {Boolean(selected.config.human_validation_enabled) && <Link className="play-btn" to={`/expert-review/${selected.batch_uuid}`}>Expert review · 专家盲评</Link>}
+              {Boolean(selected.config.human_validation_enabled) && <button onClick={openReviews}>Quick admin review</button>}
               <a className="play-btn" href={`/api/game/batch-experiments/${selected.batch_uuid}/final-evaluation`}>Final evaluation JSON</a>
               <button onClick={() => { const blob = new Blob([JSON.stringify(selected, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `batch-${selected.batch_uuid}.json`; a.click(); URL.revokeObjectURL(url); }}>Download JSON</button>
             </div>

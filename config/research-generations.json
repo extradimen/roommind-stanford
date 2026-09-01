@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "current_generation_id": "G1",
+  "generations": [
+    {
+      "generation_id": "G0",
+      "name": "Legacy evolving prototype",
+      "status": "historical-development-only",
+      "definition": "Iterations 1-8 before the architecture and evidence protocol were frozen.",
+      "eligible_for_confirmatory_analysis": false
+    },
+    {
+      "generation_id": "G1",
+      "name": "Governed independent-agent simulation",
+      "architecture_version": "g1-governed-independent-agents",
+      "status": "active-exploration",
+      "treatment": "Independent role memory, structured cognition, responsibility dispatch, authority constraints, evidence-grounded task state and convergence governance.",
+      "baseline": "Independent conventional role agents with isolated rolling public-history memory and no RoomMind governance.",
+      "eligible_for_confirmatory_analysis": true,
+      "confirmation_requires": [
+        "frozen source revision",
+        "held-out scenarios or seeds",
+        "condition-blinded automatic evaluation",
+        "condition-blinded external expert review",
+        "no tuning on confirmation results"
+      ]
+    }
+  ],
+  "planned_generations": [
+    {
+      "generation_id": "G2",
+      "theme": "Event-sourced turn coordinator and deterministic state reducer",
+      "activation_rule": "Create only when the turn lifecycle and state transition semantics materially change."
+    },
+    {
+      "generation_id": "G3",
+      "theme": "Fact registry and explicit role decision policy",
+      "activation_rule": "Create only when fact provenance or role decision architecture materially changes."
+    }
+  ]
+}

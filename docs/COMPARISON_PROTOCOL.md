@@ -1,4 +1,4 @@
-# RoomMind controlled comparison protocol (v3)
+# RoomMind controlled comparison protocol (v4)
 
 ## Simulation realism evaluation
 
@@ -18,6 +18,11 @@ metric cites public transcript sequence evidence. Human reviewers receive
 anonymous run codes, a fixed 20-turn window, and the full transcript, but never
 the RoomMind/baseline condition. AI and human scores remain separate and no
 composite realism score is computed.
+
+The reviewer interface and rubric are bilingual. The evidence transcript is
+always the original persisted dialogue: it is not translated, rewritten, or
+regenerated. Each rating is bound to a canonical transcript SHA-256 and a
+finalized rating cannot be overwritten.
 
 Public dialogue exports support statistical and qualitative analysis. The
 forensic debug bundle additionally contains internal memories, decisions,
@@ -70,7 +75,14 @@ and ordinary redlines are not automatically treated as leaks.
 ## Optional human validation
 
 Human review is disabled by default and is not required for the primary
-analysis. When enabled, the system exports condition-hidden packets for 1–5
-ratings of role believability, realism of multi-participant conflict, and
-perceived coherence. Human ratings should be reported separately as validation
-of the automated protocol, not merged into a composite score.
+analysis. When enabled, the system exports condition-hidden packets for six
+separate realism dimensions. Each dimension contains three registered 1–7
+indicators, and the reviewer cites public sequence numbers as evidence. Human
+ratings should be reported separately as validation of the automated protocol,
+not merged into a composite score. Formal external review uses verified email
+invitations or institutional sign-in; the current development interface uses
+reviewer codes.
+
+Every batch additionally records a generational research manifest. Exploration,
+screening, and held-out confirmation data have different evidentiary uses and
+must not be pooled. See `RESEARCH_EXPERIMENT_GOVERNANCE.md`.

@@ -95,10 +95,23 @@ export interface BatchExperiment {
 
 export interface BlindReviewPacket {
   run_label: string;
+  condition_hidden?: boolean;
+  source_provenance: {
+    source?: string;
+    content_policy?: string;
+    session_uuid?: string;
+    message_count?: number;
+    transcript_sha256: string;
+  };
+  language_policy?: Record<string, unknown>;
   gold_specification: Record<string, unknown>;
-  public_transcript: Array<{ sequence_no?: number; turn_id?: number; speaker_id?: string; content?: string }>;
-  fixed_window_transcript?: Array<{ sequence_no?: number; turn_id?: number; speaker_id?: string; content?: string }>;
+  public_transcript: Array<{ sequence_no?: number; turn_id?: number; speaker_id?: string; speaker_label?: string; content?: string }>;
+  fixed_window_transcript?: Array<{ sequence_no?: number; turn_id?: number; speaker_id?: string; speaker_label?: string; content?: string }>;
   system_claim: Record<string, unknown>;
+  rubric: Record<string, {
+    label_en: string; label_zh: string; description_en: string; description_zh: string;
+    indicators: Array<[string, string, string]>;
+  }>;
 }
 
 export interface BlindReviewQueue {
@@ -386,6 +399,7 @@ export async function createBatchExperiment(input: {
   locale?: string;
   random_seed: number;
   human_validation_enabled: boolean;
+  study_phase?: "exploration" | "screening" | "confirmation";
 }): Promise<BatchExperiment> {
   const res = await fetch("/api/game/batch-experiments", {
     method: "POST",
@@ -436,7 +450,17 @@ export async function getBlindReviewQueue(batchUuid: string): Promise<BlindRevie
 
 export async function submitBlindReview(
   batchUuid: string, runLabel: string,
-  input: { reviewer_id: string; ratings: Record<string, number>; evidence: Record<string, unknown>; notes: string },
+  input: {
+    reviewer_id: string;
+    ratings: Record<string, number>;
+    evidence: Record<string, unknown>;
+    notes: string;
+    transcript_sha256: string;
+    indicator_ratings: Record<string, number>;
+    reviewer_profile?: Record<string, unknown>;
+    interface_locale?: string;
+    finalize?: boolean;
+  },
 ): Promise<void> {
   const res = await fetch(`/api/game/batch-experiments/${batchUuid}/reviews/${runLabel}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
