@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.memory_stream import AgentMemoryStore, MemoryNode, active_plan
 from app.agent.speech_safety import PUBLIC_RESPONSE_DRAFT, speech_rejection_reason
-from app.llm.client import llm_client
+from app.llm.client import LLMEmptyContentError, llm_client
 from app.models.db import CharacterTemplate, ScenarioTemplate
 from app.orchestrator.common import NPCReply
 from app.orchestrator.llm_binding import ResolvedLlm
@@ -25,6 +25,7 @@ from app.i18n.reply_language import (
     speech_language_rule,
 )
 from app.world.timeline import WorldEvent, WorldTimeline
+from app.telemetry import emit
 
 
 @dataclass
@@ -119,13 +120,23 @@ Requirements:
             if attempt
             else ""
         )
-        content = await llm_client.chat_completion(
-            [{"role": "user", "content": npc_prompt + retry_rule}],
-            db_provider=npc_llm.provider,
-            db_model=npc_llm.model,
-            temperature=npc_llm.temperature,
-            max_tokens=min(npc_llm.max_tokens, 256),
-        )
+        try:
+            content = await llm_client.chat_completion(
+                [{"role": "user", "content": npc_prompt + retry_rule}],
+                db_provider=npc_llm.provider,
+                db_model=npc_llm.model,
+                temperature=npc_llm.temperature,
+                max_tokens=min(max(npc_llm.max_tokens, 512), 1024),
+            )
+        except LLMEmptyContentError:
+            rejection = "empty_model_response"
+            emit(
+                "llm.degraded_fallback",
+                component="npc_speech_render",
+                character_id=character.character_id,
+                fallback_action="retry_then_configured_reply",
+            )
+            continue
         cleaned = content.strip()
         rejection = speech_rejection_reason(
             cleaned,

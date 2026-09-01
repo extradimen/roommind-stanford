@@ -14,12 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.memory_stream import AgentMemoryStore, active_plan
 from app.agent.speech_safety import player_speech_rejection_reason
-from app.llm.client import llm_client
+from app.llm.client import LLMEmptyContentError, llm_client
 from app.models.db import GameSession, ScenarioTemplate
 from app.orchestrator.common import orch_support
 from app.orchestrator.llm_binding import resolve_llm
 from app.player_character import resolve_player_character
 from app.scenario_side import resolve_player_side_goal
+from app.telemetry import emit
 
 
 @dataclass
@@ -218,14 +219,25 @@ Return strict JSON only:
             if attempt
             else ""
         )
-        raw = await llm_client.chat_completion(
-            [{"role": "user", "content": prompt + retry_rule}],
-            db_provider=player_llm.provider,
-            db_model=player_llm.model,
-            temperature=float(config.get("player_temperature", player_llm.temperature)),
-            max_tokens=min(int(config.get("player_max_tokens", player_llm.max_tokens)), 768),
-            response_format={"type": "json_object"},
-        )
+        try:
+            raw = await llm_client.chat_completion(
+                [{"role": "user", "content": prompt + retry_rule}],
+                db_provider=player_llm.provider,
+                db_model=player_llm.model,
+                temperature=float(config.get("player_temperature", player_llm.temperature)),
+                max_tokens=min(int(config.get("player_max_tokens", player_llm.max_tokens)), 768),
+                response_format={"type": "json_object"},
+            )
+        except LLMEmptyContentError:
+            # An autonomous run must not lose all prior turns because one
+            # reasoning-model response exhausted its visible output budget.
+            rejection = "empty_model_response"
+            emit(
+                "llm.degraded_fallback",
+                component="autonomous_player",
+                fallback_action="retry_then_safe_message",
+            )
+            continue
         parsed = orch_support.parse_json(raw)
         content = normalize_player_content(parsed.get("content") or "")
         rejection = player_speech_rejection_reason(content) or ""
@@ -327,14 +339,23 @@ Return strict JSON only:
             f"\nPrevious output was rejected ({rejection}). Return exactly one complete JSON object."
             if attempt else ""
         )
-        raw = await llm_client.chat_completion(
-            [{"role": "user", "content": prompt + repair}],
-            db_provider=resolved.provider,
-            db_model=resolved.model,
-            temperature=float(config.get("player_temperature", 0.2)),
-            max_tokens=min(int(config.get("player_max_tokens", 512)), 768),
-            response_format={"type": "json_object"},
-        )
+        try:
+            raw = await llm_client.chat_completion(
+                [{"role": "user", "content": prompt + repair}],
+                db_provider=resolved.provider,
+                db_model=resolved.model,
+                temperature=float(config.get("player_temperature", 0.2)),
+                max_tokens=min(int(config.get("player_max_tokens", 512)), 768),
+                response_format={"type": "json_object"},
+            )
+        except LLMEmptyContentError:
+            rejection = "empty_model_response"
+            emit(
+                "llm.degraded_fallback",
+                component="comparison_player",
+                fallback_action="retry_then_clarification",
+            )
+            continue
         parsed = orch_support.parse_json(raw)
         content = normalize_player_content(parsed.get("content") or "").strip()
         rejection = player_speech_rejection_reason(content) or ""

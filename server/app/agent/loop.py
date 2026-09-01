@@ -25,7 +25,7 @@ from app.agent.memory_stream import (
     active_plan,
     retrieve_memories,
 )
-from app.llm.client import llm_client
+from app.llm.client import LLMEmptyContentError, llm_client
 from app.models.db import CharacterTemplate, ScenarioTemplate
 from app.scenario_side import initial_plan_goal_block, user_speaker_label
 from app.i18n.reply_language import decision_language_rule
@@ -34,6 +34,7 @@ from app.orchestrator.llm_binding import ResolvedLlm
 from app.task_state import public_task_result
 from app.world.perception import perceive_events
 from app.world.timeline import WorldEvent, WorldTimeline
+from app.telemetry import emit
 
 
 @dataclass
@@ -92,8 +93,25 @@ def _format_retrieved_block(retrieved_scored: list[tuple[MemoryNode, float]]) ->
             "action": "action",
         }.get(node.node_type, node.node_type)
         imp_bar = "█" * int(node.importance) + "░" * (10 - int(node.importance))
-        lines.append(f"[{tag} imp={node.importance:.0f} {imp_bar}] {node.content}")
-    return "\n".join(lines)
+        content = str(node.content or "")[-700:]
+        lines.append(f"[{tag} imp={node.importance:.0f} {imp_bar}] {content}")
+    return "\n".join(lines)[-6000:]
+
+
+def _bounded_governance_view(task_state: dict[str, Any] | None) -> dict[str, Any]:
+    """Keep decision prompts bounded without changing the persisted task ledger."""
+    public = public_task_result(task_state or {})
+    work_items = list((public.get("work_items") or {}).items())[-15:]
+    return {
+        "phase": public.get("phase"),
+        "completion_status": public.get("completion_status"),
+        "variables": public.get("variables") or {},
+        "open_issues": list(public.get("open_issues") or [])[-20:],
+        "work_items": dict(work_items),
+        "recent_events": list(public.get("recent_events") or [])[-10:],
+        "outcome": public.get("outcome") or {},
+        "progress": public.get("progress") or {},
+    }
 
 
 async def run_agent_tick(
@@ -216,7 +234,7 @@ async def run_agent_tick(
     )
     goal_block = initial_plan_goal_block(character, scenario)
     user_label = user_speaker_label(character)
-    governance_view = public_task_result(task_state or {})
+    governance_view = _bounded_governance_view(task_state)
     stagnant_turns = int((governance_view.get("progress") or {}).get("stagnant_turns", 0))
     convergence_rule = (
         "Material progress has stalled. Do not repeat a promise or request. If you own "
@@ -299,16 +317,40 @@ Output strict JSON only:
   "moment_importance": integer 1-10
 }}"""
 
-    decision_raw = await llm_client.chat_completion(
-        [{"role": "user", "content": decision_prompt}],
-        db_provider=decision_llm.provider,
-        db_model=decision_llm.model,
-        temperature=decision_llm.temperature,
-        max_tokens=min(decision_llm.max_tokens, 512),
-        response_format={"type": "json_object"},
-    )
-    parsed = orch_support.parse_json(decision_raw)
-    decision = decision_from_llm(parsed, decision_raw)
+    if speak_quota_remaining <= 0 and not mentioned:
+        decision_raw = ""
+        decision = decision_from_llm({
+            "action": "wait",
+            "reasoning": "The public speaking quota is already filled this turn.",
+            "moment_importance": 3,
+        })
+    else:
+        try:
+            decision_raw = await llm_client.chat_completion(
+                [{"role": "user", "content": decision_prompt}],
+                db_provider=decision_llm.provider,
+                db_model=decision_llm.model,
+                temperature=decision_llm.temperature,
+                max_tokens=min(max(decision_llm.max_tokens, 768), 1536),
+                response_format={"type": "json_object"},
+            )
+            parsed = orch_support.parse_json(decision_raw)
+            decision = decision_from_llm(parsed, decision_raw)
+        except LLMEmptyContentError:
+            # Degrade a single private decision to a wait. The orchestrator's
+            # normal fallback speaker can still advance the public turn.
+            decision_raw = ""
+            decision = decision_from_llm({
+                "action": "wait",
+                "reasoning": "No reliable private decision was produced this turn.",
+                "moment_importance": 3,
+            })
+            emit(
+                "llm.degraded_fallback",
+                component="agent_decision",
+                character_id=character.character_id,
+                fallback_action="wait",
+            )
 
     # ------------------------------------------------------------------
     # Step 4 — ACT

@@ -146,6 +146,9 @@ def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
             and bool(event.get("retrying", True))
             for event in events
         ),
+        "llm_degraded_fallback_count": sum(
+            event.get("event") == "llm.degraded_fallback" for event in events
+        ),
         "llm_total_duration_ms": sum(int(event.get("duration_ms") or 0) for event in successes),
         "prompt_tokens": sum(int(event.get("prompt_tokens") or 0) for event in successes),
         "completion_tokens": sum(int(event.get("completion_tokens") or 0) for event in successes),
@@ -226,6 +229,29 @@ async def _batch_cancelled(batch_id: int) -> bool:
         return not batch or batch.status in {"cancelling", "cancelled"}
 
 
+async def _record_run_heartbeat(
+    run_id: int,
+    *,
+    turn_index: int,
+    step_attempt: int,
+    stage: str,
+) -> None:
+    """Persist worker liveness independently from the long dialogue transaction."""
+    async with async_session_factory() as db:
+        run = await db.get(BatchExperimentRun, run_id)
+        if not run or run.status != "running":
+            return
+        result = dict(run.result or {})
+        result.update({
+            "worker_heartbeat_at": _now().isoformat(),
+            "current_turn_index": turn_index,
+            "current_step_attempt": step_attempt,
+            "current_stage": stage,
+        })
+        run.result = result
+        await db.commit()
+
+
 async def _execute_run(
     run_id: int, safety_max_turns: int, max_stagnant_turns: int, locale: str | None
 ) -> None:
@@ -287,6 +313,12 @@ async def _execute_run(
             stage = f"autonomous_turn_{turn_index}"
             step: dict[str, Any] | None = None
             for step_attempt in range(1, 3):
+                await _record_run_heartbeat(
+                    run_id,
+                    turn_index=turn_index,
+                    step_attempt=step_attempt,
+                    stage=stage,
+                )
                 async with async_session_factory() as db:
                     from app.api.game import _run_autonomous_step
 
@@ -356,6 +388,16 @@ async def _execute_run(
                             shared = dict(session_row.shared_state or {})
                             shared["_performance_trace"] = performance_trace[-200:]
                             session_row.shared_state = shared
+                        run_row = await db.get(BatchExperimentRun, run_id)
+                        if run_row and run_row.status == "running":
+                            run_progress = dict(run_row.result or {})
+                            run_progress.update({
+                                "worker_heartbeat_at": _now().isoformat(),
+                                "last_completed_turn_index": turn_index,
+                                "last_step_status": step.get("status"),
+                                **_performance_summary(performance_trace),
+                            })
+                            run_row.result = run_progress
                         emit("batch.turn.finished", **trace_row)
                     await db.commit()
                     break

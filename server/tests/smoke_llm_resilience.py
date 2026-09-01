@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 
-from app.llm.client import LLMClient, llm_provider_failover_enabled
+from app.llm.client import LLMClient, LLMEmptyContentError, llm_provider_failover_enabled
 from app.player_agent import bounded_dialogue
 from app.external_evaluator import _dispatch_metrics, _normalize_evaluation, _public_transcript
 from app.batch_experiments import _dialogue_retry_result
@@ -109,6 +109,7 @@ async def main() -> None:
         SimpleNamespace(character_id="agent_b"),
     ]
     baseline_session = SimpleNamespace(shared_state={})
+    assert _agent_memory(baseline_session, "agent_a") == []
     _remember_public_turn(
         baseline_session, characters,
         [{"speaker_id": "user", "content": "Public opening"}], message_limit=5,
@@ -148,8 +149,11 @@ async def main() -> None:
         opponent_side_goal="Protect interests", task_config={}, phases=["opening"],
         win_conditions=[], orchestration_config={}, characters=full_profiles,
     )
-    baseline_session.run_config = {"working_message_limit": 5, "comparison_lock_model": True}
-    baseline_session.current_phase = "opening"
+    generation_session = SimpleNamespace(
+        shared_state={},
+        run_config={"working_message_limit": 5, "comparison_lock_model": True},
+        current_phase="opening",
+    )
     resolved = SimpleNamespace(
         provider="ollama", model="fixture", temperature=0.2, max_tokens=600,
         label=lambda: "ollama/fixture",
@@ -172,7 +176,7 @@ async def main() -> None:
         patch("app.baseline_chat.llm_client.chat_completion", side_effect=independent_reply),
     ):
         baseline_turn = await generate_baseline_turn(
-            None, baseline_session, scenario,
+            None, generation_session, scenario,
             [{"speaker_id": "user", "content": "Please respond."}],
         )
     assert len(prompts) == 2
@@ -225,7 +229,7 @@ async def main() -> None:
                 completion("  ", "length"),
             ]
         )
-    except RuntimeError as exc:
+    except LLMEmptyContentError as exc:
         assert "finish_reason='length'" in str(exc)
     else:
         raise AssertionError("permanently empty output must fail safely")
@@ -235,7 +239,7 @@ async def main() -> None:
         await call_client([
             completion(None, "stop"), completion("", "stop"), completion("  ", "stop"),
         ])
-    except RuntimeError as exc:
+    except LLMEmptyContentError as exc:
         assert "finish_reason='stop'" in str(exc)
     else:
         raise AssertionError("permanently empty stop output must fail safely")

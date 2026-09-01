@@ -14,7 +14,7 @@ from typing import Any
 
 
 CURRENT_GENERATION_ID = "G1"
-CURRENT_ARCHITECTURE_VERSION = "g1-governed-independent-agents"
+CURRENT_ARCHITECTURE_VERSION = "g1.1-resilient-governed-agents"
 EXPERIMENT_PROTOCOL_VERSION = "roommind-generational-experiment-v1"
 HUMAN_REVIEW_PROTOCOL_VERSION = "blinded-bilingual-expert-review-v4"
 
@@ -167,4 +167,3 @@ def experiment_manifest(*, study_phase: str, random_seed: int) -> dict[str, Any]
         "immutability": "Dialogue artifacts are append-only; later evaluation references their SHA-256.",
     }
     return {**manifest, "manifest_sha256": sha256_json(manifest)}
-

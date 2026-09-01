@@ -31,6 +31,10 @@ llm_provider_failover_enabled: ContextVar[bool] = ContextVar(
 )
 
 
+class LLMEmptyContentError(RuntimeError):
+    """The provider returned HTTP success but no usable visible response."""
+
+
 class LLMClient:
     """Unified LLM client — OpenClaw-aligned Ollama Cloud + SiliconFlow."""
 
@@ -275,7 +279,7 @@ class LLMClient:
                             temperature=temperature, max_tokens=max_tokens,
                             response_format=response_format, _failover_attempted=True,
                         )
-                    raise RuntimeError(
+                    raise LLMEmptyContentError(
                         f"LLM provider {resolved_provider}/{resolved_model} returned no visible "
                         f"content after retries (finish_reason={finish_reason!r})"
                     )

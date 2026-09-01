@@ -18,7 +18,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.llm.client import llm_client
+from app.llm.client import LLMEmptyContentError, llm_client
 from app.models.db import GameSession, ScenarioTemplate, SessionMessage
 from app.orchestrator.common import orch_support
 from app.orchestrator.llm_binding import resolve_llm
@@ -66,7 +66,7 @@ def _character_prompt(char: Any) -> dict[str, Any]:
 def _agent_memory(session: GameSession, character_id: str) -> list[dict[str, str]]:
     shared = dict(session.shared_state or {})
     all_memories = shared.get(BASELINE_MEMORY_KEY) or {}
-    rows = all_memories.get(character_id) if isinstance(all_memories, dict) else []
+    rows = (all_memories.get(character_id) or []) if isinstance(all_memories, dict) else []
     return [
         {"speaker_id": str(row.get("speaker_id") or "unknown"),
          "content": str(row.get("content") or "")}
@@ -192,18 +192,31 @@ Return strict JSON only:
   "declared_phase":"your best phase estimate",
   "declared_complete":false
 }}"""
-        raw = await llm_client.chat_completion(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": turn_prompt},
-            ],
-            db_provider=resolved.provider,
-            db_model=resolved.model,
-            temperature=resolved.temperature,
-            max_tokens=min(max(resolved.max_tokens, 600), 1200),
-            response_format={"type": "json_object"},
-        )
-        return char, orch_support.parse_json(raw), raw
+        try:
+            raw = await llm_client.chat_completion(
+                [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": turn_prompt},
+                ],
+                db_provider=resolved.provider,
+                db_model=resolved.model,
+                temperature=resolved.temperature,
+                max_tokens=min(max(resolved.max_tokens, 768), 1536),
+                response_format={"type": "json_object"},
+            )
+            return char, orch_support.parse_json(raw), raw
+        except LLMEmptyContentError:
+            emit(
+                "llm.degraded_fallback",
+                component="baseline_agent_decision",
+                character_id=char.character_id,
+                fallback_action="wait",
+            )
+            return char, {
+                "action": "wait",
+                "declared_phase": session.current_phase,
+                "declared_complete": False,
+            }, ""
 
     outputs = await asyncio.gather(*(run_agent(char) for char in characters))
     valid: list[dict[str, str]] = []
@@ -316,7 +329,7 @@ async def process_baseline_step(
     ]]
     _remember_public_turn(
         session,
-        sorted(scenario.characters, key=lambda row: row.sort_order),
+        sorted(list(scenario.characters or []), key=lambda row: row.sort_order),
         memory_turn,
         message_limit=int((session.run_config or {}).get("working_message_limit", 30)),
     )
