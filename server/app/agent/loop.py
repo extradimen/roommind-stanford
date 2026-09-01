@@ -235,7 +235,24 @@ async def run_agent_tick(
     goal_block = initial_plan_goal_block(character, scenario)
     user_label = user_speaker_label(character)
     governance_view = _bounded_governance_view(task_state)
-    stagnant_turns = int((governance_view.get("progress") or {}).get("stagnant_turns", 0))
+    progress_view = governance_view.get("progress") or {}
+    stagnant_turns = int(progress_view.get("stagnant_turns", 0))
+    focus = progress_view.get("focus") if isinstance(progress_view.get("focus"), dict) else None
+    focus_owner_ids = set((focus or {}).get("owner_ids") or [])
+    owns_focus = character.character_id in focus_owner_ids
+    if focus:
+        focus_guidance = (
+            f"Coordinator focus: {focus.get('issue')} ({focus.get('status')}). "
+            f"{focus.get('instruction')} "
+            + (
+                "You are the responsible role. Do not defer with another future promise; "
+                "materialize the work or state a truthful blocker/handoff/outcome now."
+                if owns_focus
+                else "Do not echo status already stated by the responsible role. Contribute only if your distinct authority is needed."
+            )
+        )
+    else:
+        focus_guidance = "Coordinator focus: none; help reach a truthful close without inventing work."
     convergence_rule = (
         "Material progress has stalled. Do not repeat a promise or request. If you own "
         "the missing information, artifact, decision, or action, provide/perform it now "
@@ -285,6 +302,7 @@ Task type: {(scenario.task_config or {}).get('task_type', 'simulation')}
 Task terminology: {json.dumps((scenario.task_config or {}).get('terminology', {}), ensure_ascii=False)}
 Shared simulation ledger (state, work items, events, outcome): {json.dumps(governance_view, ensure_ascii=False)}
 Consecutive turns without material progress: {stagnant_turns}
+{focus_guidance}
 {user_label}: "{user_input}"
 {wait_guidance}
 {quota_guidance}

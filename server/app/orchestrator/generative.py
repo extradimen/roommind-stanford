@@ -122,7 +122,13 @@ class GenerativeOrchestrator:
         priority_mentions = [*mentioned_list, *pending]
         mentioned = set(priority_mentions)
         rule_hits  = orch_support.match_dispatch_rules(user_input, dispatch_rules)
-        agent_order = self._agent_order(characters, priority_mentions, rule_hits)
+        focus = (((updated_state.get("task_state") or {}).get("progress") or {}).get("focus") or {})
+        focus_owner_ids = [
+            str(cid) for cid in (focus.get("owner_ids") or []) if str(cid)
+        ]
+        agent_order = self._agent_order(
+            characters, priority_mentions, rule_hits, focus_owner_ids
+        )
 
         yield {
             "type": "processing",
@@ -333,6 +339,7 @@ class GenerativeOrchestrator:
             "mentioned":                list(mentioned),
             "rule_hits":                rule_hits,
             "agent_order":              [c.character_id for c in agent_order],
+            "coordinator_focus":         focus,
             "agents":                   agent_debug,
             "retrieval_weights":        {"alpha": alpha, "beta": beta, "gamma": gamma},
             "reflect_threshold":        reflect_threshold,
@@ -361,12 +368,13 @@ class GenerativeOrchestrator:
         characters: list[CharacterTemplate],
         mentioned: list[str],
         rule_hits: list[str],
+        focus_owner_ids: list[str] | None = None,
     ) -> list[CharacterTemplate]:
         char_map = {c.character_id: c for c in characters}
         ordered: list[CharacterTemplate] = []
         seen: set[str] = set()
 
-        for cid in mentioned + rule_hits:
+        for cid in [*mentioned, *(focus_owner_ids or []), *rule_hits]:
             if cid in char_map and cid not in seen:
                 ordered.append(char_map[cid])
                 seen.add(cid)

@@ -156,6 +156,33 @@ def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _coordination_summary(
+    task_result: dict[str, Any] | None,
+    shared_state: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Deterministic G2 process measures; never infer dialogue realism."""
+    task = task_result or {}
+    history = [
+        row for row in (task.get("coordination_history") or [])
+        if isinstance(row, dict)
+    ]
+    focuses = [row.get("focus") for row in history if isinstance(row.get("focus"), dict)]
+    test_state = (shared_state or {}).get("_test_state") or {}
+    return {
+        "coordinator_focus_turn_count": len(focuses),
+        "coordinator_due_focus_turn_count": sum(bool(row.get("due_now")) for row in focuses),
+        "coordinator_closeout_turn_count": sum(
+            bool(row.get("closeout_required")) for row in history
+        ),
+        "coordinator_distinct_focus_count": len({
+            str(row.get("issue")) for row in focuses if row.get("issue")
+        }),
+        "final_completion_status": task.get("completion_status"),
+        "final_open_issue_count": len(task.get("open_issues") or []),
+        "governor_stop_reason": test_state.get("stop_reason"),
+    }
+
+
 def _flatten_result(
     *,
     scenario: ScenarioTemplate,
@@ -435,6 +462,7 @@ async def _execute_run(
             }
             result.update(transcript_provenance(public))
             result.update(_performance_summary(performance_trace))
+            result.update(_coordination_summary(public.get("task_result"), shared))
             run = await db.get(BatchExperimentRun, run_id)
             if run:
                 retry_metadata = {

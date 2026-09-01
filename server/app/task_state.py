@@ -130,6 +130,7 @@ def public_task_result(task_state: dict[str, Any] | None) -> dict[str, Any]:
         "recent_events": deepcopy((state.get("event_ledger") or [])[-30:]),
         "outcome": deepcopy(state.get("outcome") or {}),
         "progress": deepcopy(state.get("progress") or {}),
+        "coordination_history": deepcopy((state.get("coordination_history") or [])[-30:]),
     }
 
 
@@ -323,6 +324,125 @@ def set_progress_metadata(
     return task_state
 
 
+def prepare_turn_governance(
+    task_state: dict[str, Any],
+    *,
+    characters: list[CharacterTemplate],
+    turn_id: int,
+    safety_max_turns: int,
+    max_stagnant_turns: int,
+) -> dict[str, Any]:
+    """Select one deterministic focus before an autonomous RoomMind turn.
+
+    The coordinator does not invent domain facts or complete work. It only
+    exposes which already-public unresolved item should move next, who has
+    authority/ownership, and whether the meeting is approaching a closeout
+    boundary. This keeps independent agents coordinated without sharing their
+    private memories.
+    """
+    state = deepcopy(task_state)
+    progress = dict(state.get("progress") or {})
+    stagnant_turns = max(0, int(progress.get("stagnant_turns") or 0))
+    remaining_turns = max(0, int(safety_max_turns) - int(turn_id) + 1)
+    closeout_required = (
+        remaining_turns <= 2
+        or stagnant_turns >= max(2, int(max_stagnant_turns) - 2)
+    )
+
+    focus: dict[str, Any] | None = None
+    work_items = state.get("work_items") or {}
+    ranked_work: list[tuple[int, str, dict[str, Any]]] = []
+    for key, raw in work_items.items():
+        if not isinstance(raw, dict) or raw.get("required") is not True:
+            continue
+        status = str(raw.get("status") or "unknown")
+        if status in {"submitted", "completed", "rejected"}:
+            continue
+        promised_turn = int(raw.get("promised_turn") or 0)
+        age = max(0, int(turn_id) - promised_turn) if promised_turn else 0
+        priority = 0 if status == "blocked" else (1 if status == "promised" and age >= 2 else 2)
+        ranked_work.append((priority, str(key), raw))
+    if ranked_work:
+        _, key, item = sorted(ranked_work, key=lambda row: (row[0], row[1]))[0]
+        promised_turn = int(item.get("promised_turn") or 0)
+        age = max(0, int(turn_id) - promised_turn) if promised_turn else 0
+        owner = str(item.get("owner_id") or "")
+        target = str(item.get("target_id") or "")
+        owner_ids = [cid for cid in (owner, target) if cid and cid != "user"]
+        focus = {
+            "issue": f"work:{key}",
+            "kind": "work_item",
+            "status": str(item.get("status") or "unknown"),
+            "subject": str(item.get("subject") or key),
+            "owner_ids": list(dict.fromkeys(owner_ids)),
+            "age_turns": age,
+            "due_now": bool(item.get("status") == "blocked" or age >= 2),
+        }
+    else:
+        variables = state.get("variables") or {}
+        for field in state.get("open_issues") or []:
+            if str(field).startswith("work:") or field not in variables:
+                continue
+            owners = [
+                character.character_id
+                for character in characters
+                if field in ((character.authority or {}).get("can_confirm") or [])
+            ]
+            item = variables.get(field) or {}
+            focus = {
+                "issue": str(field),
+                "kind": "state_variable",
+                "status": str(item.get("status") or "unknown"),
+                "subject": str(field),
+                "owner_ids": owners,
+                "age_turns": 0,
+                "due_now": closeout_required,
+            }
+            break
+
+    if focus:
+        if closeout_required:
+            instruction = (
+                "Close out this focus now: the responsible role must either complete/confirm it "
+                "with public evidence, explicitly block or reject it, hand it off with an owner "
+                "and review point, or state a truthful conditional/deferred/failed outcome."
+            )
+        elif focus.get("due_now"):
+            instruction = (
+                "The commitment is due in-session. The responsible role must perform or submit it "
+                "now, or explicitly state the blocker and a concrete handoff; another promise is "
+                "not progress."
+            )
+        else:
+            instruction = (
+                "Advance this single focus with a new fact, proposal, authorized decision, "
+                "material action, or necessary objection."
+            )
+        focus["instruction"] = instruction
+        focus["closeout_required"] = closeout_required
+
+    progress.update({
+        "turn_id": int(turn_id),
+        "remaining_turns": remaining_turns,
+        "closeout_required": closeout_required,
+        "focus": focus,
+    })
+    state["progress"] = progress
+    history = [
+        row for row in (state.get("coordination_history") or [])
+        if isinstance(row, dict) and int(row.get("turn_id") or -1) != int(turn_id)
+    ]
+    history.append({
+        "turn_id": int(turn_id),
+        "remaining_turns": remaining_turns,
+        "stagnant_turns": stagnant_turns,
+        "closeout_required": closeout_required,
+        "focus": deepcopy(focus),
+    })
+    state["coordination_history"] = history[-100:]
+    return state
+
+
 def finalize_stalled_task_state(
     task_state: dict[str, Any], *, turn_id: int, reason: str | None = None
 ) -> dict[str, Any]:
@@ -361,7 +481,11 @@ def _valid_public_evidence(
 
 
 def apply_generic_events(
-    *, state: dict[str, Any], parsed: dict[str, Any], turn_text: dict[str, str]
+    *,
+    state: dict[str, Any],
+    parsed: dict[str, Any],
+    turn_text: dict[str, str],
+    turn_id: int = 0,
 ) -> None:
     """Apply evidence-grounded events without assuming a negotiation domain."""
     ledger = state.setdefault("event_ledger", [])
@@ -395,6 +519,7 @@ def apply_generic_events(
         )
         event = {
             "event_index": next_event_index,
+            "turn_id": int(turn_id),
             "event_type": event_type, "subject": subject, "subject_key": key,
             "status": status, "actor_id": actor_id,
             "target_id": str(raw.get("target_id") or ""),
@@ -416,18 +541,23 @@ def apply_generic_events(
             "last_event_type": event_type,
             "owner_id": actor_id,
             "aliases": aliases,
+            "target_id": str(raw.get("target_id") or item.get("target_id") or ""),
+            "last_transition_turn": int(turn_id),
         })
         milestones.add(event_type)
         item["milestones"] = sorted(milestones)
         if event_type in {"blocker", "artifact_offered", "action_committed"}:
             item["required"] = True
         if event_type == "artifact_offered":
+            item.setdefault("promised_turn", int(turn_id))
             if item.get("status") not in {"blocked", "submitted", "completed"}:
                 item["status"] = "promised"
         elif event_type == "artifact_submitted":
             item["status"] = "submitted"
+            item["resolved_turn"] = int(turn_id)
         elif event_type in {"artifact_reviewed", "action_completed"}:
             item["status"] = "completed"
+            item["resolved_turn"] = int(turn_id)
         elif event_type == "information_provided":
             # Describing a requirement or blocker is useful information, but
             # does not itself satisfy an already required artifact/action.
@@ -440,6 +570,7 @@ def apply_generic_events(
             if status != "completed":
                 item["required"] = True
         elif event_type == "action_committed":
+            item.setdefault("promised_turn", int(turn_id))
             if item.get("status") not in {"blocked", "completed"}:
                 item["status"] = "promised"
         elif event_type == "blocker":
@@ -504,6 +635,7 @@ def apply_evaluator_updates(
     characters: list[CharacterTemplate],
     player_text: str,
     npc_turns: list[dict[str, str]],
+    turn_id: int = 0,
 ) -> dict[str, Any]:
     """Apply untrusted model extraction through schema and authority checks."""
     schema = task_config.get("state_schema") or {}
@@ -568,6 +700,35 @@ def apply_evaluator_updates(
             "player_and_responsible_participant": has_player and has_authorized,
             "player_and_assignee": has_player and has_authorized,
         }.get(policy, False)
+        was_confirmed = current.get("status") == "confirmed"
+        if was_confirmed and not same_value:
+            challenge_speakers = {str(row["speaker_id"]) for row in valid_evidence}
+            permitted_challenge = bool(
+                challenge_speakers.intersection(authorized[field] | configured_confirmers | {"user"})
+            )
+            if status == "confirmed" and confirmation_valid:
+                pass
+            elif status in {"disputed", "rejected"} and permitted_challenge:
+                current.setdefault("challenges", []).append({
+                    "candidate_value": value,
+                    "status": status,
+                    "proposed_by": proposed_by,
+                    "evidence": valid_evidence,
+                    "turn_id": int(turn_id),
+                })
+                current["status"] = "disputed"
+                current.setdefault("evidence", []).extend(valid_evidence)
+                continue
+            else:
+                # A question or new proposal cannot silently reopen a settled
+                # item. Keep it as audit evidence while preserving the public
+                # confirmed value and status.
+                current.setdefault("superseded_proposals", []).append({
+                    **proposal,
+                    "status": status,
+                    "turn_id": int(turn_id),
+                })
+                continue
         if status == "confirmed" and not confirmation_valid:
             status = "proposed"
         if status == "confirmed" and confirmation_valid:
@@ -582,7 +743,7 @@ def apply_evaluator_updates(
         current["status"] = status
         current["confirmations"] = confirmations
         current.setdefault("evidence", []).extend(valid_evidence)
-    apply_generic_events(state=state, parsed=parsed, turn_text=turn_text)
+    apply_generic_events(state=state, parsed=parsed, turn_text=turn_text, turn_id=turn_id)
     evaluate_conditions(task_config, state)
     apply_explicit_closure(task_config, state, turn_text)
     return evaluate_conditions(task_config, state)
@@ -597,6 +758,7 @@ async def update_task_state(
     npc_turns: list[dict[str, str]],
     orchestration_config: dict[str, Any] | None,
     characters: list[CharacterTemplate],
+    turn_id: int = 0,
 ) -> dict[str, Any]:
     state = deepcopy(previous) if previous else initial_task_state(task_config)
     llm_cfg = await orch_support.get_llm_config(db)
@@ -688,4 +850,5 @@ Follow each field's type and confirmation_policy. Preserve prior confirmed value
         characters=characters,
         player_text=player_text,
         npc_turns=npc_turns,
+        turn_id=turn_id,
     )

@@ -29,6 +29,7 @@ from app.scenario_side import resolve_player_side_goal
 from app.task_state import (
     TERMINAL_OUTCOMES,
     finalize_stalled_task_state,
+    prepare_turn_governance,
     set_progress_metadata,
     task_progress_signature,
 )
@@ -69,7 +70,19 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
         {"speaker_id": m.speaker_id, "speaker_type": m.speaker_type, "content": m.content}
         for m in rows
     ]
-    before_task_state = ((session.shared_state or {}).get("task_state") or {})
+    completed_turns = sum(1 for m in rows if m.speaker_type == "user") + 1
+    safety_max_turns = max(10, min(int((session.run_config or {}).get("safety_max_turns", 50)), 100))
+    max_stagnant_turns = max(4, min(int((session.run_config or {}).get("max_stagnant_turns", 10)), 25))
+    before_task_state = prepare_turn_governance(
+        ((session.shared_state or {}).get("task_state") or {}),
+        characters=list(scenario.characters or []),
+        turn_id=completed_turns,
+        safety_max_turns=safety_max_turns,
+        max_stagnant_turns=max_stagnant_turns,
+    )
+    prepared_shared = dict(session.shared_state or {})
+    prepared_shared["task_state"] = before_task_state
+    session.shared_state = prepared_shared
     before_signature = task_progress_signature(before_task_state)
     if (session.run_config or {}).get("comparison_protocol"):
         move = await generate_comparison_player_move(db, session, scenario, messages)
@@ -91,14 +104,11 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
         if event.get("type") == "turn_result":
             turn_result = {k: v for k, v in event.items() if k != "_result"}
 
-    completed_turns = sum(1 for m in rows if m.speaker_type == "user") + 1
-    safety_max_turns = max(10, min(int((session.run_config or {}).get("safety_max_turns", 50)), 100))
     stop_reason = None
     after_task_state = ((session.shared_state or {}).get("task_state") or {})
     after_signature = task_progress_signature(after_task_state)
     previous_test_state = dict((session.shared_state or {}).get("_test_state") or {})
     stagnant_turns = 0 if after_signature != before_signature else int(previous_test_state.get("stagnant_turns", 0)) + 1
-    max_stagnant_turns = max(4, min(int((session.run_config or {}).get("max_stagnant_turns", 10)), 25))
     completion_status = str(after_task_state.get("completion_status") or "in_progress")
     task_terminal = completion_status in TERMINAL_OUTCOMES
     if task_terminal:

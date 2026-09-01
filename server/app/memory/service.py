@@ -290,6 +290,7 @@ class MemoryService:
                 npc_turns=[{"speaker_id": reply.character_id, "content": reply.content} for reply in result.replies],
                 orchestration_config=orch_cfg,
                 characters=list(scenario.characters),
+                turn_id=turn_id,
             )
         finally:
             llm_provider_failover_enabled.reset(failover_token)

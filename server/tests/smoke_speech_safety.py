@@ -16,9 +16,11 @@ from app.task_state import (
     initial_task_state,
     normalize_evaluator_payload,
     public_task_result,
+    prepare_turn_governance,
     set_progress_metadata,
     task_progress_signature,
 )
+from app.orchestrator.generative import generative_orchestrator
 from app.player_agent import normalize_player_content, pending_public_questions
 
 
@@ -145,6 +147,24 @@ def main() -> None:
     assert task_progress_signature(cross_state) != before_signature
     assert public_task_result(cross_state)["variables"]["outcome"]["value"] is True
 
+    # A later proposal cannot silently reopen a confirmed item.
+    apply_evaluator_updates(
+        task_config=cross_turn_config,
+        state=cross_state,
+        parsed={"updates": [{
+            "field": "outcome", "value": False, "status": "proposed",
+            "proposed_by": "user", "confirmed_by": [],
+            "evidence": [{"speaker_id": "user", "quote": "I propose outcome false"}],
+        }]},
+        characters=[owner],
+        player_text="I propose outcome false",
+        npc_turns=[],
+        turn_id=3,
+    )
+    assert cross_state["variables"]["outcome"]["value"] is True
+    assert cross_state["variables"]["outcome"]["status"] == "confirmed"
+    assert cross_state["variables"]["outcome"]["superseded_proposals"][-1]["value"] is False
+
     # Evidence remains valid across harmless whitespace changes, and an omitted
     # proposer can be recovered from the verified public speaker.
     inferred_state = initial_task_state(cross_turn_config)
@@ -197,8 +217,21 @@ def main() -> None:
         }]},
         characters=[owner], player_text="",
         npc_turns=[{"speaker_id": "owner", "content": "I will send the capacity evidence."}],
+        turn_id=1,
     )
     assert event_state["work_items"]["capacity_evidence"]["status"] == "promised"
+    coordinated = prepare_turn_governance(
+        event_state,
+        characters=[owner],
+        turn_id=3,
+        safety_max_turns=10,
+        max_stagnant_turns=6,
+    )
+    focus = coordinated["progress"]["focus"]
+    assert focus["issue"] == "work:capacity_evidence"
+    assert focus["owner_ids"] == ["owner"]
+    assert focus["due_now"] is True
+    assert coordinated["coordination_history"][-1]["turn_id"] == 3
     promised_signature = task_progress_signature(event_state)
     apply_evaluator_updates(
         task_config={"state_schema": {}, "phases": [{"phase_id": "active"}], "completion_conditions": {"all": []}},
@@ -307,6 +340,11 @@ def main() -> None:
         SimpleNamespace(character_id="second", display_name="Second", character_name="Second", job_title="Advisor", aliases=[], sort_order=1),
     ]
     assert orch_support.match_mentioned_characters("Second, answer before First.", chars) == ["second", "first"]
+    assert [
+        char.character_id for char in generative_orchestrator._agent_order(
+            chars, [], [], ["second"]
+        )
+    ] == ["second", "first"]
     print("NPC speech safety and task-state smoke test: ok")
 
 

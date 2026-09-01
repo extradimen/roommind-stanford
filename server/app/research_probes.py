@@ -43,6 +43,21 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         speaker_id for speaker_id in npc_ids
         if session_mode == "test" and speaker_id not in memories
     ]
+    manifest = run_config.get("research_manifest") or {}
+    is_g2_roommind = (
+        session_mode == "test"
+        and str(manifest.get("architecture_version") or "").startswith("g2-")
+    )
+    coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
+    coordination_turns = [
+        int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
+    ]
+    unknown_focus_owners = sorted({
+        str(owner)
+        for row in coordination_history if isinstance(row, dict)
+        for owner in (((row.get("focus") or {}).get("owner_ids") or []))
+        if str(owner) not in directory
+    })
     checks = {
         "public_transcript_nonempty": bool(messages),
         "sequence_numbers_unique": len(sequence) == len(set(sequence)),
@@ -58,10 +73,19 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "roommind_agent_memory_partitions_present": (
             not missing_memory_partitions if session_mode == "test" else None
         ),
+        "g2_coordination_history_present": (
+            bool(coordination_history) if is_g2_roommind else None
+        ),
+        "g2_coordination_turns_unique_and_increasing": (
+            coordination_turns == sorted(set(coordination_turns)) if is_g2_roommind else None
+        ),
+        "g2_focus_owners_registered": (
+            not unknown_focus_owners if is_g2_roommind else None
+        ),
     }
     applicable = [value for value in checks.values() if value is not None]
     return {
-        "protocol": "roommind-deterministic-integrity-probes-v1",
+        "protocol": "roommind-deterministic-integrity-probes-v2",
         "scope": "implementation_integrity_not_realism",
         "all_applicable_passed": all(applicable),
         "checks": checks,
@@ -70,7 +94,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "empty_message_sequence_nos": empty_messages,
             "duplicate_player_turn_ids": duplicate_player_turns,
             "missing_roommind_memory_partitions": missing_memory_partitions,
+            "unknown_g2_focus_owners": unknown_focus_owners,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }
-

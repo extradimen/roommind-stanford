@@ -1,5 +1,7 @@
 """Pure-Python checks for transcript authenticity and bilingual review schema."""
 
+from copy import deepcopy
+
 from app.external_observer import build_blinded_evaluation_packet
 from app.research_protocol import REALISM_RUBRIC, transcript_provenance
 from app.research_probes import run_integrity_probes
@@ -35,6 +37,26 @@ def main() -> None:
     probes = run_integrity_probes(bundle)
     assert probes["checks"]["sequence_numbers_strictly_increasing"] is False
     assert probes["checks"]["all_public_speakers_registered"] is True
+
+    g2_bundle = deepcopy(bundle)
+    g2_bundle["session"].update({
+        "session_mode": "test",
+        "run_config": {
+            "comparison_protocol": "controlled",
+            "comparison_lock_model": True,
+            "research_manifest": {"architecture_version": "g2-coordinated-independent-agents"},
+        },
+    })
+    g2_bundle["agent_memories"] = {"ceo": []}
+    g2_bundle["task_result"] = {
+        "coordination_history": [{
+            "turn_id": 1,
+            "focus": {"issue": "decision", "owner_ids": ["ceo"]},
+        }]
+    }
+    g2_probes = run_integrity_probes(g2_bundle)
+    assert g2_probes["checks"]["g2_coordination_history_present"] is True
+    assert g2_probes["checks"]["g2_focus_owners_registered"] is True
 
 
 if __name__ == "__main__":
