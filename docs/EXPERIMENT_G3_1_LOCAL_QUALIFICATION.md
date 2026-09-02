@@ -136,6 +136,25 @@ lifecycle `accepted`; the later regressive intents did not mutate the ledger.
 The player's generated words were not regenerated, preserving the shared
 public-only player policy while making RoomMind's acceptance state authoritative.
 
+The final fixed-revision qualification used source commit
+`4c02922428952f57f26a9f078b00020fb0aa4f7e`. Both matched conditions reached
+`dialogue_completed` without technical failure. Baseline ran 10 turns / 40
+messages. RoomMind stopped at four turns / 12 messages with
+`no_task_progress` and `stalled`. The RoomMind transcript SHA-256 is
+`484243d92aa07f93e44f05b315fd25c3e9ba3485c90a862f8b4b58386647fe7f`.
+Its ledger contained two canonical entities and four events: one value-free
+player field proposal plus one first proposal from each of the three NPCs. It
+contained no value-free accepted field, no repeated event by the same actor,
+and all three configured variables remained unknown rather than being falsely
+completed.
+
+The full internal export passed every applicable deterministic integrity probe:
+public transcript structure, registered speakers, comparison model lock,
+independent RoomMind memory partitions, coordination history and focus bounds,
+public evidence grounding, ledger provenance, material inline evidence,
+monotonic clock, valid entity lifecycle, and completion reconciliation. These
+are implementation-integrity gates, not realism scores.
+
 ## Open limitations before server qualification
 
 - Participation-mode human text has no model-produced structured public intent.
@@ -144,10 +163,13 @@ public-only player policy while making RoomMind's acceptance state authoritative
   This does not affect the autonomous matched-pair qualification, but a future
   production iteration needs either an explicit user action UI or a claim-only
   ingestion rule that cannot manufacture completion.
-- The final local 0.8B transcript still contains two proposal entities for a
-  singular/plural wording variant. The normalization correction was added
-  after that run and is covered deterministically; it requires a fresh
-  fixed-revision qualification artifact before server qualification.
+
+## Disposition
+
+Local G3.1 engineering qualification passes. This authorizes preservation and
+push of the milestone commits. It does not authorize staging deployment or a
+confirmatory realism experiment; those require a fixed production-capable
+model and a separately frozen server qualification manifest.
 
 ## Local gates
 
