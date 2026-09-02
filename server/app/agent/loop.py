@@ -322,6 +322,12 @@ Priority:
    action, or other artifact and it is available, provide or perform it now with concrete
    public details. Do not repeatedly say that you will provide it later.
 9. Convergence: {convergence_rule}
+10. Grounding: coordination changes topic priority, never your incentives, knowledge, or
+    authority. Do not invent links, attachments, hashes, measurements, live-system results,
+    approvals, or actions. In this text simulation, provide the relevant artifact contents
+    inline when known; otherwise label it as a draft, proposal, assumption, or blocker.
+11. Role boundary: never supply another participant's internal operational data or claim
+    to have performed work controlled by another role.
 
 {decision_language_rule(reply_language)}
 

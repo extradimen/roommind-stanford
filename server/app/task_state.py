@@ -294,8 +294,22 @@ def evaluate_conditions(task_config: dict[str, Any], task_state: dict[str, Any])
     complete = all(r["met"] for r in all_results) and (not any_results or any(r["met"] for r in any_results))
     task_state["condition_results"] = all_results + any_results
     explicit_outcome = (task_state.get("outcome") or {}).get("type")
-    if complete and (all_results or any_results):
+    has_configured_conditions = bool(all_results or any_results)
+    if complete and has_configured_conditions:
         task_state["completion_status"] = "completed"
+    elif explicit_outcome == "completed" and has_configured_conditions:
+        # Dialogue can claim that work is complete while the evidence-backed
+        # state still contains unmet required conditions.  Preserve the public
+        # claim, but reconcile it to a truthful terminal result rather than
+        # allowing the assertion to override the ledger.
+        outcome = dict(task_state.get("outcome") or {})
+        outcome["claimed_type"] = "completed"
+        outcome["type"] = "conditional" if any(r["met"] for r in [*all_results, *any_results]) else "deferred"
+        outcome["status"] = "reconciled_unmet_conditions"
+        unmet = [r["condition"].get("field") for r in [*all_results, *any_results] if not r["met"]]
+        outcome["unmet_conditions"] = list(dict.fromkeys(str(field) for field in unmet if field))
+        task_state["outcome"] = outcome
+        task_state["completion_status"] = str(outcome["type"])
     elif explicit_outcome in TERMINAL_OUTCOMES:
         task_state["completion_status"] = explicit_outcome
     else:
@@ -350,25 +364,33 @@ def prepare_turn_governance(
     )
 
     focus: dict[str, Any] | None = None
+    registered_ids = {character.character_id for character in characters}
     work_items = state.get("work_items") or {}
-    ranked_work: list[tuple[int, str, dict[str, Any]]] = []
+    ranked_work: list[tuple[int, int, str, dict[str, Any]]] = []
     for key, raw in work_items.items():
         if not isinstance(raw, dict) or raw.get("required") is not True:
             continue
         status = str(raw.get("status") or "unknown")
         if status in {"submitted", "completed", "rejected"}:
             continue
+        raw_owner = "user" if str(raw.get("owner_id") or "") == "player" else str(raw.get("owner_id") or "")
+        raw_target = "user" if str(raw.get("target_id") or "") == "player" else str(raw.get("target_id") or "")
+        if raw_owner not in registered_ids and raw_target not in registered_ids:
+            # The comparison player deliberately has no access to RoomMind's
+            # private coordinator.  Do not select player-only work that this
+            # coordinator cannot route to a responsible NPC.
+            continue
         promised_turn = int(raw.get("promised_turn") or 0)
         age = max(0, int(turn_id) - promised_turn) if promised_turn else 0
         priority = 0 if status == "blocked" else (1 if status == "promised" and age >= 2 else 2)
-        ranked_work.append((priority, str(key), raw))
+        ranked_work.append((priority, promised_turn or int(turn_id), str(key), raw))
     if ranked_work:
-        _, key, item = sorted(ranked_work, key=lambda row: (row[0], row[1]))[0]
+        _, _, key, item = sorted(ranked_work, key=lambda row: (row[0], row[1], row[2]))[0]
         promised_turn = int(item.get("promised_turn") or 0)
         age = max(0, int(turn_id) - promised_turn) if promised_turn else 0
-        owner = str(item.get("owner_id") or "")
-        target = str(item.get("target_id") or "")
-        owner_ids = [cid for cid in (owner, target) if cid and cid != "user"]
+        owner = "user" if str(item.get("owner_id") or "") == "player" else str(item.get("owner_id") or "")
+        target = "user" if str(item.get("target_id") or "") == "player" else str(item.get("target_id") or "")
+        owner_ids = [cid for cid in (owner, target) if cid in registered_ids]
         focus = {
             "issue": f"work:{key}",
             "kind": "work_item",
@@ -785,7 +807,11 @@ current activity. Emit at most four events and only for material changes in the
 current turn. If an event concerns an existing work item, reuse that work item's
 exact key and subject so that it is updated instead of duplicated. Never report
 artifact_reviewed unless that same work item was actually submitted in a prior
-or current public turn.
+or current public turn. Do not treat statements such as "attached", "sent", or
+"uploaded" as artifact_submitted unless the public message also contains the
+material artifact contents or previously established verifiable evidence. Do
+not record invented links, hashes, measurements, approvals, or live-system
+results as completed work.
 
 Return strict JSON only:
 {{

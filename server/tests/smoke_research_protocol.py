@@ -58,6 +58,20 @@ def main() -> None:
     assert g2_probes["checks"]["g2_coordination_history_present"] is True
     assert g2_probes["checks"]["g2_focus_owners_registered"] is True
 
+    # G2 candidate metadata may be stored directly in run_config even if an
+    # older archive omitted the nested manifest.  Player/user aliases are
+    # normalized before checking registered focus owners.
+    g21_bundle = deepcopy(g2_bundle)
+    g21_bundle["session"]["run_config"] = {
+        "comparison_protocol": "controlled",
+        "comparison_lock_model": True,
+        "architecture_version": "g2.1-grounded-coordinated-independent-agents",
+    }
+    g21_bundle["task_result"]["coordination_history"][0]["focus"]["owner_ids"] = ["player"]
+    g21_probes = run_integrity_probes(g21_bundle)
+    assert g21_probes["checks"]["g2_coordination_history_present"] is True
+    assert g21_probes["checks"]["g2_focus_owners_registered"] is True
+
 
 if __name__ == "__main__":
     main()

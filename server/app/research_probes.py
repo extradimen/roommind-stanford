@@ -44,9 +44,14 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         if session_mode == "test" and speaker_id not in memories
     ]
     manifest = run_config.get("research_manifest") or {}
+    architecture_version = str(
+        manifest.get("architecture_version")
+        or run_config.get("architecture_version")
+        or ""
+    )
     is_g2_roommind = (
         session_mode == "test"
-        and str(manifest.get("architecture_version") or "").startswith("g2-")
+        and architecture_version.startswith(("g2-", "g2."))
     )
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
@@ -56,7 +61,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         str(owner)
         for row in coordination_history if isinstance(row, dict)
         for owner in (((row.get("focus") or {}).get("owner_ids") or []))
-        if str(owner) not in directory
+        if ("user" if str(owner) == "player" else str(owner)) not in directory
     })
     checks = {
         "public_transcript_nonempty": bool(messages),

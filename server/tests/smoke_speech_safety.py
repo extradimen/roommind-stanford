@@ -69,6 +69,17 @@ def main() -> None:
     state["variables"]["outcome"]["status"] = "confirmed"
     assert evaluate_conditions(config, state)["completion_status"] == "completed"
 
+    # A conversational claim of completion cannot override unmet configured
+    # conditions.  It becomes a truthful conditional/deferred terminal result.
+    premature_state = initial_task_state(config)
+    premature_state["outcome"] = {
+        "type": "completed", "status": "explicit", "reason": "We are done", "evidence": []
+    }
+    evaluated_premature = evaluate_conditions(config, premature_state)
+    assert evaluated_premature["completion_status"] == "deferred"
+    assert evaluated_premature["outcome"]["claimed_type"] == "completed"
+    assert evaluated_premature["outcome"]["unmet_conditions"] == ["outcome"]
+
     phase_config = {
         "state_schema": {
             "facts_known": {"type": "boolean"},
@@ -232,6 +243,30 @@ def main() -> None:
     assert focus["owner_ids"] == ["owner"]
     assert focus["due_now"] is True
     assert coordinated["coordination_history"][-1]["turn_id"] == 3
+
+    # Player-only work is tracked in the ledger but is not selected as an NPC
+    # coordinator focus because the shared comparison player cannot see the
+    # private RoomMind coordinator.
+    player_only_state = initial_task_state({
+        "state_schema": {}, "phases": [{"phase_id": "active"}],
+        "completion_conditions": {"all": []},
+    })
+    player_only_state["work_items"] = {
+        "player_report": {
+            "required": True, "status": "promised", "owner_id": "player",
+            "target_id": "", "promised_turn": 1,
+        },
+        "owner_report": {
+            "required": True, "status": "promised", "owner_id": "owner",
+            "target_id": "", "promised_turn": 2,
+        },
+    }
+    player_focus = prepare_turn_governance(
+        player_only_state, characters=[owner], turn_id=4,
+        safety_max_turns=10, max_stagnant_turns=6,
+    )["progress"]["focus"]
+    assert player_focus["issue"] == "work:owner_report"
+    assert player_focus["owner_ids"] == ["owner"]
     promised_signature = task_progress_signature(event_state)
     apply_evaluator_updates(
         task_config={"state_schema": {}, "phases": [{"phase_id": "active"}], "completion_conditions": {"all": []}},

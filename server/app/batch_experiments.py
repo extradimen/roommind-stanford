@@ -299,6 +299,8 @@ async def _execute_run(
             scenario_id, condition = run.scenario_id, run.condition
             repetition = run.repetition
             batch_id = run.batch_id
+            batch = await db.get(BatchExperiment, batch_id)
+            batch_config = dict((batch.config if batch else None) or {})
             emit(
                 "batch.run.started",
                 batch_run_id=run_id,
@@ -327,6 +329,12 @@ async def _execute_run(
                     "metrics_protocol": "six-dimension-simulation-realism-v3",
                     "comparison_lock_model": True,
                     "batch_experiment_run_id": run.id,
+                    # Freeze generation metadata into every session.  Forensic
+                    # probes operate on archived sessions and must not depend on
+                    # a mutable parent batch row being available later.
+                    "research_manifest": batch_config.get("research_manifest") or {},
+                    "generation_id": batch_config.get("generation_id"),
+                    "architecture_version": batch_config.get("architecture_version"),
                 },
             )
             session_uuid = session.session_uuid

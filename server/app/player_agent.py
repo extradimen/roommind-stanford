@@ -326,7 +326,9 @@ private memories, agent architecture, internal phase, or system completion.
 Advance an unresolved issue, preserve explicit agreements, avoid repetition,
 and keep the message under 120 words. If direct NPC questions are listed,
 answer the most recent specific question before introducing a new issue. Use
-the dialogue language, default English.
+the dialogue language, default English. Do not invent links, attachments,
+measurements, approvals, live-system results, or facts controlled by another
+participant. Ask the responsible participant for missing evidence instead.
 
 Return strict JSON only:
 {{"content":"exact spoken message","intent":"short label","requested_end":false}}"""
