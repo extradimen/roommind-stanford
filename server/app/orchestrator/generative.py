@@ -33,6 +33,7 @@ from app.orchestrator.llm_binding import resolve_llm
 from app.world.timeline import WorldTimeline
 from app.i18n.reply_language import processing_message
 from app.player_character import resolve_player_character
+from app.public_ledger import ensure_public_ledger
 
 
 class GenerativeOrchestrator:
@@ -92,6 +93,8 @@ class GenerativeOrchestrator:
             )
 
         updated_state = dict(shared_state or {})
+        task_state = updated_state.setdefault("task_state", {})
+        ensure_public_ledger(task_state)
         timeline = WorldTimeline.from_shared_state(updated_state)
         timeline.sync_messages(
             messages[:-1] if messages else [],
@@ -220,7 +223,7 @@ class GenerativeOrchestrator:
                 mentioned=cid in mentioned,
                 timeline=timeline,
                 reply_language=reply_language,
-                task_state=updated_state.get("task_state") or {},
+                task_state=task_state,
             )
             npc_llm_labels[cid] = npc_llm_for(char).label()
 
@@ -237,6 +240,7 @@ class GenerativeOrchestrator:
                 agent_debug[cid]["spoke_content"] = action_result.content
                 agent_debug[cid]["emotion"]        = action_result.emotion
                 agent_debug[cid]["gesture"]        = action_result.gesture
+                agent_debug[cid]["public_ledger_event"] = action_result.public_ledger_event
 
             # Accumulate importance for reflection trigger
             acc = accumulators.get(cid, 0.0)

@@ -14,6 +14,12 @@ from app.llm.client import llm_client
 from app.orchestrator.common import orch_support
 from app.orchestrator.llm_binding import resolve_llm
 from app.models.db import CharacterTemplate
+from app.public_ledger import (
+    MATERIAL_LIFECYCLE,
+    ensure_public_ledger,
+    ledger_has_support,
+    public_ledger_view,
+)
 
 
 ALLOWED_STATUSES = {"unknown", "proposed", "disputed", "confirmed", "rejected"}
@@ -80,6 +86,53 @@ def _resolve_work_item_key(raw: dict[str, Any], work_items: dict[str, Any]) -> t
     return (best_key or requested), subject
 
 
+def _project_public_ledger(state: dict[str, Any]) -> None:
+    """Project canonical ledger lifecycle into legacy read models.
+
+    ``work_items`` remains for compatibility with scenario prompts and exports,
+    but its material status is now a projection. A post-hoc language extractor
+    can add descriptions; it cannot promote a ledger-backed item beyond the
+    lifecycle the simulation actually executed.
+    """
+    work_items = state.setdefault("work_items", {})
+    status_map = {
+        "proposed": "proposed",
+        "committed": "promised",
+        "in_progress": "in_progress",
+        "submitted": "submitted",
+        "verified": "completed",
+        "accepted": "completed",
+        "rejected": "rejected",
+        "blocked": "blocked",
+    }
+    for entity in (ensure_public_ledger(state).get("entities") or {}).values():
+        if not isinstance(entity, dict) or entity.get("kind") not in {
+            "action", "artifact", "verification", "decision", "commitment",
+            "schedule", "issue", "outcome", "handoff",
+        }:
+            continue
+        raw = {"subject": entity.get("subject"), "work_item_key": entity.get("subject")}
+        key, subject = _resolve_work_item_key(raw, work_items)
+        item = dict(work_items.get(key) or {})
+        lifecycle = str(entity.get("lifecycle") or "proposed")
+        item.update({
+            "subject": item.get("subject") or subject,
+            "kind": str(entity.get("kind") or item.get("kind") or "work_item"),
+            "owner_id": str(entity.get("owner_id") or item.get("owner_id") or ""),
+            "target_id": str(entity.get("target_id") or item.get("target_id") or ""),
+            "ledger_entity_id": str(entity.get("entity_id") or ""),
+            "ledger_lifecycle": lifecycle,
+            "status": status_map.get(lifecycle, "proposed"),
+            "last_transition_turn": int(entity.get("last_transition_turn") or 0),
+        })
+        if lifecycle == "committed":
+            item.setdefault("promised_turn", int(entity.get("last_transition_turn") or 0))
+        if lifecycle in {"submitted", "verified", "accepted", "rejected"}:
+            item["resolved_turn"] = int(entity.get("last_transition_turn") or 0)
+        work_items[key] = item
+    state["work_items"] = work_items
+
+
 def _event_is_task_critical(
     raw: dict[str, Any], state: dict[str, Any], existing_item: dict[str, Any]
 ) -> tuple[bool, str]:
@@ -144,6 +197,13 @@ def task_progress_signature(task_state: dict[str, Any] | None) -> str:
             "type": (state.get("outcome") or {}).get("type"),
             "status": (state.get("outcome") or {}).get("status"),
         },
+        "public_ledger": {
+            entity_id: {"lifecycle": entity.get("lifecycle")}
+            for entity_id, entity in sorted(
+                (ensure_public_ledger(state).get("entities") or {}).items()
+            )
+            if isinstance(entity, dict) and entity.get("lifecycle") in MATERIAL_LIFECYCLE
+        },
     }
     return json.dumps(compact, ensure_ascii=False, sort_keys=True, default=str)
 
@@ -151,6 +211,7 @@ def task_progress_signature(task_state: dict[str, Any] | None) -> str:
 def public_task_result(task_state: dict[str, Any] | None) -> dict[str, Any]:
     """Expose auditable outcomes without private prompts, reasoning, or memories."""
     state = task_state or {}
+    _project_public_ledger(state)
     variables = state.get("variables") or {}
     return {
         "phase": state.get("phase"),
@@ -171,12 +232,22 @@ def public_task_result(task_state: dict[str, Any] | None) -> dict[str, Any]:
         "outcome": deepcopy(state.get("outcome") or {}),
         "progress": deepcopy(state.get("progress") or {}),
         "coordination_history": deepcopy((state.get("coordination_history") or [])[-30:]),
+        "public_ledger": public_ledger_view(state),
     }
 
 
 def _evaluator_state_view(state: dict[str, Any]) -> dict[str, Any]:
     """Keep the evaluator prompt bounded as proposals/evidence accumulate."""
-    return public_task_result(state)
+    public = public_task_result(state)
+    ledger = public.get("public_ledger") or {}
+    public["public_ledger"] = {
+        "schema": ledger.get("schema"),
+        "simulation_clock": ledger.get("simulation_clock") or {},
+        "entities": dict(list((ledger.get("entities") or {}).items())[-40:]),
+        "recent_events": list(ledger.get("recent_events") or [])[-20:],
+        "recent_rejections": list(ledger.get("recent_rejections") or [])[-10:],
+    }
+    return public
 
 
 def _evaluator_config_view(task_config: dict[str, Any]) -> dict[str, Any]:
@@ -263,7 +334,7 @@ def initial_task_state(task_config: dict[str, Any]) -> dict[str, Any]:
             "evidence": [],
         }
     return {
-        "schema_version": 4,
+        "schema_version": 5,
         "phase": first,
         "completion_status": "in_progress",
         "variables": variables,
@@ -273,6 +344,7 @@ def initial_task_state(task_config: dict[str, Any]) -> dict[str, Any]:
         "work_items": {},
         "outcome": {"type": None, "status": "open", "reason": "", "evidence": []},
         "progress": {"stagnant_turns": 0, "last_progress_turn": 0},
+        "public_ledger": ensure_public_ledger({}),
     }
 
 
@@ -327,11 +399,21 @@ def advance_phase(task_config: dict[str, Any], task_state: dict[str, Any]) -> st
 
 
 def evaluate_conditions(task_config: dict[str, Any], task_state: dict[str, Any]) -> dict[str, Any]:
+    _project_public_ledger(task_state)
     root = task_config.get("completion_conditions") or {"all": []}
     variables = task_state.get("variables") or {}
     all_results = [_condition_result(c, variables) for c in root.get("all", [])]
     any_results = [_condition_result(c, variables) for c in root.get("any", [])]
-    complete = all(r["met"] for r in all_results) and (not any_results or any(r["met"] for r in any_results))
+    required_work_open = any(
+        isinstance(item, dict) and item.get("required") is True
+        and item.get("status") not in {"submitted", "completed", "rejected"}
+        for item in (task_state.get("work_items") or {}).values()
+    )
+    complete = (
+        all(r["met"] for r in all_results)
+        and (not any_results or any(r["met"] for r in any_results))
+        and not required_work_open
+    )
     task_state["condition_results"] = all_results + any_results
     explicit_outcome = (task_state.get("outcome") or {}).get("type")
     has_configured_conditions = bool(all_results or any_results)
@@ -395,6 +477,7 @@ def prepare_turn_governance(
     private memories.
     """
     state = deepcopy(task_state)
+    _project_public_ledger(state)
     progress = dict(state.get("progress") or {})
     stagnant_turns = max(0, int(progress.get("stagnant_turns") or 0))
     remaining_turns = max(0, int(safety_max_turns) - int(turn_id) + 1)
@@ -645,9 +728,23 @@ def apply_generic_events(
             {**raw, "evidence": evidence}, state, item
         )
         milestones = set(item.get("milestones") or [])
-        transition_valid = not (
-            event_type == "artifact_reviewed" and "artifact_submitted" not in milestones
-        )
+        transition_error = ""
+        if event_type == "artifact_submitted" and not ledger_has_support(
+            state, kind="artifact", subject=subject,
+            minimum={"submitted", "verified", "accepted"},
+        ):
+            transition_error = "artifact_submission_not_supported_by_public_ledger"
+        elif event_type == "artifact_reviewed" and not ledger_has_support(
+            state, kind="artifact", subject=subject,
+            minimum={"verified", "accepted"},
+        ):
+            transition_error = "artifact_review_not_supported_by_public_ledger"
+        elif event_type == "action_completed" and not ledger_has_support(
+            state, kind="action", subject=subject,
+            minimum={"verified", "accepted"},
+        ):
+            transition_error = "action_completion_not_supported_by_public_ledger"
+        transition_valid = not transition_error
         event = {
             "event_index": next_event_index,
             "turn_id": int(turn_id),
@@ -662,7 +759,7 @@ def apply_generic_events(
         }
         next_event_index += 1
         if not transition_valid:
-            event["transition_error"] = "artifact_review_requires_prior_submission"
+            event["transition_error"] = transition_error
         ledger.append(event)
         if not transition_valid:
             continue
@@ -774,10 +871,12 @@ def apply_evaluator_updates(
     """Apply untrusted model extraction through schema and authority checks."""
     schema = task_config.get("state_schema") or {}
     authorized: dict[str, set[str]] = {field: set() for field in schema}
+    executable_fields: set[str] = set()
     for character in characters:
         for field in (character.authority or {}).get("can_confirm", []):
             if field in authorized:
                 authorized[field].add(character.character_id)
+        executable_fields.update((character.authority or {}).get("can_execute") or [])
     turn_text = {"user": player_text}
     turn_text.update({str(row.get("speaker_id")): str(row.get("content") or "") for row in npc_turns})
     variables = state.setdefault("variables", {})
@@ -834,6 +933,24 @@ def apply_evaluator_updates(
             "player_and_responsible_participant": has_player and has_authorized,
             "player_and_assignee": has_player and has_authorized,
         }.get(policy, False)
+        if (
+            status == "confirmed"
+            and field in executable_fields
+            and not ledger_has_support(
+                state,
+                kind="action",
+                subject=str(field),
+                field=str(field),
+                minimum={"verified", "accepted"},
+            )
+        ):
+            confirmation_valid = False
+            current.setdefault("permission_violations", []).append({
+                "action": "confirm_without_verified_public_action",
+                "field": field,
+                "claimed_by": confirmations,
+                "turn_id": int(turn_id),
+            })
         was_confirmed = current.get("status") == "confirmed"
         if was_confirmed and not same_value:
             challenge_speakers = {str(row["speaker_id"]) for row in valid_evidence}
@@ -878,6 +995,7 @@ def apply_evaluator_updates(
         current["confirmations"] = confirmations
         current.setdefault("evidence", []).extend(valid_evidence)
     apply_generic_events(state=state, parsed=parsed, turn_text=turn_text, turn_id=turn_id)
+    _project_public_ledger(state)
     evaluate_conditions(task_config, state)
     apply_explicit_closure(task_config, state, turn_text)
     return evaluate_conditions(task_config, state)

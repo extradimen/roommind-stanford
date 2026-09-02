@@ -21,6 +21,8 @@ class NPCReply:
     emotion: str = "neutral"
     gesture: str = "talking"
     reasoning: str = ""
+    public_intent: dict[str, Any] | None = None
+    public_ledger_event: dict[str, Any] | None = None
 
 
 @dataclass

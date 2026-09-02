@@ -52,10 +52,11 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     )
     is_g2_roommind = (
         session_mode == "test"
-        and architecture_version.startswith(("g2-", "g2."))
+        and architecture_version.startswith(("g2-", "g2.", "g3"))
     )
-    is_g22_roommind = session_mode == "test" and architecture_version.startswith(("g2.2", "g2.3"))
-    is_g23_roommind = session_mode == "test" and architecture_version.startswith("g2.3")
+    is_g22_roommind = session_mode == "test" and architecture_version.startswith(("g2.2", "g2.3", "g3"))
+    is_g23_roommind = session_mode == "test" and architecture_version.startswith(("g2.3", "g3"))
+    is_g3_roommind = session_mode == "test" and architecture_version.startswith("g3")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -108,6 +109,55 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
                 "reason": reason,
             })
         prior_public_context = f"{prior_public_context}\n{row.get('content') or ''}"[-12000:]
+    task_result = full_bundle.get("task_result") or {}
+    public_ledger = task_result.get("public_ledger") or {}
+    ledger_events = public_ledger.get("recent_events") or []
+    ledger_entities = public_ledger.get("entities") or {}
+    invalid_ledger_events = [
+        str(row.get("event_id") or "") for row in ledger_events
+        if not isinstance(row, dict)
+        or not row.get("event_id")
+        or row.get("provenance") != "prevalidated_agent_intent"
+        or not str((row.get("public_evidence") or {}).get("quote") or "").strip()
+    ]
+    unsupported_terminal_ledger_events = [
+        str(row.get("event_id") or "") for row in ledger_events
+        if isinstance(row, dict)
+        and row.get("entity_kind") in {"artifact", "action", "verification"}
+        and row.get("transition_to") in {"submitted", "verified", "accepted"}
+        and not str(row.get("inline_content") or "").strip()
+    ]
+    clock = public_ledger.get("simulation_clock") or {}
+    clock_turn = int(clock.get("turn") or 0)
+    future_ledger_events = [
+        str(row.get("event_id") or "") for row in ledger_events
+        if isinstance(row, dict) and (
+            int(row.get("turn_id") or 0) > clock_turn
+            or row.get("clock_valid") is False
+        )
+    ]
+    ledger_clock_sequence = [
+        (int(row.get("turn_id") or 0), int(row.get("tick") or 0))
+        for row in ledger_events if isinstance(row, dict)
+    ]
+    duplicate_ledger_event_ids = sorted({
+        str(row.get("event_id") or "") for row in ledger_events
+        if sum(1 for candidate in ledger_events if isinstance(candidate, dict)
+               and candidate.get("event_id") == row.get("event_id")) > 1
+    })
+    invalid_entity_lifecycle = sorted(
+        str(entity_id) for entity_id, entity in ledger_entities.items()
+        if not isinstance(entity, dict) or entity.get("lifecycle") not in {
+            "proposed", "committed", "in_progress", "submitted", "verified",
+            "accepted", "rejected", "blocked",
+        }
+    )
+    completion_status = str(task_result.get("completion_status") or "")
+    open_required_work = [
+        str(key) for key, item in (task_result.get("work_items") or {}).items()
+        if isinstance(item, dict) and item.get("required") is True
+        and item.get("status") not in {"submitted", "completed", "rejected"}
+    ]
     checks = {
         "public_transcript_nonempty": bool(messages),
         "sequence_numbers_unique": len(sequence) == len(set(sequence)),
@@ -144,6 +194,29 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "g23_outcome_resolution_grounded": (
             not invalid_outcome_resolution if is_g23_roommind else None
         ),
+        "g3_authoritative_public_ledger_present": (
+            public_ledger.get("schema") == "roommind-public-world-ledger-v1"
+            if is_g3_roommind else None
+        ),
+        "g3_ledger_events_have_public_provenance": (
+            not invalid_ledger_events if is_g3_roommind else None
+        ),
+        "g3_terminal_actions_have_inline_evidence": (
+            not unsupported_terminal_ledger_events if is_g3_roommind else None
+        ),
+        "g3_simulation_clock_monotonic": (
+            not future_ledger_events
+            and ledger_clock_sequence == sorted(ledger_clock_sequence)
+            and not duplicate_ledger_event_ids
+            if is_g3_roommind else None
+        ),
+        "g3_entity_lifecycle_valid": (
+            not invalid_entity_lifecycle if is_g3_roommind else None
+        ),
+        "g3_completion_reconciles_required_work": (
+            not (completion_status == "completed" and open_required_work)
+            if is_g3_roommind else None
+        ),
     }
     applicable = [value for value in checks.values() if value is not None]
     return {
@@ -161,6 +234,12 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "noncritical_focus_issues": noncritical_focus_issues,
             "excessive_focus_streaks": excessive_focus_streaks,
             "invalid_outcome_resolution_turns": invalid_outcome_resolution,
+            "invalid_g3_ledger_event_ids": invalid_ledger_events,
+            "unsupported_terminal_g3_event_ids": unsupported_terminal_ledger_events,
+            "future_g3_ledger_event_ids": future_ledger_events,
+            "duplicate_g3_ledger_event_ids": duplicate_ledger_event_ids,
+            "invalid_g3_entity_lifecycle": invalid_entity_lifecycle,
+            "open_required_work_at_completion": open_required_work,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }

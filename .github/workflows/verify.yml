@@ -40,6 +40,10 @@ jobs:
         working-directory: server
       - run: python tests/smoke_speech_safety.py
         working-directory: server
+      - run: python tests/smoke_public_ledger.py
+        working-directory: server
+      - run: python tests/smoke_research_protocol.py
+        working-directory: server
       - run: python tests/smoke_llm_resilience.py
         working-directory: server
 

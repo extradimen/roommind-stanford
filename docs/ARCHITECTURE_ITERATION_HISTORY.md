@@ -414,3 +414,39 @@ outcome-resolution计数，并在G2.2探针中自动验证公开证据和工作�
 **保持不变：** 角色独立记忆、计划、反思、私有信息边界、GPT-OSS 120B、共享
 公共玩家、传统独立智能体Baseline、场景信息和六维评价量表均不改变。详细协议见
 `docs/EXPERIMENT_G2_3_QUALIFICATION.md`。
+
+## 第17轮：G2.3资格失败与G3统一公共世界账本
+
+**触发证据：** G2.3资格批次
+`79078212-aab9-45fa-baf1-cc64ba880a13`完成8/8对话和48/48维度评价，技术失败为0，
+转录哈希全部复算一致且互不重复。但四场RoomMind只有两场结束，另外两场因
+`no_task_progress`停止；两场“完成”又存在过早完成。RoomMind六维均值全部低于
+匹配Baseline：角色5.50对6.00、信息边界5.25对6.25、时序4.50对6.25、互动结构
+5.75对6.00、多方互动5.25对5.75、程序真实性5.00对6.50。逐条精读458条公开
+消息也显示Baseline在四个配对中均更自然连贯。
+完整冻结结果见`docs/EXPERIMENT_G2_3_QUALIFICATION_RESULTS.md`。
+
+**根因判断：** G2.3仍采用“先说话，后抽取状态”。`variables`、`work_items`、
+`event_ledger`由状态评价模型从自然语言反推，协调器、发言安全器和完成判定读取的
+不是同一个权威事实源。正则探针虽能拦截部分附件、链接和哈希措辞，却无法系统性
+保证动作是否实际发生、谁有权限、何时发生以及能否计入任务完成。因此探针在存在
+虚构状态页、附件、存储位置和已完成动作的对话上仍出现全通过。
+
+**G3机制：** 新增唯一的`roommind-public-world-ledger-v1`作为公开世界真相源。
+每个角色在自然语言生成前输出结构化public intent，系统按权限、simulation scope、
+inline evidence和生命周期进行确定性校验。生命周期统一为proposed、committed、
+in_progress、submitted、verified、accepted，以及rejected、blocked。外部动作不能在
+文本会议中被当作完成；文档或验证只有把实际内容公开内联后才能进入终态。校验后的
+意图再渲染成自然语言，若措辞越过已批准生命周期则拒绝重写；成功公开后才把事件、
+角色、回合、tick、原话证据和provenance写入账本。
+
+**统一读取：** 旧`work_items`保留为兼容读模型，但其物质状态由账本投影；后验LLM
+抽取器只能附加原文证据，不能把没有账本支持的artifact/action提升为submitted、
+reviewed或completed。协调器、进展签名、完成判定和导出都读取同一账本；存在必要
+未完成工作时不得标记completed。新增账本存在性、事件来源、终态inline evidence、
+统一时钟、生命周期和完成条件一致性探针。
+
+**保持不变：** Stanford式每角色独立记忆、计划、检索和反思保持不变；公共账本
+不是共享私有记忆。固定模型、共享AI玩家、传统独立智能体Baseline、匹配场景、六维
+评价和独立人工盲评原则均保持不变。详细协议见
+`docs/EXPERIMENT_G3_QUALIFICATION.md`。G3必须创建新批次，不能覆盖G1至G2.3数据。

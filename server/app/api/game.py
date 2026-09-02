@@ -25,6 +25,7 @@ from app.external_observer import build_blinded_evaluation_packet
 from app.external_evaluator import evaluate_public_transcript
 from app.player_character import resolve_player_character
 from app.player_agent import generate_comparison_player_move, generate_player_move
+from app.public_ledger import commit_public_intent
 from app.scenario_side import resolve_player_side_goal
 from app.task_state import (
     TERMINAL_OUTCOMES,
@@ -88,6 +89,15 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
         move = await generate_comparison_player_move(db, session, scenario, messages)
     else:
         move = await generate_player_move(db, session, scenario, messages)
+    if move.public_intent and move.public_intent.get("commit_allowed", True):
+        commit_public_intent(
+            before_task_state,
+            intent=move.public_intent,
+            public_quote=move.content,
+            tick=0,
+        )
+        prepared_shared["task_state"] = before_task_state
+        session.shared_state = prepared_shared
     turn_result: dict = {}
     async for event in memory_service.process_player_message_stream(
         db,
@@ -99,6 +109,7 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
             "intent": move.intent,
             "generation_model": move.model_label,
             "requested_end": move.requested_end,
+            "public_intent": move.public_intent,
         },
     ):
         if event.get("type") == "turn_result":
@@ -158,6 +169,7 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
             "intent": move.intent,
             "requested_end": move.requested_end,
             "model": move.model_label,
+            "public_intent": move.public_intent,
         },
         "turn_result": turn_result,
         "status": session.status,

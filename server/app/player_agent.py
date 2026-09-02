@@ -19,6 +19,7 @@ from app.models.db import GameSession, ScenarioTemplate
 from app.orchestrator.common import orch_support
 from app.orchestrator.llm_binding import resolve_llm
 from app.player_character import resolve_player_character
+from app.public_ledger import validate_public_intent
 from app.scenario_side import resolve_player_side_goal
 from app.telemetry import emit
 
@@ -30,6 +31,7 @@ class PlayerMove:
     requested_end: bool
     model_label: str
     raw: str
+    public_intent: dict[str, Any] | None = None
 
 
 def normalize_player_content(value: Any) -> str:
@@ -205,6 +207,15 @@ Return strict JSON only:
 {{
   "content": "the exact next spoken message",
   "intent": "short strategy label",
+  "public_intent": {{
+    "kind": "statement|fact|proposal|decision|commitment|action|artifact|verification|schedule|issue|outcome|handoff",
+    "subject": "one concise public subject",
+    "transition": "proposed|committed|in_progress|submitted|verified|accepted|rejected|blocked",
+    "target_id": "optional character_id",
+    "field": "optional configured state field",
+    "simulation_scope": "discussion|in_session|external",
+    "inline_content": "actual in-session result/content, otherwise empty"
+  }},
   "requested_end": false
 }}"""
 
@@ -240,7 +251,14 @@ Return strict JSON only:
             continue
         parsed = orch_support.parse_json(raw)
         content = normalize_player_content(parsed.get("content") or "")
-        rejection = player_speech_rejection_reason(content, public_context=dialogue) or ""
+        validated_intent = validate_public_intent(
+            character={**player, "character_id": "user", "authority": {}},
+            intent=parsed.get("public_intent"),
+            turn_id=turn_id,
+        )
+        rejection = player_speech_rejection_reason(
+            content, public_context=dialogue, validated_intent=validated_intent
+        ) or ""
         if rejection:
             emit(
                 "llm.public_output.rejected",
@@ -257,10 +275,23 @@ Return strict JSON only:
             "I'd like to begin with the first task-relevant question. I will respond "
             "with concrete evidence and work toward the stated objective."
         )
-        parsed = {"intent": "safe_task_opening", "requested_end": False}
+        parsed = {"intent": "safe_task_opening", "requested_end": False, "public_intent": {}}
 
     intent = str(parsed.get("intent") or "unspecified")
     requested_end = bool(parsed.get("requested_end", False))
+    public_intent = validate_public_intent(
+        character={**player, "character_id": "user", "authority": {}},
+        intent=parsed.get("public_intent"),
+        turn_id=turn_id,
+    )
+    emit(
+        "public_ledger.intent.validated",
+        actor_id="user", turn_id=turn_id, kind=public_intent.get("kind"),
+        requested_transition=public_intent.get("requested_transition"),
+        applied_transition=public_intent.get("transition"),
+        validation=public_intent.get("validation"),
+        validation_reason=public_intent.get("validation_reason"),
+    )
     await player_store.append(
         db,
         node_type="action",
@@ -284,6 +315,7 @@ Return strict JSON only:
         requested_end=requested_end,
         model_label=player_llm.label(),
         raw=raw,
+        public_intent=public_intent,
     )
 
 
@@ -338,7 +370,8 @@ measurements, approvals, live-system results, or facts controlled by another
 participant. Ask the responsible participant for missing evidence instead.
 
 Return strict JSON only:
-{{"content":"exact spoken message","intent":"short label","requested_end":false}}"""
+{{"content":"exact spoken message","intent":"short label","requested_end":false,
+"public_intent":{{"kind":"statement|fact|proposal|decision|commitment|action|artifact|verification|schedule|issue|outcome|handoff","subject":"one concise public subject","transition":"proposed|committed|in_progress|submitted|verified|accepted|rejected|blocked","target_id":"optional character_id","field":"optional configured state field","simulation_scope":"discussion|in_session|external","inline_content":"actual in-session result/content, otherwise empty"}}}}"""
     raw = ""
     parsed: dict[str, Any] = {}
     content = ""
@@ -367,7 +400,15 @@ Return strict JSON only:
             continue
         parsed = orch_support.parse_json(raw)
         content = normalize_player_content(parsed.get("content") or "").strip()
-        rejection = player_speech_rejection_reason(content, public_context=dialogue) or ""
+        turn_id = sum(1 for message in messages if message.get("speaker_type") == "user") + 1
+        validated_intent = validate_public_intent(
+            character={**player, "character_id": "user", "authority": {}},
+            intent=parsed.get("public_intent"),
+            turn_id=turn_id,
+        )
+        rejection = player_speech_rejection_reason(
+            content, public_context=dialogue, validated_intent=validated_intent
+        ) or ""
         if rejection:
             emit(
                 "llm.public_output.rejected",
@@ -380,11 +421,26 @@ Return strict JSON only:
         rejection = rejection or "invalid_json_fields"
     if not content or rejection:
         content = "Could you clarify the most important unresolved issue and the evidence needed to resolve it?"
-        parsed = {"intent": "request_clarification", "requested_end": False}
+        parsed = {"intent": "request_clarification", "requested_end": False, "public_intent": {}}
+    turn_id = sum(1 for message in messages if message.get("speaker_type") == "user") + 1
+    public_intent = validate_public_intent(
+        character={**player, "character_id": "user", "authority": {}},
+        intent=parsed.get("public_intent"),
+        turn_id=turn_id,
+    )
+    emit(
+        "public_ledger.intent.validated",
+        actor_id="user", turn_id=turn_id, kind=public_intent.get("kind"),
+        requested_transition=public_intent.get("requested_transition"),
+        applied_transition=public_intent.get("transition"),
+        validation=public_intent.get("validation"),
+        validation_reason=public_intent.get("validation_reason"),
+    )
     return PlayerMove(
         content=content,
         intent=str(parsed.get("intent") or "unspecified"),
         requested_end=bool(parsed.get("requested_end", False)),
         model_label=resolved.label(),
         raw=raw,
+        public_intent=public_intent,
     )

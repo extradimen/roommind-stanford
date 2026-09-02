@@ -14,6 +14,7 @@ from app.llm.client import LLMEmptyContentError, llm_client
 from app.models.db import CharacterTemplate, ScenarioTemplate
 from app.orchestrator.common import NPCReply
 from app.orchestrator.llm_binding import ResolvedLlm
+from app.public_ledger import commit_public_intent, validate_public_intent
 from app.i18n.reply_language import (
     action_internal_note,
     action_internal_summary,
@@ -40,6 +41,7 @@ class AgentDecision:
     plan_update: str | None = None
     internal_note: str | None = None
     moment_importance: float = 4.0
+    public_intent: dict[str, Any] = field(default_factory=dict)
     raw: str = ""
 
 
@@ -58,6 +60,7 @@ class ActionResult:
     internal_note: str | None = None
     memory_nodes: list[MemoryNode] = field(default_factory=list)
     world_events: list[WorldEvent] = field(default_factory=list)
+    public_ledger_event: dict[str, Any] | None = None
 
 
 async def render_npc_speech(
@@ -72,7 +75,8 @@ async def render_npc_speech(
     gesture: str = "talking",
     active_plan_text: str = "",
     reply_language: str = "en",
-) -> tuple[str, str, str]:
+    validated_intent: dict[str, Any] | None = None,
+) -> tuple[str, str, str, bool]:
     """
     Stanford: NPC speech is grounded in the agent's active plan.
     The plan is passed in so the NPC knows *why* they are speaking,
@@ -80,7 +84,7 @@ async def render_npc_speech(
     """
     draft = draft.strip()
     if not draft:
-        return idle_ack(reply_language), emotion, gesture
+        return idle_ack(reply_language), emotion, gesture, False
 
     lang_rule = speech_language_rule(reply_language)
 
@@ -89,6 +93,7 @@ You are in a multi-role task simulation. Speak naturally in 1-2 sentences based 
 
 Intent for this turn (from your decision): {reasoning}
 Core content to convey: {draft}
+Validated public-world intent: {validated_intent or {"kind": "statement", "transition": "proposed"}}
 
 Recent dialogue:
 {conversation_context[-600:]}
@@ -104,6 +109,9 @@ Requirements:
 - Do not say phrases such as "my plan is", "I will first", "private knowledge",
   "real floor", or "reservation value".
 - Finish every sentence; never return a visibly cut-off fragment.
+- Never claim a stronger lifecycle state than the validated public-world intent.
+- If the intent was downgraded, describe only the applied transition (for
+  example, a commitment), not the requested completed action.
 {lang_rule}
 - Output only what you say aloud; no JSON or explanation
 
@@ -142,6 +150,7 @@ Requirements:
             cleaned,
             active_plan_text=active_plan_text,
             public_context=f"{conversation_context}\n{user_input}",
+            validated_intent=validated_intent,
         ) or ""
         if rejection:
             emit(
@@ -152,7 +161,7 @@ Requirements:
                 retrying=attempt == 0,
             )
         if not rejection:
-            return cleaned, emotion, gesture
+            return cleaned, emotion, gesture, True
 
     configured = character.fallback_actions or {}
     fallback = str(configured.get("default") or "").strip()
@@ -167,7 +176,7 @@ Requirements:
             fallback = "Please clarify the highest-priority open issue so I can help move the task forward."
         else:
             fallback = "Please clarify the highest-priority open issue before I commit."
-    return fallback, emotion, gesture
+    return fallback, emotion, gesture, False
 
 
 async def _record_action_memory(
@@ -215,9 +224,10 @@ async def _apply_speak(
     tick: int,
     timeline: WorldTimeline | None,
     reply_language: str = "en",
+    task_state: dict[str, Any] | None = None,
 ) -> ActionResult:
     plan = active_plan(nodes)
-    content, emotion, gesture = await render_npc_speech(
+    content, emotion, gesture, intent_rendered = await render_npc_speech(
         character=character,
         conversation_context=conversation_context,
         user_input=user_input,
@@ -228,11 +238,26 @@ async def _apply_speak(
         gesture=decision.speak_gesture,
         active_plan_text=plan.content if plan else "",
         reply_language=reply_language,
+        validated_intent=decision.public_intent,
     )
     result.spoke = True
     result.content = content
     result.emotion = emotion
     result.gesture = gesture
+
+    if (
+        task_state is not None
+        and decision.public_intent
+        and decision.public_intent.get("commit_allowed", True)
+        and intent_rendered
+    ):
+        ledger_event = commit_public_intent(
+            task_state,
+            intent=decision.public_intent,
+            public_quote=content,
+            tick=tick,
+        )
+        result.public_ledger_event = ledger_event
 
     if timeline is not None:
         evt = timeline.append(
@@ -286,8 +311,27 @@ async def execute_decision(
     mentioned: bool,
     timeline: WorldTimeline | None = None,
     reply_language: str = "en",
+    task_state: dict[str, Any] | None = None,
 ) -> ActionResult:
     """Execute a structured decision: memory writes + optional speech on world line."""
+
+    decision.public_intent = validate_public_intent(
+        character=character,
+        intent=decision.public_intent,
+        turn_id=turn_id,
+        state=task_state,
+    )
+    emit(
+        "public_ledger.intent.validated",
+        actor_id=character.character_id,
+        turn_id=turn_id,
+        kind=decision.public_intent.get("kind"),
+        requested_transition=decision.public_intent.get("requested_transition"),
+        applied_transition=decision.public_intent.get("transition"),
+        validation=decision.public_intent.get("validation"),
+        validation_reason=decision.public_intent.get("validation_reason"),
+        commit_allowed=decision.public_intent.get("commit_allowed"),
+    )
 
     action = decision.action.lower()
     result = ActionResult(
@@ -353,6 +397,7 @@ async def execute_decision(
                 tick=speak_tick,
                 timeline=timeline,
                 reply_language=reply_language,
+                task_state=task_state,
             )
 
         if plan_text:
@@ -403,6 +448,7 @@ async def execute_decision(
                 tick=tick,
                 timeline=timeline,
                 reply_language=reply_language,
+                task_state=task_state,
             )
         if note:
             await _record_action_memory(
@@ -437,6 +483,7 @@ async def execute_decision(
             tick=tick,
             timeline=timeline,
             reply_language=reply_language,
+            task_state=task_state,
         )
 
     if action == "wait" and speak_quota_remaining > 0 and mentioned:
@@ -459,6 +506,7 @@ async def execute_decision(
             tick=tick,
             timeline=timeline,
             reply_language=reply_language,
+            task_state=task_state,
         )
 
     if action == "wait" and timeline is not None:
@@ -550,6 +598,7 @@ def decision_from_llm(raw: dict[str, Any], raw_text: str = "") -> AgentDecision:
         plan_update=str(raw.get("plan_update") or "").strip() or None,
         internal_note=str(raw.get("internal_note") or "").strip() or None,
         moment_importance=float(raw.get("moment_importance", 4)),
+        public_intent=dict(raw.get("public_intent") or {}),
         raw=raw_text[:500],
     )
 
@@ -562,6 +611,8 @@ def action_to_npc_reply(character: CharacterTemplate, result: ActionResult) -> N
         emotion=result.emotion,
         gesture=result.gesture,
         reasoning=result.reasoning,
+        public_intent=(result.public_ledger_event or {}).get("validated_intent"),
+        public_ledger_event=result.public_ledger_event,
     )
 
 

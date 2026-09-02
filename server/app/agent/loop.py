@@ -102,6 +102,8 @@ def _bounded_governance_view(task_state: dict[str, Any] | None) -> dict[str, Any
     """Keep decision prompts bounded without changing the persisted task ledger."""
     public = public_task_result(task_state or {})
     work_items = list((public.get("work_items") or {}).items())[-15:]
+    ledger = public.get("public_ledger") or {}
+    entities = list((ledger.get("entities") or {}).items())[-30:]
     return {
         "phase": public.get("phase"),
         "completion_status": public.get("completion_status"),
@@ -111,6 +113,12 @@ def _bounded_governance_view(task_state: dict[str, Any] | None) -> dict[str, Any
         "recent_events": list(public.get("recent_events") or [])[-10:],
         "outcome": public.get("outcome") or {},
         "progress": public.get("progress") or {},
+        "public_ledger": {
+            "schema": ledger.get("schema"),
+            "simulation_clock": ledger.get("simulation_clock") or {},
+            "entities": dict(entities),
+            "recent_events": list(ledger.get("recent_events") or [])[-15:],
+        },
     }
 
 
@@ -328,6 +336,10 @@ Priority:
     inline when known; otherwise label it as a draft, proposal, assumption, or blocker.
 11. Role boundary: never supply another participant's internal operational data or claim
     to have performed work controlled by another role.
+12. Public-world intent: before speaking, describe the single public state transition your
+    utterance requests. External work cannot complete in a text meeting. Use transition
+    committed for promised external work. Use submitted/verified/accepted only for
+    in-session work whose concrete result or artifact content is included inline.
 
 {decision_language_rule(reply_language)}
 
@@ -338,6 +350,15 @@ Output strict JSON only:
   "speak": {{"content": "What to say when action=speak", "emotion": "neutral|concerned|confident|firm", "gesture": "talking|nodding|thinking|leaning"}},
   "plan_update": "New plan text if action=update_plan, else null",
   "internal_note": "Inner monologue if action=internal_note, else null",
+  "public_intent": {{
+    "kind": "statement|fact|proposal|decision|commitment|action|artifact|verification|schedule|issue|outcome|handoff",
+    "subject": "one stable concise public subject",
+    "transition": "proposed|committed|in_progress|submitted|verified|accepted|rejected|blocked",
+    "target_id": "optional user or character_id",
+    "field": "optional configured state field",
+    "simulation_scope": "discussion|in_session|external",
+    "inline_content": "actual in-session result or artifact content, otherwise empty"
+  }},
   "moment_importance": integer 1-10
 }}"""
 
@@ -394,6 +415,7 @@ Output strict JSON only:
         mentioned=mentioned,
         timeline=timeline,
         reply_language=reply_language,
+        task_state=task_state,
     )
 
     return _loop_result_from_action(

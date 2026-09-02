@@ -85,7 +85,8 @@ def unsupported_evidence_reason(content: str, *, public_context: str = "") -> st
 
 
 def speech_rejection_reason(
-    content: str, *, active_plan_text: str = "", public_context: str = ""
+    content: str, *, active_plan_text: str = "", public_context: str = "",
+    validated_intent: dict | None = None,
 ) -> str | None:
     """Reject obvious internal-plan echoes and visibly truncated public speech."""
     text = " ".join((content or "").split()).strip()
@@ -104,12 +105,35 @@ def speech_rejection_reason(
     if unsupported:
         return unsupported
 
+    # G3: wording may not upgrade a transition that the public-world ledger
+    # downgraded. This closes the gap where natural-language rendering claimed
+    # completion after the action validator accepted only a commitment.
+    intent = validated_intent or {}
+    transition = str(intent.get("transition") or "")
+    if transition in {"proposed", "committed", "in_progress", "blocked"}:
+        for sentence in re.split(r"(?<=[.!?])\s+|[;]\s*", text):
+            terminal_claim = re.search(
+                r"\b(?:(?:it|this|that|the\s+[\w -]+)\s+(?:is|was|has been)|"
+                r"(?:we|i)\s+(?:have\s+|['’]ve\s+)?)"
+                r"(?:completed|submitted|uploaded|sent|verified|approved|accepted|executed)\b",
+                sentence,
+                flags=re.IGNORECASE,
+            )
+            if terminal_claim and not re.search(
+                r"\b(?:if|once|when|after|before|unless|until)\b",
+                sentence[:terminal_claim.start()],
+                flags=re.IGNORECASE,
+            ):
+                return "speech_exceeds_validated_lifecycle"
+
     if text[-1] not in ".!?\"'”’":
         return "truncated"
     return None
 
 
-def player_speech_rejection_reason(content: str, *, public_context: str = "") -> str | None:
+def player_speech_rejection_reason(
+    content: str, *, public_context: str = "", validated_intent: dict | None = None
+) -> str | None:
     """Reject malformed structured output accidentally exposed as player dialogue."""
     text = (content or "").strip()
     if text.startswith(("{", "[", "```")):
@@ -117,4 +141,6 @@ def player_speech_rejection_reason(content: str, *, public_context: str = "") ->
     lowered = text.casefold()
     if '"content"' in lowered and '"intent"' in lowered:
         return "structured_output"
-    return speech_rejection_reason(text, public_context=public_context)
+    return speech_rejection_reason(
+        text, public_context=public_context, validated_intent=validated_intent
+    )

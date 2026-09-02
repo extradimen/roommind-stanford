@@ -314,7 +314,11 @@ class MemoryService:
                 content=reply.content,
                 emotion=reply.emotion,
                 gesture=reply.gesture,
-                meta={"reasoning": reply.reasoning},
+                meta={
+                    "reasoning": reply.reasoning,
+                    "public_intent": reply.public_intent,
+                    "public_ledger_event": reply.public_ledger_event,
+                },
                 created_at=datetime.now(timezone.utc),
             )
             db.add(msg)

@@ -128,6 +128,53 @@ def main() -> None:
     bad_streak = run_integrity_probes(g23_bundle)
     assert bad_streak["checks"]["g23_focus_streak_bounded"] is False
 
+    g3_bundle = deepcopy(g2_bundle)
+    g3_bundle["session"]["run_config"] = {
+        "comparison_protocol": "controlled",
+        "comparison_lock_model": True,
+        "architecture_version": "g3-ledger-grounded-multi-agent-simulation",
+    }
+    g3_bundle["task_result"] = {
+        "completion_status": "in_progress",
+        "work_items": {},
+        "coordination_history": [{
+            "turn_id": 1,
+            "focus": {"issue": "decision", "kind": "state_variable", "focus_streak": 1, "owner_ids": ["ceo"]},
+        }],
+        "public_ledger": {
+            "schema": "roommind-public-world-ledger-v1",
+            "simulation_clock": {"turn": 1, "tick": 1},
+            "entities": {
+                "artifact:capacity_report": {
+                    "kind": "artifact", "lifecycle": "submitted",
+                }
+            },
+            "recent_events": [{
+                "event_id": "ple-00001", "turn_id": 1, "tick": 1,
+                "entity_kind": "artifact", "transition_to": "submitted",
+                "inline_content": "Capacity is 5,200 units per month.",
+                "public_evidence": {"quote": "Capacity is 5,200 units per month."},
+                "provenance": "prevalidated_agent_intent",
+            }],
+        },
+    }
+    g3_probes = run_integrity_probes(g3_bundle)
+    assert g3_probes["checks"]["g3_authoritative_public_ledger_present"] is True
+    assert g3_probes["checks"]["g3_ledger_events_have_public_provenance"] is True
+    assert g3_probes["checks"]["g3_terminal_actions_have_inline_evidence"] is True
+    assert g3_probes["checks"]["g3_simulation_clock_monotonic"] is True
+    assert g3_probes["checks"]["g3_completion_reconciles_required_work"] is True
+
+    invalid_g3 = deepcopy(g3_bundle)
+    invalid_g3["task_result"]["public_ledger"]["recent_events"][0]["inline_content"] = ""
+    invalid_g3["task_result"]["completion_status"] = "completed"
+    invalid_g3["task_result"]["work_items"] = {
+        "required_report": {"required": True, "status": "promised"}
+    }
+    invalid_g3_probes = run_integrity_probes(invalid_g3)
+    assert invalid_g3_probes["checks"]["g3_terminal_actions_have_inline_evidence"] is False
+    assert invalid_g3_probes["checks"]["g3_completion_reconciles_required_work"] is False
+
 
 if __name__ == "__main__":
     main()

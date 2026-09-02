@@ -22,6 +22,7 @@ from app.task_state import (
 )
 from app.orchestrator.generative import generative_orchestrator
 from app.player_agent import normalize_player_content, pending_public_questions
+from app.public_ledger import commit_public_intent, validate_public_intent
 
 
 def main() -> None:
@@ -406,6 +407,20 @@ def main() -> None:
         npc_turns=[{"speaker_id": "owner", "content": "I will send the capacity evidence."}],
     )
     assert task_progress_signature(event_state) == promised_signature
+    submitted_intent = validate_public_intent(
+        character=owner,
+        state=event_state,
+        turn_id=4,
+        intent={
+            "kind": "artifact", "subject": "capacity evidence",
+            "transition": "submitted", "simulation_scope": "in_session",
+            "inline_content": "Capacity: 5,200 units monthly.",
+        },
+    )
+    commit_public_intent(
+        event_state, intent=submitted_intent,
+        public_quote="Here is the capacity evidence: 5,200 units monthly.", tick=1,
+    )
     apply_evaluator_updates(
         task_config={"state_schema": {}, "phases": [{"phase_id": "active"}], "completion_conditions": {"all": []}},
         state=event_state,
@@ -421,6 +436,20 @@ def main() -> None:
     assert event_state["work_items"]["capacity_evidence"]["status"] == "submitted"
     assert task_progress_signature(event_state) != promised_signature
     submitted_signature = task_progress_signature(event_state)
+    verified_intent = validate_public_intent(
+        character=owner,
+        state=event_state,
+        turn_id=5,
+        intent={
+            "kind": "artifact", "subject": "capacity evidence",
+            "transition": "verified", "simulation_scope": "in_session",
+            "inline_content": "Reviewed capacity: 5,200 units monthly.",
+        },
+    )
+    commit_public_intent(
+        event_state, intent=verified_intent,
+        public_quote="I reviewed the capacity evidence: 5,200 units monthly.", tick=1,
+    )
     apply_evaluator_updates(
         task_config={"state_schema": {}, "phases": [{"phase_id": "active"}], "completion_conditions": {"all": []}},
         state=event_state,
@@ -454,6 +483,71 @@ def main() -> None:
     )
     assert "unsubmitted_report" not in invalid_review_state["work_items"]
     assert invalid_review_state["event_ledger"][-1]["transition_valid"] is False
+
+    # Executable state cannot be confirmed by speech alone. It becomes
+    # confirmable only after the corresponding public action is verified.
+    executor = SimpleNamespace(
+        character_id="executor",
+        authority={"can_confirm": ["containment_active"], "can_execute": ["containment_active"]},
+    )
+    executable_config = {
+        "state_schema": {
+            "containment_active": {
+                "type": "boolean", "confirmation_policy": "responsible_participant",
+            }
+        },
+        "phases": [{"phase_id": "active"}],
+        "completion_conditions": {"all": [{
+            "field": "containment_active", "operator": "==", "value": True,
+        }]},
+    }
+    executable_state = initial_task_state(executable_config)
+    claimed_update = {
+        "updates": [{
+            "field": "containment_active", "value": True, "status": "confirmed",
+            "confirmed_by": ["executor"],
+            "evidence": [{"speaker_id": "executor", "quote": "Containment is active"}],
+        }]
+    }
+    apply_evaluator_updates(
+        task_config=executable_config, state=executable_state, parsed=claimed_update,
+        characters=[executor], player_text="",
+        npc_turns=[{"speaker_id": "executor", "content": "Containment is active."}],
+        turn_id=1,
+    )
+    assert executable_state["variables"]["containment_active"]["status"] == "proposed"
+    submitted_action = validate_public_intent(
+        character=executor, state=executable_state, turn_id=2,
+        intent={
+            "kind": "action", "subject": "activate containment",
+            "field": "containment_active", "transition": "submitted",
+            "simulation_scope": "in_session", "inline_content": "Traffic isolation command executed.",
+        },
+    )
+    commit_public_intent(
+        executable_state, intent=submitted_action,
+        public_quote="Traffic isolation command executed.", tick=1,
+    )
+    verified_action = validate_public_intent(
+        character=executor, state=executable_state, turn_id=3,
+        intent={
+            "kind": "action", "subject": "activate containment",
+            "field": "containment_active", "transition": "verified",
+            "simulation_scope": "in_session", "inline_content": "Isolation verified from the stated traffic result.",
+        },
+    )
+    commit_public_intent(
+        executable_state, intent=verified_action,
+        public_quote="Isolation is verified from the stated traffic result.", tick=1,
+    )
+    apply_evaluator_updates(
+        task_config=executable_config, state=executable_state, parsed=claimed_update,
+        characters=[executor], player_text="",
+        npc_turns=[{"speaker_id": "executor", "content": "Containment is active."}],
+        turn_id=3,
+    )
+    assert executable_state["variables"]["containment_active"]["status"] == "confirmed"
+    assert executable_state["completion_status"] == "completed"
 
     info_state = initial_task_state({
         "state_schema": {}, "phases": [{"phase_id": "active"}],
