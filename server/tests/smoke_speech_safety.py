@@ -50,6 +50,21 @@ def main() -> None:
         "I've attached the verified capacity report for approval."
     ) == "unsupported_artifact_claim"
     assert speech_rejection_reason(
+        "I've just emailed you the signed capacity letter, and the attachment includes the schedule."
+    ) == "unsupported_artifact_claim"
+    assert speech_rejection_reason(
+        "Archive upload completed and the checksums match the source hashes."
+    ) == "unsupported_artifact_claim"
+    assert speech_rejection_reason(
+        "The evidence is stored at repo://evidence/incident/archive."
+    ) == "unsupported_url"
+    assert speech_rejection_reason(
+        "I will send the signed capacity letter tomorrow."
+    ) is None, "future commitments remain valid work items rather than fabricated completion"
+    assert speech_rejection_reason(
+        "Could you confirm whether the signed capacity letter has been emailed?"
+    ) is None, "a request for evidence is not itself a fabricated completion claim"
+    assert speech_rejection_reason(
         "Review https://invented.example/report for the evidence."
     ) == "unsupported_url"
     assert speech_rejection_reason(
@@ -332,7 +347,51 @@ def main() -> None:
     assert first_rotation["progress"]["focus"]["issue"] == "work:blocked_report"
     assert second_rotation["progress"]["focus"]["issue"] == "work:blocked_report"
     assert third_rotation["progress"]["focus"]["issue"] == "outcome"
+    assert third_rotation["progress"]["focus"]["kind"] == "state_variable"
     assert third_rotation["progress"]["focus"]["rotated_from_issue"] == "work:blocked_report"
+
+    # State variables are also bounded.  With an alternative, focus rotates;
+    # with only one unresolved field, the third turn requires honest outcome
+    # resolution instead of repeating the same proposal indefinitely.
+    two_field_config = {
+        "state_schema": {
+            "first": {"type": "boolean"},
+            "second": {"type": "boolean"},
+        },
+        "phases": [{"phase_id": "active"}],
+        "completion_conditions": {"all": []},
+    }
+    two_field_state = initial_task_state(two_field_config)
+    first_state_focus = prepare_turn_governance(
+        two_field_state, characters=[owner], turn_id=1,
+        safety_max_turns=10, max_stagnant_turns=6,
+    )
+    second_state_focus = prepare_turn_governance(
+        first_state_focus, characters=[owner], turn_id=2,
+        safety_max_turns=10, max_stagnant_turns=6,
+    )
+    rotated_state_focus = prepare_turn_governance(
+        second_state_focus, characters=[owner], turn_id=3,
+        safety_max_turns=10, max_stagnant_turns=6,
+    )["progress"]["focus"]
+    assert rotated_state_focus["issue"] == "second"
+    assert rotated_state_focus["rotated_from_issue"] == "first"
+
+    sole_state = initial_task_state(config)
+    sole_first = prepare_turn_governance(
+        sole_state, characters=[owner], turn_id=1,
+        safety_max_turns=10, max_stagnant_turns=6,
+    )
+    sole_second = prepare_turn_governance(
+        sole_first, characters=[owner], turn_id=2,
+        safety_max_turns=10, max_stagnant_turns=6,
+    )
+    sole_resolution = prepare_turn_governance(
+        sole_second, characters=[owner], turn_id=3,
+        safety_max_turns=10, max_stagnant_turns=6,
+    )["progress"]["focus"]
+    assert sole_resolution["kind"] == "outcome_resolution"
+    assert sole_resolution["origin_focus_issue"] == "outcome"
     promised_signature = task_progress_signature(event_state)
     apply_evaluator_updates(
         task_config={"state_schema": {}, "phases": [{"phase_id": "active"}], "completion_conditions": {"all": []}},

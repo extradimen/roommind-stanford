@@ -23,12 +23,45 @@ _INTERNAL_SPEECH_MARKERS = (
 
 _UNSUPPORTED_ARTIFACT_PATTERNS = (
     r"\b(?:i(?:['’]ve| have)?|we(?:['’]ve| have)?)\s+(?:attached|uploaded)\b",
+    r"\b(?:i(?:['’]ve| have)?|we(?:['’]ve| have)?)\s+(?:just\s+)?(?:sent|emailed|forwarded|submitted|archived|stored|streamed)\b",
+    r"\b(?:has|have|had)\s+been\s+(?:attached|uploaded|sent|emailed|forwarded|submitted|archived|stored|streamed)\b",
     r"\b(?:attached|uploaded)\s+(?:is|are|you(?:'ll| will) find)\b",
+    r"\b(?:the\s+)?attachment\s+(?:contains|includes|is|has)\b",
+    r"\b(?:archive|file|document|report|letter|draft|package)\s+(?:upload|submission|transfer)\s+(?:is\s+)?(?:complete|completed|verified)\b",
+    r"\b(?:upload|submission|transfer)\s+(?:is\s+)?(?:complete|completed|verified)\b",
     r"\bplease\s+find\s+(?:the\s+)?(?:attached|enclosed)\b",
+    r"\b(?:see|review|check)\s+(?:the\s+)?attached\b",
     r"\b(?:download|open|access)\s+(?:it|the\s+(?:file|document|report))\s+(?:at|here)\b",
+    r"\b(?:checksum|hash)(?:es)?\s+(?:has|have)?\s*(?:been\s+)?(?:verified|validated|matched|confirmed)\b",
+    r"\b(?:checksum|hash)(?:es)?\s+match(?:es|ed)?\b",
 )
-_URL_RE = re.compile(r"https?://[^\s<>\]\[\)\(]+", flags=re.IGNORECASE)
+_URL_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:https?|ftp|s3|repo|file)://[^\s<>\]\[\)\(]+",
+    flags=re.IGNORECASE,
+)
 _HASH_RE = re.compile(r"(?<![A-Za-z0-9])[a-fA-F0-9]{32,64}(?![A-Za-z0-9])")
+_ARTIFACT_REQUEST_PREFIX_RE = re.compile(
+    r"\b(?:(?:could|can|would|will)\s+you|please\s+(?:confirm|send|forward|provide)|"
+    r"confirm\s+(?:whether|if|once)|ask(?:ing)?\s+(?:whether|if))\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _contains_unsupported_artifact_claim(text: str) -> bool:
+    """Separate impossible completed claims from legitimate requests/promises."""
+    sentences = re.split(r"(?<=[.!?])\s+|[;]\s*", text)
+    for sentence in sentences:
+        for pattern in _UNSUPPORTED_ARTIFACT_PATTERNS:
+            match = re.search(pattern, sentence, flags=re.IGNORECASE)
+            if not match:
+                continue
+            # Asking another participant to confirm/provide evidence does not
+            # itself assert that an external side effect occurred.  The later
+            # answer is still rejected if it invents completed delivery.
+            if _ARTIFACT_REQUEST_PREFIX_RE.search(sentence[:match.start()]):
+                continue
+            return True
+    return False
 
 
 def unsupported_evidence_reason(content: str, *, public_context: str = "") -> str | None:
@@ -40,7 +73,7 @@ def unsupported_evidence_reason(content: str, *, public_context: str = "") -> st
     """
     text = " ".join((content or "").split()).strip()
     context = " ".join((public_context or "").split())
-    if any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in _UNSUPPORTED_ARTIFACT_PATTERNS):
+    if _contains_unsupported_artifact_claim(text):
         return "unsupported_artifact_claim"
     for value in _URL_RE.findall(text):
         if value not in context:

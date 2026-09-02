@@ -11,7 +11,14 @@ import httpx
 
 from app.llm.client import LLMClient, LLMEmptyContentError, llm_provider_failover_enabled
 from app.player_agent import bounded_dialogue
-from app.external_evaluator import _dispatch_metrics, _normalize_evaluation, _public_transcript
+from app.external_evaluator import (
+    REALISM_DIMENSIONS as EVALUATOR_DIMENSIONS,
+    _dispatch_metrics,
+    _normalize_evaluation,
+    _public_transcript,
+    evaluate_public_transcript,
+    missing_evaluation_dimensions,
+)
 from app.batch_experiments import _dialogue_retry_result
 from app.baseline_chat import (
     BASELINE_MEMORY_KEY,
@@ -79,6 +86,22 @@ async def call_client(responses: list[FakeResponse | Exception], max_tokens: int
 
 
 async def main() -> None:
+    partial_evaluation = {
+        "dimensions": {
+            name: {"dimension_score": 6, "metrics": {}}
+            for name in (
+                "epistemic_fidelity", "temporal_coherence",
+                "interaction_structure_fidelity", "multi_party_dynamics_fidelity",
+                "procedural_fidelity",
+            )
+        },
+        "evaluation_errors": {"role_strategic_fidelity": "truncated JSON"},
+    }
+    assert missing_evaluation_dimensions(partial_evaluation) == ["role_strategic_fidelity"]
+    partial_evaluation["dimensions"]["role_strategic_fidelity"] = {
+        "dimension_score": 5, "metrics": {}
+    }
+    assert missing_evaluation_dimensions(partial_evaluation) == []
     compact_source = [
         {"role": "system", "content": "S" * 20000},
         *({"role": "user", "content": f"old-{i}-" + "x" * 4000} for i in range(20)),
@@ -144,11 +167,58 @@ async def main() -> None:
         ),
     ]
     scenario = SimpleNamespace(
-        title="Independent baseline fixture", description="A public case",
+        id=1, title="Independent baseline fixture", description="A public case",
         player_side_goal="Reach a decision", business_goal="Reach a decision",
         opponent_side_goal="Protect interests", task_config={}, phases=["opening"],
         win_conditions=[], orchestration_config={}, characters=full_profiles,
     )
+    frozen_dimensions = {
+        name: {
+            "dimension_score": 6,
+            "metrics": {
+                metric: {"score": 6, "evidence_sequence_nos": [], "reason": "frozen"}
+                for metric in metrics
+            },
+            "strengths": [], "issues": [], "notes": "frozen",
+        }
+        for name, metrics in EVALUATOR_DIMENSIONS.items()
+        if name != "role_strategic_fidelity"
+    }
+    incremental_existing = {
+        "dimensions": frozen_dimensions,
+        "evaluation_errors": {"role_strategic_fidelity": "previous truncation"},
+    }
+    evaluated_names: list[str] = []
+
+    async def one_missing_dimension(**kwargs):
+        evaluated_names.append(kwargs["dimension"])
+        return {
+            "dimension_score": 5,
+            "metrics": {
+                metric: {"score": 5, "evidence_sequence_nos": [], "reason": "retry"}
+                for metric in kwargs["metrics"]
+            },
+            "strengths": [], "issues": [], "notes": "retried",
+        }
+
+    evaluator_resolved = SimpleNamespace(
+        provider="ollama", model="fixture", max_tokens=600,
+        label=lambda: "ollama/fixture",
+    )
+    with (
+        patch("app.external_evaluator.orch_support.get_llm_config", AsyncMock(return_value={})),
+        patch("app.external_evaluator.orch_support.load_dispatch_rules", AsyncMock(return_value=[])),
+        patch("app.external_evaluator.resolve_llm", return_value=evaluator_resolved),
+        patch("app.external_evaluator._evaluate_dimension", side_effect=one_missing_dimension),
+    ):
+        incremental_result = await evaluate_public_transcript(
+            None, scenario=scenario, messages=[], system_claim={},
+            existing_evaluation=incremental_existing,
+        )
+    assert evaluated_names == ["role_strategic_fidelity"]
+    assert incremental_result["dimensions"]["epistemic_fidelity"] == frozen_dimensions["epistemic_fidelity"]
+    assert incremental_result["dimension_scores"]["role_strategic_fidelity"] == 5
+    assert incremental_result["evaluation_errors"] == {}
     generation_session = SimpleNamespace(
         shared_state={},
         run_config={"working_message_limit": 5, "comparison_lock_model": True},

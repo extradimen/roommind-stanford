@@ -434,12 +434,8 @@ def prepare_turn_governance(
         promised_turn = int(raw.get("promised_turn") or 0)
         age = max(0, int(turn_id) - promised_turn) if promised_turn else 0
         issue = f"work:{key}"
-        blocked_cooldown = bool(
-            status == "blocked" and issue == last_issue and trailing_focus_streak >= 2
-        )
         priority = (
-            3 if blocked_cooldown
-            else 0 if status == "blocked" or (status == "promised" and age >= 2)
+            0 if status == "blocked" or (status == "promised" and age >= 2)
             else 2
         )
         candidates.append({
@@ -455,7 +451,7 @@ def prepare_turn_governance(
             )),
             "age_turns": age,
             "due_now": bool(status == "blocked" or age >= 2),
-            "blocked_cooldown": blocked_cooldown,
+            "blocked_cooldown": False,
         })
 
     variables = state.get("variables") or {}
@@ -483,49 +479,61 @@ def prepare_turn_governance(
         })
 
     if candidates:
-        chosen = sorted(
+        ordered = sorted(
             candidates,
             key=lambda row: (int(row["priority"]), int(row["order"]), str(row["key"])),
-        )[0]
+        )
+        chosen = ordered[0]
+        # A single unresolved state variable can monopolize the conversation
+        # just as easily as a blocked work item.  Give every ordinary focus at
+        # most two consecutive turns.  Rotate to the best alternative when one
+        # exists; otherwise require an explicit truthful outcome resolution.
+        if last_issue and chosen["issue"] == last_issue and trailing_focus_streak >= 2:
+            alternative = next(
+                (row for row in ordered if str(row.get("issue") or "") != last_issue),
+                None,
+            )
+            if alternative is not None:
+                chosen = {**alternative, "rotated_from_issue": last_issue}
+            else:
+                prior_focus = (prior_history[-1].get("focus") or {}) if prior_history else {}
+                chosen = {
+                    "priority": -1,
+                    "order": int(turn_id),
+                    "key": "outcome_resolution",
+                    "issue": "outcome_resolution",
+                    "kind": "outcome_resolution",
+                    "status": str(prior_focus.get("status") or chosen.get("status") or "unresolved"),
+                    "subject": str(prior_focus.get("subject") or chosen.get("subject") or last_issue),
+                    "owner_ids": list(prior_focus.get("owner_ids") or chosen.get("owner_ids") or []),
+                    "age_turns": int(prior_focus.get("age_turns") or chosen.get("age_turns") or 0),
+                    "due_now": True,
+                    "blocked_cooldown": True,
+                    "origin_focus_issue": last_issue,
+                    "rotated_from_issue": last_issue,
+                }
         focus = {
             key: value for key, value in chosen.items()
             if key not in {"priority", "order", "key"}
         }
-        if focus.get("blocked_cooldown"):
-            blocked_issue = str(focus.get("issue") or "")
-            focus.update({
-                "issue": "outcome_resolution",
-                "kind": "outcome",
-                "status": "blocked",
-                "origin_blocked_issue": blocked_issue,
-                "rotated_from_issue": blocked_issue,
-                "due_now": True,
-            })
-        focus["focus_streak"] = trailing_focus_streak + 1 if focus["issue"] == last_issue else 1
-        cooled_issue = next(
-            (row["issue"] for row in candidates if row.get("blocked_cooldown")), None
+        focus["focus_streak"] = (
+            trailing_focus_streak + 1 if focus["issue"] == last_issue else 1
         )
-        if cooled_issue and focus["issue"] != cooled_issue:
-            focus["rotated_from_issue"] = cooled_issue
 
     if focus:
-        if closeout_required:
+        if focus.get("kind") == "outcome_resolution":
+            instruction = (
+                "This unresolved focus has already held the floor for two turns. "
+                "Do not restate or invent completion evidence. Resolve the current activity "
+                "truthfully now: confirm it with existing public evidence, explicitly reject "
+                "or block it, hand it off with an owner and review point, or state a "
+                "conditional, deferred, or failed outcome naming what remains unresolved."
+            )
+        elif closeout_required:
             instruction = (
                 "Close out this focus now: the responsible role must either complete/confirm it "
                 "with public evidence, explicitly block or reject it, hand it off with an owner "
                 "and review point, or state a truthful conditional/deferred/failed outcome."
-            )
-        elif focus.get("kind") == "outcome":
-            instruction = (
-                "The prior blocker cannot keep the floor. Resolve the meeting honestly now: "
-                "name a concrete handoff/alternative, reject the blocked path, or state a "
-                "conditional, deferred, or failed outcome with the unresolved issue."
-            )
-        elif focus.get("status") == "blocked" and int(focus.get("focus_streak") or 0) >= 3:
-            instruction = (
-                "This blocker has already held focus for two turns. Do not restate it. "
-                "Provide a concrete handoff/alternative, reject the blocked path, or state a "
-                "truthful conditional/deferred/failed outcome now."
             )
         elif focus.get("due_now"):
             instruction = (

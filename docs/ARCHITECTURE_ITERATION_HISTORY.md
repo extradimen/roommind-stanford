@@ -391,3 +391,26 @@ outcome-resolution计数，并在G2.2探针中自动验证公开证据和工作�
 **保持不变：** Stanford式独立记忆、计划、反思、私有边界、固定GPT-OSS 120B、
 共享公共玩家、传统独立智能体Baseline与六维盲评协议均不变。详细资格协议见
 `docs/EXPERIMENT_G2_2_QUALIFICATION.md`。
+
+## 第16轮：G2.2资格失败与G2.3有界焦点、状态化证据校验
+
+**触发证据：** G2.2资格批次
+`a0a86a39-69ef-4da3-b76a-afb0ee0d5d25`完成8/8对话及48/48维度评价，哈希、
+独立记忆与基本协调历史均完整；但四场RoomMind仅一场形成task-grounded条件性
+终局，两场达到安全上限。供应链程序真实性5.0，低于Baseline的5.5。
+
+**发现的实现缺口：** 自动grounding probe漏掉“已发邮件附件”“upload completed”、
+`repo://`位置与checksum已验证等虚构完成事实。四场RoomMind共70个协调回合全部
+聚焦state variable，没有一次work-item或outcome-resolution焦点；单一状态焦点连续
+占用12–16轮，因此G2.2关键工作探针属于真空通过。评价补跑还会重新生成六个维度，
+导致一个缺失维度补齐时另一个已完成维度可能被新失败覆盖。
+
+**G2.3机制：** 将不可验证的外部完成动作、通用仓库URI和checksum验证声明纳入
+输出前拒绝；任意普通焦点最多连续两轮，有替代事项则轮换，无替代事项则进入
+`outcome_resolution`并要求真实确认、阻塞、移交、条件结束、延期或失败；新增最终
+导出独立扫描、焦点连续性与outcome来源探针；评价重试只调用缺失维度，并以追加
+方式保留已经完成的分数和遥测。
+
+**保持不变：** 角色独立记忆、计划、反思、私有信息边界、GPT-OSS 120B、共享
+公共玩家、传统独立智能体Baseline、场景信息和六维评价量表均不改变。详细协议见
+`docs/EXPERIMENT_G2_3_QUALIFICATION.md`。

@@ -105,6 +105,29 @@ def main() -> None:
     assert failed_grounding["checks"]["g22_public_evidence_grounded"] is False
     assert failed_grounding["all_applicable_passed"] is False
 
+    g23_bundle = deepcopy(g2_bundle)
+    g23_bundle["session"]["run_config"] = {
+        "comparison_protocol": "controlled",
+        "comparison_lock_model": True,
+        "architecture_version": "g2.3-grounded-bounded-focus-agents",
+    }
+    g23_bundle["task_result"] = {
+        "coordination_history": [
+            {"turn_id": 1, "focus": {"issue": "decision", "kind": "state_variable", "focus_streak": 1, "owner_ids": ["ceo"]}},
+            {"turn_id": 2, "focus": {"issue": "decision", "kind": "state_variable", "focus_streak": 2, "owner_ids": ["ceo"]}},
+            {"turn_id": 3, "focus": {"issue": "outcome_resolution", "kind": "outcome_resolution", "focus_streak": 1, "origin_focus_issue": "decision", "owner_ids": ["ceo"]}},
+        ],
+    }
+    g23_probes = run_integrity_probes(g23_bundle)
+    assert g23_probes["checks"]["g23_focus_streak_bounded"] is True
+    assert g23_probes["checks"]["g23_outcome_resolution_grounded"] is True
+    g23_bundle["task_result"]["coordination_history"][2]["focus"] = {
+        "issue": "decision", "kind": "state_variable", "focus_streak": 3,
+        "owner_ids": ["ceo"],
+    }
+    bad_streak = run_integrity_probes(g23_bundle)
+    assert bad_streak["checks"]["g23_focus_streak_bounded"] is False
+
 
 if __name__ == "__main__":
     main()

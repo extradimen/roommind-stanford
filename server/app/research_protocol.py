@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any
 
 
-CURRENT_GENERATION_ID = "G2.2"
-CURRENT_ARCHITECTURE_VERSION = "g2.2-critical-grounded-coordinated-agents"
+CURRENT_GENERATION_ID = "G2.3"
+CURRENT_ARCHITECTURE_VERSION = "g2.3-grounded-bounded-focus-agents"
 EXPERIMENT_PROTOCOL_VERSION = "roommind-generational-experiment-v1"
 HUMAN_REVIEW_PROTOCOL_VERSION = "blinded-bilingual-expert-review-v4"
 

@@ -10,6 +10,7 @@ import random
 import time
 import traceback
 import uuid
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
@@ -186,10 +187,13 @@ def _coordination_summary(
             bool(row.get("rotated_from_issue")) for row in focuses
         ),
         "coordinator_outcome_resolution_count": sum(
-            row.get("kind") == "outcome" for row in focuses
+            row.get("kind") in {"outcome", "outcome_resolution"} for row in focuses
         ),
         "coordinator_task_critical_work_focus_count": sum(
             row.get("kind") == "work_item" for row in focuses
+        ),
+        "coordinator_task_critical_focus_count": sum(
+            row.get("kind") in {"state_variable", "work_item"} for row in focuses
         ),
         "task_critical_work_item_count": sum(
             isinstance(item, dict) and item.get("required") is True
@@ -708,6 +712,17 @@ async def _evaluate_run(run_id: int) -> None:
                 raise RuntimeError("Frozen dialogue session no longer exists")
             scenario = await orch_support.load_scenario(db, session.scenario_id)
             public = build_public_session_export_bundle(await build_session_export_bundle(db, session))
+            existing_external_evaluation = (session.shared_state or {}).get("_external_evaluation")
+            if not isinstance(existing_external_evaluation, dict) and isinstance(
+                existing.get("realism_dimensions"), dict
+            ):
+                # A restart or legacy archive may retain flattened run scores
+                # even when the session-side evaluation envelope is absent.
+                # Reconstruct enough state to keep completed dimensions frozen.
+                existing_external_evaluation = {
+                    "dimensions": deepcopy(existing.get("realism_dimensions") or {}),
+                    "evaluation_errors": dict(existing.get("evaluation_errors") or {}),
+                }
             with telemetry_context(
                 batch_run_id=run.id, batch_id=run.batch_id, session_uuid=run.session_uuid,
                 scenario_id=run.scenario_id, condition=run.condition,
@@ -718,6 +733,7 @@ async def _evaluate_run(run_id: int) -> None:
                     evaluate_public_transcript(
                         db, scenario=scenario, messages=public.get("messages") or [],
                         system_claim=(public.get("external_observation") or {}).get("system_claim") or {},
+                        existing_evaluation=existing_external_evaluation,
                     ),
                     timeout=EXTERNAL_EVALUATION_TIMEOUT_SECONDS,
                 )
@@ -743,11 +759,12 @@ async def _evaluate_run(run_id: int) -> None:
                 "llm_events": [row for row in evaluation_events
                                if str(row.get("event") or "").startswith("llm.")],
             }]
+            prior_evaluation_trace = list(existing.get("evaluation_performance_trace") or [])
             merged = {**existing, **evaluated,
                       "dialogue_status": "completed", "evaluation_status": evaluation_status,
                       "evaluated_dimension_count": completed_dimensions,
                       "evaluation_errors": evaluation.get("evaluation_errors") or {},
-                      "evaluation_performance_trace": evaluation_trace,
+                      "evaluation_performance_trace": [*prior_evaluation_trace, *evaluation_trace][-12:],
                       "evaluation_completed_at": _now().isoformat()}
             run = await db.get(BatchExperimentRun, run_id)
             if run:

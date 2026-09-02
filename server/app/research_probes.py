@@ -54,7 +54,8 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         session_mode == "test"
         and architecture_version.startswith(("g2-", "g2."))
     )
-    is_g22_roommind = session_mode == "test" and architecture_version.startswith("g2.2")
+    is_g22_roommind = session_mode == "test" and architecture_version.startswith(("g2.2", "g2.3"))
+    is_g23_roommind = session_mode == "test" and architecture_version.startswith("g2.3")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -76,6 +77,24 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         if item.get("required") is not True or not item.get("criticality_reason"):
             noncritical_focus_issue_set.add(issue)
     noncritical_focus_issues = sorted(noncritical_focus_issue_set)
+    excessive_focus_streaks = [
+        {
+            "turn_id": int(row.get("turn_id") or 0),
+            "issue": str((row.get("focus") or {}).get("issue") or ""),
+            "focus_streak": int((row.get("focus") or {}).get("focus_streak") or 0),
+        }
+        for row in coordination_history if isinstance(row, dict)
+        and isinstance(row.get("focus"), dict)
+        and (row.get("focus") or {}).get("kind") != "outcome_resolution"
+        and int((row.get("focus") or {}).get("focus_streak") or 0) > 2
+    ]
+    invalid_outcome_resolution = [
+        int(row.get("turn_id") or 0)
+        for row in coordination_history if isinstance(row, dict)
+        and isinstance(row.get("focus"), dict)
+        and (row.get("focus") or {}).get("kind") == "outcome_resolution"
+        and not str((row.get("focus") or {}).get("origin_focus_issue") or "")
+    ]
     unsupported_public_evidence: list[dict[str, Any]] = []
     prior_public_context = ""
     for row in sorted(messages, key=lambda item: int(item.get("sequence_no") or 0)):
@@ -119,6 +138,12 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "g22_work_focuses_task_critical": (
             not noncritical_focus_issues if is_g22_roommind else None
         ),
+        "g23_focus_streak_bounded": (
+            not excessive_focus_streaks if is_g23_roommind else None
+        ),
+        "g23_outcome_resolution_grounded": (
+            not invalid_outcome_resolution if is_g23_roommind else None
+        ),
     }
     applicable = [value for value in checks.values() if value is not None]
     return {
@@ -134,6 +159,8 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "unknown_g2_focus_owners": unknown_focus_owners,
             "unsupported_public_evidence": unsupported_public_evidence,
             "noncritical_focus_issues": noncritical_focus_issues,
+            "excessive_focus_streaks": excessive_focus_streaks,
+            "invalid_outcome_resolution_turns": invalid_outcome_resolution,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }

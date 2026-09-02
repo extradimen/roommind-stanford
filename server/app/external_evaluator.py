@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from copy import deepcopy
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,6 +47,16 @@ REALISM_DIMENSIONS: dict[str, list[str]] = {
         "unresolved_issue_handling", "completion_timing", "completion_evidence_validity",
     ],
 }
+
+
+def missing_evaluation_dimensions(existing: dict[str, Any] | None) -> list[str]:
+    """Return only dimensions that do not already have a usable frozen score."""
+    dimensions = (existing or {}).get("dimensions") or {}
+    return [
+        name for name in REALISM_DIMENSIONS
+        if not isinstance(dimensions.get(name), dict)
+        or dimensions[name].get("dimension_score") is None
+    ]
 
 
 def _gold_specification(scenario: ScenarioTemplate, dispatch_rules: list[Any] | None = None) -> dict[str, Any]:
@@ -222,15 +233,19 @@ Do not add metrics or omit metrics."""
 async def evaluate_public_transcript(
     db: AsyncSession, *, scenario: ScenarioTemplate, messages: list[dict[str, Any]],
     system_claim: dict[str, Any],
+    existing_evaluation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Evaluate six realism dimensions in separate bounded calls for resilience."""
+    """Evaluate missing realism dimensions without replacing completed scores."""
     llm_cfg = await orch_support.get_llm_config(db)
     resolved = resolve_llm(llm_cfg, scenario.orchestration_config, "external_evaluator")
     transcript = _public_transcript(messages)
     dispatch_rules = await orch_support.load_dispatch_rules(db, scenario.id)
     gold = _gold_specification(scenario, dispatch_rules)
-    dimensions: dict[str, Any] = {}
-    evaluation_errors: dict[str, str] = {}
+    dimensions: dict[str, Any] = deepcopy((existing_evaluation or {}).get("dimensions") or {})
+    evaluation_errors: dict[str, str] = dict(
+        (existing_evaluation or {}).get("evaluation_errors") or {}
+    )
+    targets = missing_evaluation_dimensions(existing_evaluation)
     semaphore = asyncio.Semaphore(DIMENSION_CONCURRENCY)
     async def evaluate_one(dimension: str, metrics: list[str]) -> tuple[str, dict[str, Any], str | None]:
         try:
@@ -257,12 +272,26 @@ async def evaluate_public_transcript(
             return dimension, value, error
 
     evaluated = await asyncio.gather(*(
-        evaluate_one(dimension, metrics) for dimension, metrics in REALISM_DIMENSIONS.items()
+        evaluate_one(dimension, REALISM_DIMENSIONS[dimension]) for dimension in targets
     ))
     for dimension, value, error in evaluated:
         dimensions[dimension] = value
         if error:
             evaluation_errors[dimension] = error
+        else:
+            evaluation_errors.pop(dimension, None)
+
+    # Keep the six keys explicit even if a legacy partial result omitted one.
+    for dimension, metrics in REALISM_DIMENSIONS.items():
+        dimensions.setdefault(dimension, {
+            "dimension_score": None,
+            "metrics": {name: {
+                "score": None, "evidence_sequence_nos": [],
+                "reason": "Evaluation not yet available",
+            } for name in metrics},
+            "strengths": [], "issues": [], "notes": "Evaluation not yet available",
+            "status": "evaluation_pending",
+        })
 
     result: dict[str, Any] = {
         "protocol": "blinded-six-dimension-realism-v3",
@@ -274,6 +303,7 @@ async def evaluate_public_transcript(
         "evaluation_errors": evaluation_errors,
         "notes": "Six dimensions are reported separately; no composite realism score is computed.",
         "deterministic_metrics": {"dispatch": _dispatch_metrics(transcript, dispatch_rules)},
+        "evaluated_dimensions_this_attempt": targets,
     }
     # Backward-compatible procedural fields used by older exports/UI.
     procedural = dimensions["procedural_fidelity"]["metrics"]
