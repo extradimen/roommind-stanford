@@ -349,3 +349,19 @@ conditional或deferred，并记录未满足字段。
 
 **详细记录：** `docs/EXPERIMENT_G2_QUALIFICATION_RESULTS.md`与
 `docs/EXPERIMENT_G2_1_QUALIFICATION.md`。
+
+## 第14轮：G2.1资格结果——接线修复通过、真实性门槛失败
+
+G2.1资格批次`3b9232e8-399e-4000-941d-b55abb3587a5`完成8/8组对话和
+评价。哈希复算、独立记忆、协调历史、注册owner及完成条件一致性全部通过，
+说明工程修复有效；但供应链两场均达到20回合安全上限，程序真实性仅3.5，
+Baseline为6.0。事故场景虽然达到6.5，但仍出现虚构SHA-256和memory dump。
+
+根因从“探针未接线”进一步收敛为“任务关键性判断错误”：任何附带材料承诺或
+blocker都会成为required work，单个blocked项可连续垄断焦点，而真正的场景
+完成条件仍停留在proposed。提示词接地不足以阻止公开发言本身虚构证据。
+
+因此G2.1冻结为未通过资格的开发证据，不扩大实验。后续候选必须在确定性层面
+区分task-critical与incidental工作、限制blocked焦点连续占用，并在公开发言输出
+前执行证据接地校验。详细结果见
+`docs/EXPERIMENT_G2_1_QUALIFICATION_RESULTS.md`。
