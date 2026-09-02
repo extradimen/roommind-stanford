@@ -141,12 +141,27 @@ Requirements:
         rejection = speech_rejection_reason(
             cleaned,
             active_plan_text=active_plan_text,
+            public_context=f"{conversation_context}\n{user_input}",
         ) or ""
+        if rejection:
+            emit(
+                "llm.public_output.rejected",
+                component="npc_speech_render",
+                character_id=character.character_id,
+                rejection_reason=rejection,
+                retrying=attempt == 0,
+            )
         if not rejection:
             return cleaned, emotion, gesture
 
     configured = character.fallback_actions or {}
     fallback = str(configured.get("default") or "").strip()
+    if fallback and speech_rejection_reason(
+        fallback,
+        active_plan_text=active_plan_text,
+        public_context=f"{conversation_context}\n{user_input}",
+    ):
+        fallback = ""
     if not fallback:
         if character.relationship_to_player in {"ally", "advisor", "teammate"}:
             fallback = "Please clarify the highest-priority open issue so I can help move the task forward."

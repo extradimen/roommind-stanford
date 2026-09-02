@@ -365,3 +365,29 @@ blocker都会成为required work，单个blocked项可连续垄断焦点，而�
 区分task-critical与incidental工作、限制blocked焦点连续占用，并在公开发言输出
 前执行证据接地校验。详细结果见
 `docs/EXPERIMENT_G2_1_QUALIFICATION_RESULTS.md`。
+
+## 第15轮：G2.2关键任务队列与公开证据闸门
+
+**设计目标：** 直接修复G2.1已证实的两个因果问题，而不是继续增加角色提示：
+附带承诺被错误升级为必要任务，以及虚构证据已经生成后才由状态评价器忽略。
+
+**确定性任务关键性：** 状态评价器必须显式输出`task_critical`与公开理由；系统
+只有在该事项与未解决状态字段重合，或原文存在required、must、cannot、until、
+blocking等阻塞语义时，才接受它进入协调队列。普通附件、未来改进和礼貌性承诺
+继续保留在事件账本，但标为incidental，不影响焦点。
+
+**焦点轮换：** blocked或到期的关键工作先处理，配置状态其次，未到期工作最后。
+同一个blocked事项最多连续占用两个普通工作焦点；存在其他状态时自动轮换，
+不存在替代事项时转换为outcome-resolution，要求移交、拒绝、条件性结束、延期或
+失败，不能再次陈述同一阻塞。
+
+**输出前证据闸门：** NPC和AI玩家的公开文本在入库前检查。新造的附件/上传声明、
+外部URL及32–64位十六进制哈希会被拒绝并重新生成；已在公共上下文出现的URL或
+哈希可以引用。安全fallback同样经过检查。
+
+**可观测性：** 新增grounding rejection、critical/incidental work、focus rotation、
+outcome-resolution计数，并在G2.2探针中自动验证公开证据和工作焦点关键性。
+
+**保持不变：** Stanford式独立记忆、计划、反思、私有边界、固定GPT-OSS 120B、
+共享公共玩家、传统独立智能体Baseline与六维盲评协议均不变。详细资格协议见
+`docs/EXPERIMENT_G2_2_QUALIFICATION.md`。

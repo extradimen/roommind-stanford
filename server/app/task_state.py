@@ -29,6 +29,11 @@ _WORK_KEY_QUALIFIERS = {
     "a", "an", "and", "the", "for", "of", "to", "with",
     "draft", "details", "detail", "summary", "preparation", "update",
 }
+_CRITICAL_LANGUAGE_RE = re.compile(
+    r"\b(?:need|required|must|blocking|blocker|cannot|can't|unable|depends? on|"
+    r"prerequisite|before (?:we|i|the team) can|until)\b",
+    flags=re.IGNORECASE,
+)
 logger = logging.getLogger(__name__)
 
 
@@ -73,6 +78,41 @@ def _resolve_work_item_key(raw: dict[str, Any], work_items: dict[str, Any]) -> t
         if (score >= 0.67 or subset_match) and score > best_score:
             best_key, best_score = key, score
     return (best_key or requested), subject
+
+
+def _event_is_task_critical(
+    raw: dict[str, Any], state: dict[str, Any], existing_item: dict[str, Any]
+) -> tuple[bool, str]:
+    """Validate an evaluator's criticality claim against public task evidence.
+
+    Ordinary offers remain auditable work items, but only obligations that
+    demonstrably block configured state or closure enter the coordinator queue.
+    """
+    if existing_item.get("required") is True:
+        return True, str(existing_item.get("criticality_reason") or "existing_required_work")
+    if raw.get("task_critical") is not True:
+        return False, "not_marked_task_critical"
+    evidence_text = " ".join(
+        str(row.get("quote") or "")
+        for row in (raw.get("evidence") or [])
+        if isinstance(row, dict)
+    )
+    # Only the stable subject and verified public quote can prove criticality;
+    # evaluator-authored summaries/reasons are explanatory, not evidence.
+    claim_text = " ".join([str(raw.get("subject") or ""), evidence_text])
+    claim_tokens = _work_key_tokens(claim_text)
+    open_tokens: set[str] = set()
+    for issue in state.get("open_issues") or []:
+        if not str(issue).startswith("work:"):
+            open_tokens.update(_work_key_tokens(issue))
+    overlaps_open_state = bool(claim_tokens & open_tokens)
+    explicit_blocking_language = bool(_CRITICAL_LANGUAGE_RE.search(claim_text))
+    if overlaps_open_state or explicit_blocking_language:
+        reason = str(raw.get("criticality_reason") or "").strip()[:300]
+        return True, reason or (
+            "overlaps_open_state" if overlaps_open_state else "explicit_public_blocker"
+        )
+    return False, "criticality_not_supported_by_public_task_evidence"
 
 
 def task_progress_signature(task_state: dict[str, Any] | None) -> str:
@@ -363,10 +403,21 @@ def prepare_turn_governance(
         or stagnant_turns >= max(2, int(max_stagnant_turns) - 2)
     )
 
+    prior_history = [
+        row for row in (state.get("coordination_history") or [])
+        if isinstance(row, dict)
+    ]
+    last_issue = str((((prior_history[-1].get("focus") or {}).get("issue")) or "")) if prior_history else ""
+    trailing_focus_streak = 0
+    for row in reversed(prior_history):
+        if str(((row.get("focus") or {}).get("issue")) or "") != last_issue:
+            break
+        trailing_focus_streak += 1
+
     focus: dict[str, Any] | None = None
     registered_ids = {character.character_id for character in characters}
     work_items = state.get("work_items") or {}
-    ranked_work: list[tuple[int, int, str, dict[str, Any]]] = []
+    candidates: list[dict[str, Any]] = []
     for key, raw in work_items.items():
         if not isinstance(raw, dict) or raw.get("required") is not True:
             continue
@@ -382,45 +433,80 @@ def prepare_turn_governance(
             continue
         promised_turn = int(raw.get("promised_turn") or 0)
         age = max(0, int(turn_id) - promised_turn) if promised_turn else 0
-        priority = 0 if status == "blocked" else (1 if status == "promised" and age >= 2 else 2)
-        ranked_work.append((priority, promised_turn or int(turn_id), str(key), raw))
-    if ranked_work:
-        _, _, key, item = sorted(ranked_work, key=lambda row: (row[0], row[1], row[2]))[0]
-        promised_turn = int(item.get("promised_turn") or 0)
-        age = max(0, int(turn_id) - promised_turn) if promised_turn else 0
-        owner = "user" if str(item.get("owner_id") or "") == "player" else str(item.get("owner_id") or "")
-        target = "user" if str(item.get("target_id") or "") == "player" else str(item.get("target_id") or "")
-        owner_ids = [cid for cid in (owner, target) if cid in registered_ids]
-        focus = {
+        issue = f"work:{key}"
+        blocked_cooldown = bool(
+            status == "blocked" and issue == last_issue and trailing_focus_streak >= 2
+        )
+        priority = (
+            3 if blocked_cooldown
+            else 0 if status == "blocked" or (status == "promised" and age >= 2)
+            else 2
+        )
+        candidates.append({
+            "priority": priority,
+            "order": promised_turn or int(turn_id),
+            "key": issue,
             "issue": f"work:{key}",
             "kind": "work_item",
-            "status": str(item.get("status") or "unknown"),
-            "subject": str(item.get("subject") or key),
-            "owner_ids": list(dict.fromkeys(owner_ids)),
+            "status": status,
+            "subject": str(raw.get("subject") or key),
+            "owner_ids": list(dict.fromkeys(
+                cid for cid in (raw_owner, raw_target) if cid in registered_ids
+            )),
             "age_turns": age,
-            "due_now": bool(item.get("status") == "blocked" or age >= 2),
+            "due_now": bool(status == "blocked" or age >= 2),
+            "blocked_cooldown": blocked_cooldown,
+        })
+
+    variables = state.get("variables") or {}
+    for field_index, field in enumerate(state.get("open_issues") or []):
+        if str(field).startswith("work:") or field not in variables:
+            continue
+        owners = [
+            character.character_id
+            for character in characters
+            if field in ((character.authority or {}).get("can_confirm") or [])
+        ]
+        item = variables.get(field) or {}
+        candidates.append({
+            "priority": 0 if closeout_required else 1,
+            "order": field_index,
+            "key": f"state:{field}",
+            "issue": str(field),
+            "kind": "state_variable",
+            "status": str(item.get("status") or "unknown"),
+            "subject": str(field),
+            "owner_ids": owners,
+            "age_turns": 0,
+            "due_now": closeout_required,
+            "blocked_cooldown": False,
+        })
+
+    if candidates:
+        chosen = sorted(
+            candidates,
+            key=lambda row: (int(row["priority"]), int(row["order"]), str(row["key"])),
+        )[0]
+        focus = {
+            key: value for key, value in chosen.items()
+            if key not in {"priority", "order", "key"}
         }
-    else:
-        variables = state.get("variables") or {}
-        for field in state.get("open_issues") or []:
-            if str(field).startswith("work:") or field not in variables:
-                continue
-            owners = [
-                character.character_id
-                for character in characters
-                if field in ((character.authority or {}).get("can_confirm") or [])
-            ]
-            item = variables.get(field) or {}
-            focus = {
-                "issue": str(field),
-                "kind": "state_variable",
-                "status": str(item.get("status") or "unknown"),
-                "subject": str(field),
-                "owner_ids": owners,
-                "age_turns": 0,
-                "due_now": closeout_required,
-            }
-            break
+        if focus.get("blocked_cooldown"):
+            blocked_issue = str(focus.get("issue") or "")
+            focus.update({
+                "issue": "outcome_resolution",
+                "kind": "outcome",
+                "status": "blocked",
+                "origin_blocked_issue": blocked_issue,
+                "rotated_from_issue": blocked_issue,
+                "due_now": True,
+            })
+        focus["focus_streak"] = trailing_focus_streak + 1 if focus["issue"] == last_issue else 1
+        cooled_issue = next(
+            (row["issue"] for row in candidates if row.get("blocked_cooldown")), None
+        )
+        if cooled_issue and focus["issue"] != cooled_issue:
+            focus["rotated_from_issue"] = cooled_issue
 
     if focus:
         if closeout_required:
@@ -428,6 +514,18 @@ def prepare_turn_governance(
                 "Close out this focus now: the responsible role must either complete/confirm it "
                 "with public evidence, explicitly block or reject it, hand it off with an owner "
                 "and review point, or state a truthful conditional/deferred/failed outcome."
+            )
+        elif focus.get("kind") == "outcome":
+            instruction = (
+                "The prior blocker cannot keep the floor. Resolve the meeting honestly now: "
+                "name a concrete handoff/alternative, reject the blocked path, or state a "
+                "conditional, deferred, or failed outcome with the unresolved issue."
+            )
+        elif focus.get("status") == "blocked" and int(focus.get("focus_streak") or 0) >= 3:
+            instruction = (
+                "This blocker has already held focus for two turns. Do not restate it. "
+                "Provide a concrete handoff/alternative, reject the blocked path, or state a "
+                "truthful conditional/deferred/failed outcome now."
             )
         elif focus.get("due_now"):
             instruction = (
@@ -451,7 +549,7 @@ def prepare_turn_governance(
     })
     state["progress"] = progress
     history = [
-        row for row in (state.get("coordination_history") or [])
+        row for row in prior_history
         if isinstance(row, dict) and int(row.get("turn_id") or -1) != int(turn_id)
     ]
     history.append({
@@ -535,6 +633,9 @@ def apply_generic_events(
         if signature in existing:
             continue
         item = dict(work_items.get(key) or {})
+        task_critical, criticality_reason = _event_is_task_critical(
+            {**raw, "evidence": evidence}, state, item
+        )
         milestones = set(item.get("milestones") or [])
         transition_valid = not (
             event_type == "artifact_reviewed" and "artifact_submitted" not in milestones
@@ -547,6 +648,8 @@ def apply_generic_events(
             "target_id": str(raw.get("target_id") or ""),
             "summary": str(raw.get("summary") or subject).strip()[:500],
             "evidence": evidence,
+            "task_critical": task_critical,
+            "criticality_reason": criticality_reason,
             "transition_valid": transition_valid,
         }
         next_event_index += 1
@@ -568,8 +671,9 @@ def apply_generic_events(
         })
         milestones.add(event_type)
         item["milestones"] = sorted(milestones)
-        if event_type in {"blocker", "artifact_offered", "action_committed"}:
+        if task_critical:
             item["required"] = True
+            item["criticality_reason"] = criticality_reason
         if event_type == "artifact_offered":
             item.setdefault("promised_turn", int(turn_id))
             if item.get("status") not in {"blocked", "submitted", "completed"}:
@@ -589,7 +693,7 @@ def apply_generic_events(
             item["status"] = "completed" if status == "completed" else status
         elif event_type in {"decision", "handoff", "schedule"}:
             item["status"] = "completed" if status == "completed" else "proposed"
-            if status != "completed":
+            if status != "completed" and task_critical:
                 item["required"] = True
         elif event_type == "action_committed":
             item.setdefault("promised_turn", int(turn_id))
@@ -813,6 +917,12 @@ material artifact contents or previously established verifiable evidence. Do
 not record invented links, hashes, measurements, approvals, or live-system
 results as completed work.
 
+For every operational event, set task_critical=true only when the public turn
+shows that this exact item is indispensable to an unmet configured condition or
+explicitly blocks truthful closure. A useful offer, optional follow-up, ordinary
+attachment, or future improvement is not task-critical. State the short public
+reason; unsupported criticality claims are ignored deterministically.
+
 Return strict JSON only:
 {{
   "phase": "one phase_id from task_config.phases",
@@ -832,6 +942,8 @@ Return strict JSON only:
     "actor_id": "user or character_id",
     "target_id": "optional recipient character_id",
     "summary": "brief public summary",
+    "task_critical": false,
+    "criticality_reason": "why this item directly blocks an unmet condition or closure, otherwise empty",
     "evidence": [{{"speaker_id":"...","quote":"short exact excerpt"}}]
   }}],
   "outcome": null or {{

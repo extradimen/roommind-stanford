@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.agent.speech_safety import unsupported_evidence_reason
 from app.research_protocol import transcript_provenance
 
 
@@ -53,6 +54,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         session_mode == "test"
         and architecture_version.startswith(("g2-", "g2."))
     )
+    is_g22_roommind = session_mode == "test" and architecture_version.startswith("g2.2")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -63,6 +65,30 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         for owner in (((row.get("focus") or {}).get("owner_ids") or []))
         if ("user" if str(owner) == "player" else str(owner)) not in directory
     })
+    work_items = (full_bundle.get("task_result") or {}).get("work_items") or {}
+    noncritical_focus_issue_set: set[str] = set()
+    for row in coordination_history:
+        focus = row.get("focus") if isinstance(row, dict) else None
+        if not isinstance(focus, dict) or focus.get("kind") != "work_item":
+            continue
+        issue = str(focus.get("issue") or "")
+        item = work_items.get(issue.removeprefix("work:")) or {}
+        if item.get("required") is not True or not item.get("criticality_reason"):
+            noncritical_focus_issue_set.add(issue)
+    noncritical_focus_issues = sorted(noncritical_focus_issue_set)
+    unsupported_public_evidence: list[dict[str, Any]] = []
+    prior_public_context = ""
+    for row in sorted(messages, key=lambda item: int(item.get("sequence_no") or 0)):
+        reason = unsupported_evidence_reason(
+            str(row.get("content") or ""), public_context=prior_public_context
+        )
+        if reason:
+            unsupported_public_evidence.append({
+                "sequence_no": int(row.get("sequence_no") or 0),
+                "speaker_id": str(row.get("speaker_id") or ""),
+                "reason": reason,
+            })
+        prior_public_context = f"{prior_public_context}\n{row.get('content') or ''}"[-12000:]
     checks = {
         "public_transcript_nonempty": bool(messages),
         "sequence_numbers_unique": len(sequence) == len(set(sequence)),
@@ -87,6 +113,12 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "g2_focus_owners_registered": (
             not unknown_focus_owners if is_g2_roommind else None
         ),
+        "g22_public_evidence_grounded": (
+            not unsupported_public_evidence if is_g22_roommind else None
+        ),
+        "g22_work_focuses_task_critical": (
+            not noncritical_focus_issues if is_g22_roommind else None
+        ),
     }
     applicable = [value for value in checks.values() if value is not None]
     return {
@@ -100,6 +132,8 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "duplicate_player_turn_ids": duplicate_player_turns,
             "missing_roommind_memory_partitions": missing_memory_partitions,
             "unknown_g2_focus_owners": unknown_focus_owners,
+            "unsupported_public_evidence": unsupported_public_evidence,
+            "noncritical_focus_issues": noncritical_focus_issues,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }

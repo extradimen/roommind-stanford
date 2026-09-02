@@ -240,7 +240,14 @@ Return strict JSON only:
             continue
         parsed = orch_support.parse_json(raw)
         content = normalize_player_content(parsed.get("content") or "")
-        rejection = player_speech_rejection_reason(content) or ""
+        rejection = player_speech_rejection_reason(content, public_context=dialogue) or ""
+        if rejection:
+            emit(
+                "llm.public_output.rejected",
+                component="autonomous_player",
+                rejection_reason=rejection,
+                retrying=attempt == 0,
+            )
         if not rejection and isinstance(parsed.get("requested_end", False), bool):
             break
         if not rejection:
@@ -360,7 +367,14 @@ Return strict JSON only:
             continue
         parsed = orch_support.parse_json(raw)
         content = normalize_player_content(parsed.get("content") or "").strip()
-        rejection = player_speech_rejection_reason(content) or ""
+        rejection = player_speech_rejection_reason(content, public_context=dialogue) or ""
+        if rejection:
+            emit(
+                "llm.public_output.rejected",
+                component="comparison_player",
+                rejection_reason=rejection,
+                retrying=attempt == 0,
+            )
         if content and not rejection and isinstance(parsed.get("requested_end", False), bool):
             break
         rejection = rejection or "invalid_json_fields"

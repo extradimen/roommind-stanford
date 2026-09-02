@@ -72,6 +72,39 @@ def main() -> None:
     assert g21_probes["checks"]["g2_coordination_history_present"] is True
     assert g21_probes["checks"]["g2_focus_owners_registered"] is True
 
+    g22_bundle = deepcopy(g2_bundle)
+    g22_bundle["session"]["run_config"] = {
+        "comparison_protocol": "controlled",
+        "comparison_lock_model": True,
+        "architecture_version": "g2.2-critical-grounded-coordinated-agents",
+    }
+    g22_probes = run_integrity_probes(g22_bundle)
+    assert g22_probes["checks"]["g22_public_evidence_grounded"] is True
+    g22_bundle["task_result"] = {
+        "work_items": {
+            "decision_evidence": {
+                "required": True,
+                "criticality_reason": "Public decision is blocked until evidence is provided.",
+            }
+        },
+        "coordination_history": [{
+            "turn_id": 1,
+            "focus": {
+                "issue": "work:decision_evidence", "kind": "work_item",
+                "owner_ids": ["ceo"],
+            },
+        }],
+    }
+    critical_focus = run_integrity_probes(g22_bundle)
+    assert critical_focus["checks"]["g22_work_focuses_task_critical"] is True
+    g22_bundle["task_result"]["work_items"]["decision_evidence"]["required"] = False
+    noncritical_focus = run_integrity_probes(g22_bundle)
+    assert noncritical_focus["checks"]["g22_work_focuses_task_critical"] is False
+    g22_bundle["messages"][1]["content"] = "I've attached a report that does not exist."
+    failed_grounding = run_integrity_probes(g22_bundle)
+    assert failed_grounding["checks"]["g22_public_evidence_grounded"] is False
+    assert failed_grounding["all_applicable_passed"] is False
+
 
 if __name__ == "__main__":
     main()

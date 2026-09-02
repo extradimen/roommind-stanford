@@ -46,6 +46,19 @@ def main() -> None:
     assert player_speech_rejection_reason(
         "Let’s review the complete package before deciding."
     ) is None
+    assert speech_rejection_reason(
+        "I've attached the verified capacity report for approval."
+    ) == "unsupported_artifact_claim"
+    assert speech_rejection_reason(
+        "Review https://invented.example/report for the evidence."
+    ) == "unsupported_url"
+    assert speech_rejection_reason(
+        "The SHA-256 is 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef."
+    ) == "unsupported_hash"
+    assert speech_rejection_reason(
+        "I can access https://known.example/report.",
+        public_context="Earlier, the team shared https://known.example/report.",
+    ) is None
     assert normalize_player_content(
         '{"content":"I will answer with a concrete example.","intent":"opening"}'
     ) == "I will answer with a concrete example."
@@ -223,11 +236,13 @@ def main() -> None:
         parsed={"updates": [], "events": [{
             "event_type": "artifact_offered", "subject": "capacity evidence",
             "status": "proposed", "actor_id": "owner",
-            "summary": "Owner promises the evidence.",
-            "evidence": [{"speaker_id": "owner", "quote": "I will send the capacity evidence"}],
+            "summary": "The decision is blocked until the owner provides capacity evidence.",
+            "task_critical": True,
+            "criticality_reason": "The decision cannot close until this evidence is provided.",
+            "evidence": [{"speaker_id": "owner", "quote": "We cannot decide until I send the capacity evidence"}],
         }]},
         characters=[owner], player_text="",
-        npc_turns=[{"speaker_id": "owner", "content": "I will send the capacity evidence."}],
+        npc_turns=[{"speaker_id": "owner", "content": "We cannot decide until I send the capacity evidence."}],
         turn_id=1,
     )
     assert event_state["work_items"]["capacity_evidence"]["status"] == "promised"
@@ -267,6 +282,57 @@ def main() -> None:
     )["progress"]["focus"]
     assert player_focus["issue"] == "work:owner_report"
     assert player_focus["owner_ids"] == ["owner"]
+
+    # Incidental offers remain auditable but do not enter the coordinator queue.
+    incidental_state = initial_task_state({
+        "state_schema": {}, "phases": [{"phase_id": "active"}],
+        "completion_conditions": {"all": []},
+    })
+    apply_evaluator_updates(
+        task_config={"state_schema": {}, "phases": [{"phase_id": "active"}], "completion_conditions": {"all": []}},
+        state=incidental_state,
+        parsed={"updates": [], "events": [{
+            "event_type": "artifact_offered", "subject": "optional appendix",
+            "status": "proposed", "actor_id": "owner", "task_critical": False,
+            "criticality_reason": "optional follow-up",
+            "summary": "Owner offers an optional appendix.",
+            "evidence": [{"speaker_id": "owner", "quote": "I can draft an optional appendix later"}],
+        }]},
+        characters=[owner], player_text="",
+        npc_turns=[{"speaker_id": "owner", "content": "I can draft an optional appendix later."}],
+        turn_id=1,
+    )
+    assert incidental_state["work_items"]["optional_appendix"].get("required") is not True
+    assert prepare_turn_governance(
+        incidental_state, characters=[owner], turn_id=2,
+        safety_max_turns=10, max_stagnant_turns=6,
+    )["progress"]["focus"] is None
+
+    # A blocked item can lead for two turns, then rotates to another critical
+    # state instead of monopolizing the rest of the meeting.
+    rotation_state = initial_task_state(cross_turn_config)
+    rotation_state["work_items"] = {
+        "blocked_report": {
+            "required": True, "status": "blocked", "owner_id": "owner",
+            "target_id": "", "subject": "blocked report",
+        }
+    }
+    first_rotation = prepare_turn_governance(
+        rotation_state, characters=[owner], turn_id=1,
+        safety_max_turns=10, max_stagnant_turns=6,
+    )
+    second_rotation = prepare_turn_governance(
+        first_rotation, characters=[owner], turn_id=2,
+        safety_max_turns=10, max_stagnant_turns=6,
+    )
+    third_rotation = prepare_turn_governance(
+        second_rotation, characters=[owner], turn_id=3,
+        safety_max_turns=10, max_stagnant_turns=6,
+    )
+    assert first_rotation["progress"]["focus"]["issue"] == "work:blocked_report"
+    assert second_rotation["progress"]["focus"]["issue"] == "work:blocked_report"
+    assert third_rotation["progress"]["focus"]["issue"] == "outcome"
+    assert third_rotation["progress"]["focus"]["rotated_from_issue"] == "work:blocked_report"
     promised_signature = task_progress_signature(event_state)
     apply_evaluator_updates(
         task_config={"state_schema": {}, "phases": [{"phase_id": "active"}], "completion_conditions": {"all": []}},

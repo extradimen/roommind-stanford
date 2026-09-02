@@ -149,6 +149,11 @@ def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
         "llm_degraded_fallback_count": sum(
             event.get("event") == "llm.degraded_fallback" for event in events
         ),
+        "public_grounding_rejection_count": sum(
+            event.get("event") == "llm.public_output.rejected"
+            and str(event.get("rejection_reason") or "").startswith("unsupported_")
+            for event in events
+        ),
         "llm_total_duration_ms": sum(int(event.get("duration_ms") or 0) for event in successes),
         "prompt_tokens": sum(int(event.get("prompt_tokens") or 0) for event in successes),
         "completion_tokens": sum(int(event.get("completion_tokens") or 0) for event in successes),
@@ -177,6 +182,23 @@ def _coordination_summary(
         "coordinator_distinct_focus_count": len({
             str(row.get("issue")) for row in focuses if row.get("issue")
         }),
+        "coordinator_focus_rotation_count": sum(
+            bool(row.get("rotated_from_issue")) for row in focuses
+        ),
+        "coordinator_outcome_resolution_count": sum(
+            row.get("kind") == "outcome" for row in focuses
+        ),
+        "coordinator_task_critical_work_focus_count": sum(
+            row.get("kind") == "work_item" for row in focuses
+        ),
+        "task_critical_work_item_count": sum(
+            isinstance(item, dict) and item.get("required") is True
+            for item in (task.get("work_items") or {}).values()
+        ),
+        "incidental_work_item_count": sum(
+            isinstance(item, dict) and item.get("required") is not True
+            for item in (task.get("work_items") or {}).values()
+        ),
         "final_completion_status": task.get("completion_status"),
         "final_open_issue_count": len(task.get("open_issues") or []),
         "governor_stop_reason": test_state.get("stop_reason"),
