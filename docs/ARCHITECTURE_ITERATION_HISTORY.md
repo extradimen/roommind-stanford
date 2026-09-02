@@ -505,3 +505,28 @@ fallback固定为当前discussion意图，读取同一task ledger，并经过相
 为安全澄清句；四类开放场景8个脚本化工程对话均完成，RoomMind导出全部通过适用
 完整性探针且没有制造完成。弱模型仅用于失败注入，不构成自然度比较。详细记录见
 `docs/EXPERIMENT_G3_2_LOCAL_PREQUALIFICATION.md`。
+
+## 第20轮：G3.2资格失败与G3.3语境化发言边界
+
+**冻结结果：** G3.2预发批次
+`7135ae99-d1c6-4f3a-842b-93a8a832009c`完成8/8对话和48/48维度评价，技术失败
+和降级均为0，所有适用G3账本探针通过。但四场RoomMind全部以
+`no_task_progress`停止，outcome-resolution为0。RoomMind六维中五维低于Baseline，
+互动结构2.75对4.25，程序真实性3.50对4.75。详细冻结证据见
+`docs/EXPERIMENT_G3_2_QUALIFICATION_RESULTS.md`。
+
+**根因：** G3.2把回顾性真实性绑定到少数固定历史短语，正常的`I led`、
+`I managed`、`One project`等面试回答被误拒绝；不构成事实主张的问题句也因错误的
+structured scope被拒绝。两次失败后，玩家和NPC都回退为同一个“澄清最高优先级问题”
+模板，形成自我强化循环。由于玩家策略为两组共享，Baseline也受到同一误伤，G3.2
+不能作为有效的处理效应比较。
+
+**G3.3机制：** 保留权威账本及全部当前事实/外部动作限制，扩大自然过去时锚点；
+只有实际越过生命周期的未锚定回顾性措辞才拒绝，非断言问题不误伤。共享玩家按
+retrospective/live语境生成不同且轮换的安全继续动作；RoomMind NPC fallback读取已
+验证subject和公开职业身份，并再次通过相同安全边界，不再使用单一全局澄清句。
+
+**本地证据：** 全套smoke和应用导入通过；目标模型系列`gpt-oss:120b-cloud`的
+4个面试+3个事故探针中，面试均直接回答具体历史案例，事故均拒绝虚构已完成动作，
+fallback计数为0。当前仅为本地工程预资格，尚未推送或部署。详细门槛见
+`docs/EXPERIMENT_G3_3_LOCAL_PREQUALIFICATION.md`。

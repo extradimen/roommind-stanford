@@ -10,7 +10,8 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 from app.llm.client import LLMClient, LLMEmptyContentError, llm_provider_failover_enabled
-from app.player_agent import bounded_dialogue
+from app.agent.act import contextual_public_fallback
+from app.player_agent import bounded_dialogue, safe_comparison_player_fallback
 from app.external_evaluator import (
     REALISM_DIMENSIONS as EVALUATOR_DIMENSIONS,
     _dispatch_metrics,
@@ -86,6 +87,32 @@ async def call_client(responses: list[FakeResponse | Exception], max_tokens: int
 
 
 async def main() -> None:
+    historical_fallbacks = [
+        safe_comparison_player_fallback(
+            evidence_mode="retrospective_claim", pending_questions=[], turn_id=turn,
+        )[0]
+        for turn in range(1, 4)
+    ]
+    assert len(set(historical_fallbacks)) == 3
+    assert all("clarify the most important unresolved" not in row.casefold()
+               for row in historical_fallbacks)
+    live_content, live_intent = safe_comparison_player_fallback(
+        evidence_mode="live_operation",
+        pending_questions=[{"speaker_id": "finance_lead", "question": "Evidence?"}],
+        turn_id=1,
+    )
+    assert "Finance Lead" in live_content
+    assert live_intent["target_id"] == "finance_lead"
+    npc_fallback = contextual_public_fallback(
+        SimpleNamespace(
+            job_title="Operations Director", responsibility="Validate capacity",
+            relationship_to_player="counterpart",
+        ),
+        {"subject": "pilot readiness", "transition": "proposed"},
+    )
+    assert "pilot readiness remains open" in npc_fallback
+    assert "highest-priority open issue" not in npc_fallback
+
     partial_evaluation = {
         "dimensions": {
             name: {"dimension_score": 6, "metrics": {}}

@@ -76,6 +76,36 @@ def configured_public_fallback(configured: dict[str, Any] | None) -> str:
     return str((configured or {}).get("public_reply") or "").strip()
 
 
+def contextual_public_fallback(
+    character: CharacterTemplate,
+    validated_intent: dict[str, Any] | None,
+) -> str:
+    """Return a conservative role-specific reply after renderer rejection.
+
+    A single global clarification sentence can become a self-sustaining loop
+    in autonomous sessions. This fallback remains non-committal while keeping
+    the validated public subject and the speaker's public responsibility.
+    """
+    intent = validated_intent or {}
+    subject = " ".join(str(intent.get("subject") or "the current issue").split())
+    if len(subject) > 120:
+        subject = subject[:117].rstrip() + "..."
+    role = " ".join(
+        str(character.job_title or character.responsibility or "role").split()
+    )
+    if len(role) > 80:
+        role = role[:77].rstrip() + "..."
+    if character.relationship_to_player in {"ally", "advisor", "teammate"}:
+        return (
+            f"From my {role} perspective, the next useful step on {subject} is to "
+            "identify the responsible evidence owner and the specific decision still needed."
+        )
+    return (
+        f"From my {role} perspective, {subject} remains open. I can discuss the "
+        "available evidence now, but I cannot confirm a final outcome without the responsible owner."
+    )
+
+
 async def render_npc_speech(
     *,
     character: CharacterTemplate,
@@ -198,10 +228,18 @@ Requirements:
     ):
         fallback = ""
     if not fallback:
-        if character.relationship_to_player in {"ally", "advisor", "teammate"}:
-            fallback = "Please clarify the highest-priority open issue so I can help move the task forward."
-        else:
-            fallback = "Please clarify the highest-priority open issue before I commit."
+        fallback = contextual_public_fallback(character, validated_intent)
+    if speech_rejection_reason(
+        fallback,
+        active_plan_text=active_plan_text,
+        public_draft_text=draft,
+        public_context=f"{conversation_context}\n{user_input}",
+        validated_intent=validated_intent,
+        protected_secrets=list(
+            (character.private_state or {}).get("protected_secrets") or []
+        ),
+    ):
+        fallback = "I cannot confirm a final outcome from the evidence currently on record."
     return fallback, emotion, gesture, False
 
 

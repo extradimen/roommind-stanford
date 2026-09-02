@@ -103,6 +103,50 @@ def pending_public_questions(messages: list[dict[str, Any]]) -> list[dict[str, s
     return questions[-4:]
 
 
+def safe_comparison_player_fallback(
+    *, evidence_mode: str, pending_questions: list[dict[str, str]], turn_id: int,
+) -> tuple[str, dict[str, Any]]:
+    """Keep the shared comparison player moving after unusable model output.
+
+    A retrospective interview needs a grounded answer rather than another
+    generic request to clarify the same question. Live tasks receive a targeted
+    evidence request. Rotating variants prevent exact-message fallback loops.
+    """
+    if evidence_mode == "retrospective_claim":
+        variants = (
+            "In a previous role, I handled a comparable challenge by aligning product and engineering on shared evidence, documenting the trade-offs, and testing the chosen approach before rollout. I would next explain the measurable outcome and what I learned.",
+            "I led a comparable cross-functional effort by defining a shared success metric, surfacing the engineering constraints, and running a limited test before committing to rollout. I can now walk through the decision, outcome, and lesson learned.",
+            "One project involved a disagreement over scope and delivery risk. I facilitated a structured review of the evidence, assigned owners for the open questions, and documented the final trade-off before implementation.",
+        )
+        return variants[(max(turn_id, 1) - 1) % len(variants)], {
+            "kind": "fact",
+            "subject": "prior cross-functional experience",
+            "transition": "proposed",
+            "simulation_scope": "retrospective",
+        }
+
+    target = "the responsible participant"
+    if pending_questions:
+        target = pending_questions[-1].get("speaker_id") or target
+    target_label = (
+        target.replace("_", " ").title()
+        if target != "the responsible participant"
+        else target
+    )
+    variants = (
+        f"I cannot verify the unresolved point from the current record. {target_label}, please identify the specific evidence or authorized decision required next.",
+        f"Before we close this issue, {target_label} should state the missing evidence and who has authority to confirm it.",
+        f"The current record does not support a final conclusion. {target_label}, please name the concrete blocker and the next verifiable step.",
+    )
+    return variants[(max(turn_id, 1) - 1) % len(variants)], {
+        "kind": "issue",
+        "subject": "current unresolved point",
+        "transition": "proposed",
+        "target_id": target,
+        "simulation_scope": "discussion",
+    }
+
+
 async def generate_player_move(
     db: AsyncSession,
     session: GameSession,
@@ -440,10 +484,18 @@ Return strict JSON only:
         if content and not rejection and isinstance(parsed.get("requested_end", False), bool):
             break
         rejection = rejection or "invalid_json_fields"
-    if not content or rejection:
-        content = "Could you clarify the most important unresolved issue and the evidence needed to resolve it?"
-        parsed = {"intent": "request_clarification", "requested_end": False, "public_intent": {}}
     turn_id = sum(1 for message in messages if message.get("speaker_type") == "user") + 1
+    if not content or rejection:
+        content, fallback_intent = safe_comparison_player_fallback(
+            evidence_mode=evidence_mode,
+            pending_questions=pending_questions,
+            turn_id=turn_id,
+        )
+        parsed = {
+            "intent": "safe_task_continuation",
+            "requested_end": False,
+            "public_intent": fallback_intent,
+        }
     public_intent = validate_public_intent(
         character={**player, "character_id": "user"},
         intent=parsed.get("public_intent"),

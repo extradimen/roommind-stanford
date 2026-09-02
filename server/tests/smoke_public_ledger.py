@@ -165,6 +165,14 @@ def main() -> None:
         validated_intent=retrospective_issue,
     ) is None
     assert speech_rejection_reason(
+        "I led a cross-functional launch and measured the outcome against our activation target.",
+        validated_intent=retrospective_issue,
+    ) is None
+    assert speech_rejection_reason(
+        "Could you clarify which prior project would be most relevant?",
+        validated_intent=retrospective_issue,
+    ) is None
+    assert speech_rejection_reason(
         "I am verifying the architecture now and will proceed without further review.",
         validated_intent=retrospective_issue,
     ) == "retrospective_scope_not_grounded_in_quote"

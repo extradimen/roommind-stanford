@@ -127,7 +127,15 @@ _RETROSPECTIVE_ANCHOR_RE = re.compile(
     r"back\s+then|when\s+(?:i|we)\s+(?:led|managed|worked|served|built|"
     r"delivered|handled|joined|was|were)|during\s+(?:my|our|that|the)\s+"
     r"(?:tenure|project|initiative|engagement|incident|launch)|"
-    r"(?:i|we)\s+once\b|in\s+20\d{2}\b)",
+    r"(?:i|we)\s+once\b|in\s+20\d{2}\b|"
+    # Natural interview answers often begin directly with a past-tense action
+    # rather than the exact phrase "in my previous role".
+    r"(?:i|we)\s+(?:led|managed|owned|built|delivered|handled|resolved|"
+    r"launched|designed|implemented|partnered|introduced|created|ran|used|"
+    r"worked|aligned|facilitated|negotiated|coordinated|shipped|reduced|"
+    r"increased|improved|measured|tested|learned)\b|"
+    r"(?:one|a)\s+(?:example|project|initiative|incident|launch)\s+"
+    r"(?:was|involved|began)\b)",
     flags=re.IGNORECASE,
 )
 
@@ -308,6 +316,11 @@ def speech_rejection_reason(
     if (
         str(intent.get("simulation_scope") or "") == "retrospective"
         and not retrospective_grounded
+        # Questions and discussion moves can be mislabeled retrospective by
+        # a structured-output model without asserting a historical fact. Only
+        # reject wording that actually exceeds the proposed lifecycle. This
+        # still blocks live claims such as "I am verifying it now".
+        and _speech_exceeds_validated_lifecycle(text, intent)
     ):
         return "retrospective_scope_not_grounded_in_quote"
 
