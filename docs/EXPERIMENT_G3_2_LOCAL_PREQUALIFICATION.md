@@ -49,6 +49,10 @@ and before transcript persistence:
 6. when two renderer attempts remain unsafe, only the existing neutral public
    clarification fallback is emitted.
 
+New batches are frozen with generation ID `G3.2` and architecture version
+`g3.2-public-speech-entailment-ledger-simulation`; this prevents G3.2 dialogue
+from being mislabeled as G3.1 in exported research manifests.
+
 This boundary is scenario-independent. It does not encode interview fields,
 negotiation prices, incident states or launch decisions.
 
@@ -109,4 +113,3 @@ must then use the fixed production-capable model and a new batch; no G1-G3.1
 artifact may be overwritten. Independent AI evaluation and later bilingual
 human blind review remain downstream processes and must not be started during
 dialogue generation.
-

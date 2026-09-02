@@ -3,11 +3,24 @@
 from copy import deepcopy
 
 from app.external_observer import build_blinded_evaluation_packet
-from app.research_protocol import REALISM_RUBRIC, transcript_provenance
+from app.research_protocol import (
+    CURRENT_ARCHITECTURE_VERSION,
+    CURRENT_GENERATION_ID,
+    REALISM_RUBRIC,
+    experiment_manifest,
+    transcript_provenance,
+)
 from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
+    assert CURRENT_GENERATION_ID == "G3.2"
+    assert CURRENT_ARCHITECTURE_VERSION == (
+        "g3.2-public-speech-entailment-ledger-simulation"
+    )
+    manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
+    assert manifest["generation_id"] == CURRENT_GENERATION_ID
+    assert manifest["architecture_version"] == CURRENT_ARCHITECTURE_VERSION
     bundle = {
         "session": {"session_uuid": "real-session-1", "status": "completed"},
         "scenario": {"id": 1, "slug": "case", "title": "Case", "task_config": {}},
