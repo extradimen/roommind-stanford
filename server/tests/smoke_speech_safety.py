@@ -3,10 +3,12 @@
 from app.agent.speech_safety import (
     PUBLIC_RESPONSE_DRAFT,
     player_speech_rejection_reason,
+    protected_information_reason,
     speech_rejection_reason,
 )
 from types import SimpleNamespace
 
+from app.agent.act import configured_public_fallback
 from app.orchestrator.common import orch_support
 from app.task_state import (
     advance_phase,
@@ -26,6 +28,128 @@ from app.public_ledger import commit_public_intent, validate_public_intent
 
 
 def main() -> None:
+    assert configured_public_fallback({
+        "default": "Ask for the commercial conditions needed to make the proposal workable."
+    }) == ""
+    assert configured_public_fallback({
+        "default": "Internal instruction.",
+        "public_reply": "Could you clarify the commercial conditions you can offer?",
+    }) == "Could you clarify the commercial conditions you can offer?"
+
+    # A state evaluator may echo schema defaults that were never spoken.  Only
+    # the explicitly quoted field/value survives deterministic grounding, and
+    # "before we can finalize" cannot become a completed outcome.
+    supplier = SimpleNamespace(
+        character_id="supplier_ceo",
+        authority={"can_propose": ["unit_price", "delivery_days"],
+                   "can_confirm": ["unit_price", "delivery_days"]},
+    )
+    negotiation_config = {
+        "state_schema": {
+            "unit_price": {"type": "number", "propose_permissions": ["supplier_ceo"]},
+            "delivery_days": {"type": "integer", "propose_permissions": ["supplier_ceo"]},
+            "quality_protocol": {"type": "boolean", "propose_permissions": ["quality_director"]},
+        },
+        "phases": [{"phase_id": "opening"}],
+        "completion_conditions": {"all": [
+            {"field": "unit_price", "operator": "<=", "value": 85, "required_status": "confirmed"},
+            {"field": "delivery_days", "operator": "<=", "value": 30, "required_status": "confirmed"},
+            {"field": "quality_protocol", "operator": "==", "value": True, "required_status": "confirmed"},
+        ]},
+    }
+    quote = (
+        "The unit price target of 85 RMB is the highest-priority open issue. "
+        "We must secure volume commitments before we can finalize the contract."
+    )
+    hallucinated = initial_task_state(negotiation_config)
+    apply_evaluator_updates(
+        task_config=negotiation_config, state=hallucinated,
+        parsed={
+            "updates": [
+                {"field": "unit_price", "value": 85, "status": "proposed", "proposed_by": "supplier_ceo", "confirmed_by": [], "evidence": [{"speaker_id": "supplier_ceo", "quote": quote}]},
+                {"field": "delivery_days", "value": 30, "status": "proposed", "proposed_by": "supplier_ceo", "confirmed_by": [], "evidence": [{"speaker_id": "supplier_ceo", "quote": quote}]},
+                {"field": "quality_protocol", "value": True, "status": "proposed", "proposed_by": "supplier_ceo", "confirmed_by": [], "evidence": [{"speaker_id": "supplier_ceo", "quote": quote}]},
+            ],
+            "events": [{
+                "event_type": "action_committed", "subject": "pricing data",
+                "status": "completed", "actor_id": "user",
+                "evidence": [{"speaker_id": "user", "quote": "Please provide the pricing data."}],
+            }],
+            "outcome": {"type": "completed", "reason": "finalized", "evidence": [{"speaker_id": "supplier_ceo", "quote": quote}]},
+        },
+        characters=[supplier], player_text="Please provide the pricing data.",
+        npc_turns=[{"speaker_id": "supplier_ceo", "content": quote}], turn_id=1,
+    )
+    assert hallucinated["variables"]["unit_price"]["status"] == "proposed"
+    assert hallucinated["variables"]["delivery_days"]["status"] == "unknown"
+    assert hallucinated["variables"]["quality_protocol"]["status"] == "unknown"
+    assert hallucinated["work_items"] == {}
+    assert hallucinated["completion_status"] == "in_progress"
+
+    clarification_state = initial_task_state({
+        "state_schema": {}, "phases": [{"phase_id": "opening"}],
+        "completion_conditions": {"all": []},
+    })
+    clarification = "Please clarify the highest-priority open issue before I commit."
+    apply_evaluator_updates(
+        task_config={"state_schema": {}, "phases": [{"phase_id": "opening"}], "completion_conditions": {"all": []}},
+        state=clarification_state,
+        parsed={"updates": [], "events": [{
+            "event_type": "information_provided", "subject": "unit price target",
+            "status": "completed", "actor_id": "supplier_ceo",
+            "evidence": [{"speaker_id": "supplier_ceo", "quote": clarification}],
+        }]},
+        characters=[supplier], player_text="",
+        npc_turns=[{"speaker_id": "supplier_ceo", "content": clarification}], turn_id=1,
+    )
+    assert clarification_state["work_items"] == {}
+
+    # Two authorized public acceptances of the same explicit field value are
+    # deterministically projected into the task read model without relying on
+    # the LLM evaluator to rediscover them.
+    accepted_config = {
+        "state_schema": {"unit_price": {
+            "type": "number",
+            "confirmation_policy": "player_and_authorized_counterpart",
+            "confirm_permissions": ["player", "supplier_ceo"],
+            "propose_permissions": ["player", "supplier_ceo"],
+        }},
+        "phases": [{"phase_id": "opening"}],
+        "completion_conditions": {"all": [{
+            "field": "unit_price", "operator": "<=", "value": 85,
+            "required_status": "confirmed",
+        }]},
+    }
+    accepted_state = initial_task_state(accepted_config)
+    player_accept = validate_public_intent(
+        character={"character_id": "user", "authority": {
+            "can_propose": ["unit_price"], "can_confirm": ["unit_price"],
+        }}, state=accepted_state, turn_id=1,
+        intent={"kind": "decision", "subject": "unit price 85 RMB",
+                "field": "unit_price", "value": 85, "transition": "accepted"},
+    )
+    commit_public_intent(
+        accepted_state, intent=player_accept,
+        public_quote="I accept the unit price of 85 RMB.", tick=0,
+    )
+    supplier_accept = validate_public_intent(
+        character=supplier, state=accepted_state, turn_id=1,
+        intent={"kind": "decision", "subject": "unit price 85 RMB",
+                "field": "unit_price", "value": 85, "transition": "accepted"},
+    )
+    commit_public_intent(
+        accepted_state, intent=supplier_accept,
+        public_quote="We accept the unit price of 85 RMB.", tick=1,
+    )
+    apply_evaluator_updates(
+        task_config=accepted_config, state=accepted_state,
+        parsed={"updates": [], "events": []}, characters=[supplier],
+        player_text="", npc_turns=[], turn_id=1,
+    )
+    assert accepted_state["variables"]["unit_price"]["value"] == 85
+    assert accepted_state["variables"]["unit_price"]["status"] == "confirmed"
+    assert set(accepted_state["variables"]["unit_price"]["confirmations"]) == {"user", "supplier_ceo"}
+    assert accepted_state["completion_status"] == "completed"
     leaked_plan = (
         "I will first confirm the purchase volume to set the foundation, aiming "
         "to lock an annual framework agreement for at least 100k units. My bottom "
@@ -41,6 +165,24 @@ def main() -> None:
     assert speech_rejection_reason(
         "Thank you for the proposal. We can review the full package together."
     ) is None
+    draft_instruction = "Ask for the commercial conditions needed to make the proposal workable without inventing a commitment."
+    assert speech_rejection_reason(
+        draft_instruction,
+        public_draft_text=draft_instruction,
+    ) == "public_draft_echo"
+    supplier_secret = ["The supplier's exact reservation unit price is 82 RMB."]
+    assert protected_information_reason(
+        "We need to clarify our reservation unit price of 82 RMB.",
+        protected_secrets=supplier_secret,
+    ) == "protected_information_leak"
+    assert speech_rejection_reason(
+        "Our exact reservation unit price is 82 RMB.",
+        protected_secrets=supplier_secret,
+    ) == "protected_information_leak"
+    assert speech_rejection_reason(
+        "We require sustainable margin and dependable annual volume.",
+        protected_secrets=supplier_secret,
+    ) is None
     assert player_speech_rejection_reason(
         '{"content": "A truncated proposal", "intent": "compromise with long'
     ) == "structured_output"
@@ -50,6 +192,25 @@ def main() -> None:
     assert speech_rejection_reason(
         "I've attached the verified capacity report for approval."
     ) == "unsupported_artifact_claim"
+    retrospective = {
+        "kind": "fact", "transition": "proposed", "simulation_scope": "retrospective",
+    }
+    assert speech_rejection_reason(
+        "In my previous role, I attached the revised weighting table after the workshop.",
+        validated_intent=retrospective,
+    ) is None
+    assert speech_rejection_reason(
+        "Here is the updated risk canvas; see the attached PDF.",
+        validated_intent=retrospective,
+    ) == "unsupported_artifact_claim"
+    assert speech_rejection_reason(
+        "I've just emailed you the historical scorecard.",
+        validated_intent=retrospective,
+    ) == "unsupported_artifact_claim"
+    assert speech_rejection_reason(
+        "The supporting file is at https://invented.example/interview-evidence.",
+        validated_intent=retrospective,
+    ) == "unsupported_url"
     assert speech_rejection_reason(
         "I've just emailed you the signed capacity letter, and the attachment includes the schedule."
     ) == "unsupported_artifact_claim"
@@ -151,7 +312,10 @@ def main() -> None:
             {"field": "outcome", "operator": "==", "value": True, "required_status": "confirmed"}
         ]},
     }
-    owner = SimpleNamespace(character_id="owner", authority={"can_confirm": ["outcome"]})
+    owner = SimpleNamespace(character_id="owner", authority={
+        "can_confirm": ["outcome", "capacity_evidence"],
+        "can_provide": ["capacity_evidence"],
+    })
     cross_state = initial_task_state(cross_turn_config)
     apply_evaluator_updates(
         task_config=cross_turn_config,
@@ -443,6 +607,7 @@ def main() -> None:
         intent={
             "kind": "artifact", "subject": "capacity evidence",
             "transition": "verified", "simulation_scope": "in_session",
+            "value": "Reviewed capacity: 5,200 units monthly.",
             "inline_content": "Reviewed capacity: 5,200 units monthly.",
         },
     )
@@ -533,6 +698,7 @@ def main() -> None:
         intent={
             "kind": "action", "subject": "activate containment",
             "field": "containment_active", "transition": "verified",
+            "value": True,
             "simulation_scope": "in_session", "inline_content": "Isolation verified from the stated traffic result.",
         },
     )

@@ -49,10 +49,14 @@ def _subject_key(value: Any) -> str:
 
 
 def _work_key_tokens(value: Any) -> set[str]:
-    return {
-        word for word in _subject_key(value).split("_")
-        if word and word not in _WORK_KEY_QUALIFIERS
-    }
+    tokens: set[str] = set()
+    for word in _subject_key(value).split("_"):
+        if not word or word in _WORK_KEY_QUALIFIERS:
+            continue
+        if len(word) > 4 and word.endswith("s") and not word.endswith(("ss", "us", "is")):
+            word = word[:-1]
+        tokens.add(word)
+    return tokens
 
 
 def _resolve_work_item_key(raw: dict[str, Any], work_items: dict[str, Any]) -> tuple[str, str]:
@@ -131,6 +135,65 @@ def _project_public_ledger(state: dict[str, Any]) -> None:
             item["resolved_turn"] = int(entity.get("last_transition_turn") or 0)
         work_items[key] = item
     state["work_items"] = work_items
+
+
+def _project_field_ledger(
+    task_config: dict[str, Any], state: dict[str, Any],
+    characters: list[CharacterTemplate],
+) -> None:
+    """Project value-bearing canonical field events into the task read model."""
+    schema = task_config.get("state_schema") or {}
+    ledger = ensure_public_ledger(state)
+    variables = state.setdefault("variables", {})
+    character_confirmers: dict[str, set[str]] = {field: set() for field in schema}
+    for character in characters:
+        for field in (character.authority or {}).get("can_confirm", []):
+            if field in character_confirmers:
+                character_confirmers[field].add(character.character_id)
+    for field, spec in schema.items():
+        entity = (ledger.get("entities") or {}).get(f"field:{field}") or {}
+        value = entity.get("value")
+        lifecycle = str(entity.get("lifecycle") or "")
+        if value is None or lifecycle not in {"proposed", "accepted"}:
+            continue
+        accepted_by = list(dict.fromkeys(
+            str(actor) for actor in
+            ((entity.get("actors_by_transition") or {}).get("accepted") or [])
+        ))
+        configured = set(spec.get("confirm_permissions") or [])
+        if "player" in configured:
+            configured.add("user")
+        accepted_by = [
+            actor for actor in accepted_by
+            if not configured or actor in configured
+        ]
+        has_player = "user" in accepted_by
+        has_counterpart = bool(
+            (character_confirmers[field] | configured).intersection(accepted_by)
+            - {"user", "player"}
+        )
+        policy = str(spec.get("confirmation_policy") or "responsible_participant")
+        confirmed = {
+            "player": has_player,
+            "responsible_participant": has_counterpart,
+            "player_and_authorized_counterpart": has_player and has_counterpart,
+            "player_and_responsible_participant": has_player and has_counterpart,
+            "player_and_assignee": has_player and has_counterpart,
+        }.get(policy, False)
+        current = variables.setdefault(field, {
+            "value": None, "status": "unknown", "proposals": [],
+            "confirmations": [], "evidence": [],
+        })
+        current["value"] = value
+        current["status"] = "confirmed" if lifecycle == "accepted" and confirmed else "proposed"
+        current["confirmations"] = accepted_by
+        public_evidence = [
+            dict(event.get("public_evidence") or {}, speaker_id=event.get("actor_id"))
+            for event in (ledger.get("events") or [])
+            if event.get("entity_id") == f"field:{field}"
+            and event.get("transition_to") == lifecycle
+        ]
+        current["evidence"] = public_evidence[-20:]
 
 
 def _event_is_task_critical(
@@ -691,6 +754,119 @@ def _valid_public_evidence(
     return valid
 
 
+_GROUNDING_STOPWORDS = {
+    "accepted", "agreed", "boolean", "configured", "current", "integer",
+    "number", "standard", "status", "target", "true", "value",
+}
+
+
+def _field_update_is_grounded(
+    *, field: str, spec: dict[str, Any], value: Any, status: str,
+    evidence: list[dict[str, Any]],
+) -> bool:
+    """Reject evaluator updates not explicitly supported by their quote.
+
+    Exact quote matching proves only that the words were public; it does not
+    prove the extracted field or value occurred in those words.  This compact
+    deterministic check keeps an LLM evaluator from copying goals/schema
+    defaults into state when a participant never stated them.
+    """
+    if not evidence:
+        return False
+    text = " ".join(str(row.get("quote") or "") for row in evidence).casefold()
+    field_phrase = field.replace("_", " ").casefold()
+    tokens = {
+        token for token in re.findall(
+            r"[\w]+", f"{field_phrase} {spec.get('description') or ''}".casefold()
+        )
+        if len(token) >= 4 and token not in _GROUNDING_STOPWORDS
+    }
+    if field_phrase not in text and not any(
+        re.search(rf"\b{re.escape(token)}\b", text) for token in tokens
+    ):
+        return False
+
+    value_type = str(spec.get("type") or "string").lower()
+    if value_type in {"number", "integer"}:
+        candidates = {str(value)}
+        try:
+            numeric = float(value)
+            candidates.add(f"{numeric:g}")
+        except (TypeError, ValueError):
+            return False
+        if not any(re.search(rf"(?<![\w.]){re.escape(item)}(?![\w.])", text) for item in candidates):
+            return False
+    elif value_type == "boolean":
+        positive = r"\b(?:accept|accepted|agree|agreed|approve|approved|confirm|confirmed|adopt|adopted|enable|enabled|active|activated|yes|true)\b"
+        negative = r"\b(?:reject|rejected|decline|declined|not|no|false|inactive|disable|disabled)\b"
+        if bool(value) and not re.search(positive, text):
+            return False
+        if not bool(value) and not re.search(negative, text):
+            return False
+    elif value is not None and str(value).strip().casefold() not in text:
+        return False
+
+    return True
+
+
+def _event_claim_is_grounded(
+    event_type: str, actor_id: str, subject: str,
+    evidence: list[dict[str, Any]],
+) -> bool:
+    if actor_id not in {str(row.get("speaker_id") or "") for row in evidence}:
+        return False
+    actor_text = " ".join(
+        str(row.get("quote") or "") for row in evidence
+        if str(row.get("speaker_id") or "") == actor_id
+    ).casefold()
+    if event_type == "information_provided":
+        if actor_text.rstrip().endswith("?") or re.search(
+            r"\b(?:please|could you|can you|would you|clarify|what|which|who|when|where|how)\b",
+            actor_text,
+        ):
+            return False
+        return True
+    subject_tokens = _work_key_tokens(subject)
+    public_tokens = _work_key_tokens(actor_text)
+    if subject_tokens and not subject_tokens.intersection(public_tokens):
+        return False
+    if event_type == "artifact_offered":
+        return bool(re.search(
+            r"\b(?:i|we)\s+(?:will|shall|can\s+\w+|plan\s+to|offer\s+to|"
+            r"send\b|provide\b|deliver\b|share\b|draft\b|prepare\b)",
+            actor_text,
+        ))
+    if event_type == "action_committed":
+        return bool(re.search(
+            r"\b(?:i|we)\s+(?:will|shall|commit\s+to|agree\s+to|undertake\s+to|"
+            r"can\s+(?:provide|deliver|send|share)|plan\s+to|send\b|provide\b|deliver\b|share\b)",
+            actor_text,
+        ))
+    return True
+
+
+def _terminal_outcome_is_grounded(
+    outcome_type: str, evidence: list[dict[str, Any]]
+) -> bool:
+    text = " ".join(str(row.get("quote") or "") for row in evidence).casefold()
+    if outcome_type == "completed":
+        if re.search(r"\b(?:before|until|unless|cannot|can't|not|yet|if)\b", text):
+            return False
+        return bool(re.search(
+            r"\b(?:we (?:have )?(?:agree|agreed)|agreement (?:is|has been) (?:final|finalized|reached)|"
+            r"decision (?:is|has been) final|task (?:is|has been) complete|"
+            r"meeting (?:is|has been) (?:closed|concluded|adjourned))\b",
+            text,
+        ))
+    patterns = {
+        "conditional": r"\b(?:conditional|subject to|provided that)\b",
+        "deferred": r"\b(?:defer|deferred|postpone|postponed|hold|pending|cannot finalize|can't finalize)\b",
+        "failed": r"\b(?:failed|cannot reach (?:an )?agreement|can't reach (?:an )?agreement|abandon|abandoned)\b",
+        "stalled": r"\b(?:stalled|stuck|no (?:further )?progress)\b",
+    }
+    return bool(re.search(patterns.get(outcome_type, r"(?!)"), text))
+
+
 def apply_generic_events(
     *,
     state: dict[str, Any],
@@ -720,6 +896,8 @@ def apply_generic_events(
             continue
         actor_id = "user" if raw.get("actor_id") == "player" else str(raw.get("actor_id") or evidence[0]["speaker_id"])
         key, subject = _resolve_work_item_key(raw, work_items)
+        if not _event_claim_is_grounded(event_type, actor_id, subject, evidence):
+            continue
         signature = (event_type, key, status, actor_id)
         if signature in existing:
             continue
@@ -812,9 +990,10 @@ def apply_generic_events(
     raw_outcome = parsed.get("outcome")
     if isinstance(raw_outcome, dict) and str(raw_outcome.get("type") or "") in TERMINAL_OUTCOMES:
         evidence = _valid_public_evidence(raw_outcome.get("evidence"), turn_text)
-        if evidence:
+        outcome_type = str(raw_outcome["type"])
+        if evidence and _terminal_outcome_is_grounded(outcome_type, evidence):
             state["outcome"] = {
-                "type": str(raw_outcome["type"]), "status": "explicit",
+                "type": outcome_type, "status": "explicit",
                 "reason": str(raw_outcome.get("reason") or "").strip()[:800],
                 "evidence": evidence,
             }
@@ -897,6 +1076,12 @@ def apply_evaluator_updates(
             public_text = " ".join(turn_text.get(speaker_id, "").split()).casefold()
             if speaker_id and quote and quote in public_text:
                 valid_evidence.append({**row, "speaker_id": speaker_id})
+        if not _field_update_is_grounded(
+            field=str(field), spec=schema[field], value=value,
+            status=str(update.get("status") or ""), evidence=valid_evidence,
+        ):
+            logger.warning("Ignoring ungrounded evaluator update for task field %s", field)
+            continue
         proposed_by = str(update.get("proposed_by") or "")
         if proposed_by == "player":
             proposed_by = "user"
@@ -996,6 +1181,7 @@ def apply_evaluator_updates(
         current.setdefault("evidence", []).extend(valid_evidence)
     apply_generic_events(state=state, parsed=parsed, turn_text=turn_text, turn_id=turn_id)
     _project_public_ledger(state)
+    _project_field_ledger(task_config, state, characters)
     evaluate_conditions(task_config, state)
     apply_explicit_closure(task_config, state, turn_text)
     return evaluate_conditions(task_config, state)

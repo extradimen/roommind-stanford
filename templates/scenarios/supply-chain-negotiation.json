@@ -9,6 +9,7 @@
   "task_config": {
     "config_version": 4,
     "task_type": "negotiation",
+    "evidence_mode": "live_operation",
     "player_objective": "Secure an agreed unit price at or below 85 RMB, delivery within 30 days, and an accepted quality protocol.",
     "counterpart_objective": "Protect margin, capacity, and liability limits while obtaining reliable volume.",
     "terminology": {"task": "contract meeting", "player_role": "Chief Procurement Officer", "player_name": "Alex Chen", "completion": "agreement"},

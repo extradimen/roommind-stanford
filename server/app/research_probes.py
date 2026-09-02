@@ -97,10 +97,17 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         and not str((row.get("focus") or {}).get("origin_focus_issue") or "")
     ]
     unsupported_public_evidence: list[dict[str, Any]] = []
+    task_config = ((full_bundle.get("scenario") or {}).get("task_config") or {})
+    task_type = str(task_config.get("task_type") or "")
+    evidence_mode = str(task_config.get("evidence_mode") or (
+        "retrospective_claim" if task_type == "structured_interview" else "live_operation"
+    ))
+    retrospective_scenario = evidence_mode == "retrospective_claim"
     prior_public_context = ""
     for row in sorted(messages, key=lambda item: int(item.get("sequence_no") or 0)):
         reason = unsupported_evidence_reason(
-            str(row.get("content") or ""), public_context=prior_public_context
+            str(row.get("content") or ""), public_context=prior_public_context,
+            allow_retrospective_artifact_claims=retrospective_scenario,
         )
         if reason:
             unsupported_public_evidence.append({

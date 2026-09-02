@@ -9,6 +9,7 @@
   "task_config":{
     "config_version":3,
     "task_type":"structured_interview",
+    "evidence_mode":"retrospective_claim",
     "player_objective":"Provide concrete evidence across product judgment, engineering collaboration, and people leadership, then complete the candidate questions stage.",
     "counterpart_objective":"Probe consistently and record evidence without coaching the candidate.",
     "terminology":{"task":"panel interview","player_role":"Product Lead Candidate","player_name":"Taylor Morgan","completion":"interview evidence complete"},

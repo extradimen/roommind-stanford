@@ -45,6 +45,48 @@ _ARTIFACT_REQUEST_PREFIX_RE = re.compile(
     r"confirm\s+(?:whether|if|once)|ask(?:ing)?\s+(?:whether|if))\b",
     flags=re.IGNORECASE,
 )
+_PROTECTED_STOPWORDS = {
+    "a", "an", "and", "are", "exact", "has", "have", "is", "of", "our",
+    "the", "their", "to", "we", "with",
+}
+
+
+def protected_information_reason(
+    content: str, *, protected_secrets: list[str] | None = None,
+) -> str | None:
+    """Reject distinctive values or phrases copied from protected role state."""
+    text = " ".join((content or "").casefold().split())
+    text_tokens = re.findall(r"[\w.%+-]+", text)
+    text_ngrams = {
+        tuple(text_tokens[index:index + 3])
+        for index in range(max(0, len(text_tokens) - 2))
+    }
+    for raw_secret in protected_secrets or []:
+        secret = " ".join(str(raw_secret or "").casefold().split())
+        if not secret:
+            continue
+        # Numeric terms paired with their business unit/currency are highly
+        # distinctive and must never be repeated from a protected secret.
+        for match in re.findall(
+            r"(?<![\w.])\d+(?:\.\d+)?\s*(?:%|rmb|cny|usd|eur|gbp|days?|months?|years?|units?)",
+            secret,
+        ):
+            if match in text:
+                return "protected_information_leak"
+        tokens = [
+            token for token in re.findall(r"[\w.%+-]+", secret)
+            if token not in _PROTECTED_STOPWORDS and not token.isdigit()
+        ]
+        if len(tokens) >= 3:
+            secret_ngrams = {
+                tuple(tokens[index:index + 3])
+                for index in range(len(tokens) - 2)
+            }
+            if text_ngrams.intersection(secret_ngrams):
+                return "protected_information_leak"
+        elif len(tokens) == 2 and " ".join(tokens) in text:
+            return "protected_information_leak"
+    return None
 
 
 def _contains_unsupported_artifact_claim(text: str) -> bool:
@@ -64,7 +106,27 @@ def _contains_unsupported_artifact_claim(text: str) -> bool:
     return False
 
 
-def unsupported_evidence_reason(content: str, *, public_context: str = "") -> str | None:
+def _contains_live_artifact_presentation(text: str) -> bool:
+    """Detect a purported artifact being supplied in the current dialogue.
+
+    Retrospective interviews may truthfully discuss artifacts used in a past
+    job. They still cannot manufacture a file in the current text session.
+    """
+    lowered = text.casefold()
+    patterns = (
+        r"\b(?:see|review|open|download)\s+(?:the\s+)?attached\b",
+        r"\battached\s+(?:is|are)\b",
+        r"\b(?:here(?:'s| is| are)|please find)\b[^.!?]{0,100}\battached\b",
+        r"\b(?:i|we)(?:'ve| have)\s+(?:just\s+)?(?:attached|uploaded|emailed|sent)\b",
+        r"\b(?:i|we)\s+just\s+(?:attached|uploaded|emailed|sent)\b",
+    )
+    return any(re.search(pattern, lowered) for pattern in patterns)
+
+
+def unsupported_evidence_reason(
+    content: str, *, public_context: str = "",
+    allow_retrospective_artifact_claims: bool = False,
+) -> str | None:
     """Reject newly invented external evidence before it enters public dialogue.
 
     Text simulations can state material contents inline, but they cannot really
@@ -74,7 +136,11 @@ def unsupported_evidence_reason(content: str, *, public_context: str = "") -> st
     text = " ".join((content or "").split()).strip()
     context = " ".join((public_context or "").split())
     if _contains_unsupported_artifact_claim(text):
-        return "unsupported_artifact_claim"
+        if (
+            not allow_retrospective_artifact_claims
+            or _contains_live_artifact_presentation(text)
+        ):
+            return "unsupported_artifact_claim"
     for value in _URL_RE.findall(text):
         if value not in context:
             return "unsupported_url"
@@ -87,6 +153,8 @@ def unsupported_evidence_reason(content: str, *, public_context: str = "") -> st
 def speech_rejection_reason(
     content: str, *, active_plan_text: str = "", public_context: str = "",
     validated_intent: dict | None = None,
+    protected_secrets: list[str] | None = None,
+    public_draft_text: str = "",
 ) -> str | None:
     """Reject obvious internal-plan echoes and visibly truncated public speech."""
     text = " ".join((content or "").split()).strip()
@@ -100,22 +168,43 @@ def speech_rejection_reason(
     plan = " ".join((active_plan_text or "").split()).strip().casefold()
     if plan and (lowered == plan or (len(plan) >= 48 and lowered.startswith(plan[:48]))):
         return "active_plan_echo"
+    draft = " ".join((public_draft_text or "").split()).strip().casefold()
+    if draft and (
+        lowered == draft
+        or (len(draft) >= 40 and lowered.startswith(draft[:40]))
+    ):
+        return "public_draft_echo"
 
-    unsupported = unsupported_evidence_reason(text, public_context=public_context)
+    protected_reason = protected_information_reason(
+        text, protected_secrets=protected_secrets
+    )
+    if protected_reason:
+        return protected_reason
+
+    intent = validated_intent or {}
+    unsupported = unsupported_evidence_reason(
+        text,
+        public_context=public_context,
+        allow_retrospective_artifact_claims=(
+            str(intent.get("simulation_scope") or "") == "retrospective"
+        ),
+    )
     if unsupported:
         return unsupported
 
     # G3: wording may not upgrade a transition that the public-world ledger
     # downgraded. This closes the gap where natural-language rendering claimed
     # completion after the action validator accepted only a commitment.
-    intent = validated_intent or {}
     transition = str(intent.get("transition") or "")
-    if transition in {"proposed", "committed", "in_progress", "blocked"}:
+    if (
+        str(intent.get("simulation_scope") or "") != "retrospective"
+        and transition in {"proposed", "committed", "in_progress", "submitted", "blocked"}
+    ):
         for sentence in re.split(r"(?<=[.!?])\s+|[;]\s*", text):
             terminal_claim = re.search(
-                r"\b(?:(?:it|this|that|the\s+[\w -]+)\s+(?:is|was|has been)|"
+                r"\b(?:(?:it|this|that|the\s+[\w -]+?)\s+(?:is|was|has been)\s+|"
                 r"(?:we|i)\s+(?:have\s+|['’]ve\s+)?)"
-                r"(?:completed|submitted|uploaded|sent|verified|approved|accepted|executed)\b",
+                r"(?:complete(?:d)?|submitted|uploaded|sent|verified|approved|accepted|executed)\b",
                 sentence,
                 flags=re.IGNORECASE,
             )

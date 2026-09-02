@@ -25,7 +25,11 @@ from app.external_observer import build_blinded_evaluation_packet
 from app.external_evaluator import evaluate_public_transcript
 from app.player_character import resolve_player_character
 from app.player_agent import generate_comparison_player_move, generate_player_move
-from app.public_ledger import commit_public_intent
+from app.public_ledger import (
+    commit_public_intent,
+    ground_public_intent_in_quote,
+    validate_public_intent,
+)
 from app.scenario_side import resolve_player_side_goal
 from app.task_state import (
     TERMINAL_OUTCOMES,
@@ -89,6 +93,27 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
         move = await generate_comparison_player_move(db, session, scenario, messages)
     else:
         move = await generate_player_move(db, session, scenario, messages)
+    if move.public_intent:
+        task_config = scenario.task_config or {}
+        evidence_mode = str(task_config.get("evidence_mode") or (
+            "retrospective_claim"
+            if str(task_config.get("task_type") or "") == "structured_interview"
+            else "live_operation"
+        ))
+        # The shared player policy remains public-only in both conditions. The
+        # RoomMind treatment validates its already-generated intent against the
+        # authoritative current state only at the commit boundary; it does not
+        # regenerate or rewrite the player's public words.
+        move.public_intent = validate_public_intent(
+            character=resolve_player_character(scenario),
+            intent=move.public_intent,
+            turn_id=completed_turns,
+            state=before_task_state,
+            allow_retrospective=evidence_mode == "retrospective_claim",
+        )
+        move.public_intent = ground_public_intent_in_quote(
+            move.public_intent, move.content
+        )
     if move.public_intent and move.public_intent.get("commit_allowed", True):
         commit_public_intent(
             before_task_state,

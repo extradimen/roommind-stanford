@@ -9,6 +9,7 @@
   "task_config": {
     "config_version": 4,
     "task_type": "cross_functional_decision",
+    "evidence_mode": "live_operation",
     "player_objective": "Confirm market readiness, operational readiness, and budget approval, then obtain joint approval for a phased launch decision.",
     "counterpart_objective": "Reach a launch decision without hiding material commercial, operational, or financial risk.",
     "terminology": {

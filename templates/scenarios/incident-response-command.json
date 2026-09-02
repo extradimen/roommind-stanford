@@ -9,6 +9,7 @@
   "task_config": {
     "config_version": 4,
     "task_type": "incident_response",
+    "evidence_mode": "live_operation",
     "player_objective": "Contain the incident, approve a safe recovery plan, assign customer communication, and establish the next review time.",
     "counterpart_objective": "Restore service without destroying evidence or creating unmanaged customer and compliance risk.",
     "terminology": {"task":"incident command","player_role":"Incident Commander","player_name":"Jordan Lee","completion":"response plan approved"},

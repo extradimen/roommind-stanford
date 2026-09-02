@@ -270,6 +270,11 @@ async def run_agent_tick(
         else "Advance one unresolved issue with a new fact, proposal, objection, decision, or action."
     )
 
+    evidence_mode = str((scenario.task_config or {}).get("evidence_mode") or (
+        "retrospective_claim"
+        if str((scenario.task_config or {}).get("task_type") or "") == "structured_interview"
+        else "live_operation"
+    ))
     decision_prompt = f"""You are generative task-simulation agent "{character.display_name}".
 Every decision must follow your own goals and plan, not react blindly to the user.
 
@@ -307,6 +312,7 @@ Authority and action limits: {json.dumps(character.authority or {}, ensure_ascii
 [Situation]
 Scenario: {scenario.title} | Phase: {current_phase}
 Task type: {(scenario.task_config or {}).get('task_type', 'simulation')}
+Evidence mode: {evidence_mode}
 Task terminology: {json.dumps((scenario.task_config or {}).get('terminology', {}), ensure_ascii=False)}
 Shared simulation ledger (state, work items, events, outcome): {json.dumps(governance_view, ensure_ascii=False)}
 Consecutive turns without material progress: {stagnant_turns}
@@ -340,6 +346,9 @@ Priority:
     utterance requests. External work cannot complete in a text meeting. Use transition
     committed for promised external work. Use submitted/verified/accepted only for
     in-session work whose concrete result or artifact content is included inline.
+    In a retrospective interview, describe past experience as kind=fact,
+    simulation_scope=retrospective, transition=proposed. It is evidence offered in
+    conversation, not a live action completed by the simulation.
 
 {decision_language_rule(reply_language)}
 
@@ -356,7 +365,8 @@ Output strict JSON only:
     "transition": "proposed|committed|in_progress|submitted|verified|accepted|rejected|blocked",
     "target_id": "optional user or character_id",
     "field": "optional configured state field",
-    "simulation_scope": "discussion|in_session|external",
+    "value": "explicit public typed field value, otherwise null",
+    "simulation_scope": "discussion|in_session|external|retrospective",
     "inline_content": "actual in-session result or artifact content, otherwise empty"
   }},
   "moment_importance": integer 1-10
@@ -416,6 +426,7 @@ Output strict JSON only:
         timeline=timeline,
         reply_language=reply_language,
         task_state=task_state,
+        allow_retrospective=evidence_mode == "retrospective_claim",
     )
 
     return _loop_result_from_action(

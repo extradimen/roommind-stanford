@@ -111,6 +111,11 @@ async def generate_player_move(
 ) -> PlayerMove:
     config = dict(session.run_config or {})
     player = resolve_player_character(scenario)
+    evidence_mode = str((scenario.task_config or {}).get("evidence_mode") or (
+        "retrospective_claim"
+        if str((scenario.task_config or {}).get("task_type") or "") == "structured_interview"
+        else "live_operation"
+    ))
     llm_cfg = await orch_support.get_llm_config(db)
     player_llm = resolve_llm(llm_cfg, scenario.orchestration_config, "player")
     strategy = str(config.get("player_strategy") or "balanced")
@@ -201,6 +206,9 @@ Treat a promise to provide a document, analysis, test, decision, or action as
 different from actually providing or completing it. Seek material execution,
 not another promise. Open-ended simulations may end through completion,
 conditional resolution, deferral, handoff, or acknowledged failure.
+Evidence mode: {evidence_mode}. In retrospective_claim mode, describe past
+experience as kind=fact, simulation_scope=retrospective, transition=proposed;
+do not turn a historical narrative into a live completed simulation action.
 Progress rule: {progress_guidance}
 
 Return strict JSON only:
@@ -213,7 +221,8 @@ Return strict JSON only:
     "transition": "proposed|committed|in_progress|submitted|verified|accepted|rejected|blocked",
     "target_id": "optional character_id",
     "field": "optional configured state field",
-    "simulation_scope": "discussion|in_session|external",
+    "value": "explicit public typed field value, otherwise null",
+    "simulation_scope": "discussion|in_session|external|retrospective",
     "inline_content": "actual in-session result/content, otherwise empty"
   }},
   "requested_end": false
@@ -252,9 +261,10 @@ Return strict JSON only:
         parsed = orch_support.parse_json(raw)
         content = normalize_player_content(parsed.get("content") or "")
         validated_intent = validate_public_intent(
-            character={**player, "character_id": "user", "authority": {}},
+            character={**player, "character_id": "user"},
             intent=parsed.get("public_intent"),
             turn_id=turn_id,
+            allow_retrospective=evidence_mode == "retrospective_claim",
         )
         rejection = player_speech_rejection_reason(
             content, public_context=dialogue, validated_intent=validated_intent
@@ -280,9 +290,10 @@ Return strict JSON only:
     intent = str(parsed.get("intent") or "unspecified")
     requested_end = bool(parsed.get("requested_end", False))
     public_intent = validate_public_intent(
-        character={**player, "character_id": "user", "authority": {}},
+        character={**player, "character_id": "user"},
         intent=parsed.get("public_intent"),
         turn_id=turn_id,
+        allow_retrospective=evidence_mode == "retrospective_claim",
     )
     emit(
         "public_ledger.intent.validated",
@@ -332,6 +343,11 @@ async def generate_comparison_player_move(
     """
     config = dict(session.run_config or {})
     player = resolve_player_character(scenario)
+    evidence_mode = str((scenario.task_config or {}).get("evidence_mode") or (
+        "retrospective_claim"
+        if str((scenario.task_config or {}).get("task_type") or "") == "structured_interview"
+        else "live_operation"
+    ))
     llm_cfg = await orch_support.get_llm_config(db)
     comparison_orch_cfg = dict(scenario.orchestration_config or {})
     comparison_orch_cfg["_comparison_lock_model"] = True
@@ -352,6 +368,7 @@ Strategy: {config.get('player_strategy', 'balanced')}
 Public scenario title: {scenario.title}
 Public scenario description: {scenario.description or ''}
 Public task specification: {json.dumps(scenario.task_config or {}, ensure_ascii=False)}
+Evidence mode: {evidence_mode}
 Public participants: {json.dumps(_public_character_context(scenario), ensure_ascii=False)}
 
 Public dialogue:
@@ -368,10 +385,13 @@ answer the most recent specific question before introducing a new issue. Use
 the dialogue language, default English. Do not invent links, attachments,
 measurements, approvals, live-system results, or facts controlled by another
 participant. Ask the responsible participant for missing evidence instead.
+In retrospective_claim mode, recount past experience as kind=fact,
+simulation_scope=retrospective, transition=proposed. It is not a live action
+completed by this text simulation.
 
 Return strict JSON only:
 {{"content":"exact spoken message","intent":"short label","requested_end":false,
-"public_intent":{{"kind":"statement|fact|proposal|decision|commitment|action|artifact|verification|schedule|issue|outcome|handoff","subject":"one concise public subject","transition":"proposed|committed|in_progress|submitted|verified|accepted|rejected|blocked","target_id":"optional character_id","field":"optional configured state field","simulation_scope":"discussion|in_session|external","inline_content":"actual in-session result/content, otherwise empty"}}}}"""
+"public_intent":{{"kind":"statement|fact|proposal|decision|commitment|action|artifact|verification|schedule|issue|outcome|handoff","subject":"one concise public subject","transition":"proposed|committed|in_progress|submitted|verified|accepted|rejected|blocked","target_id":"optional character_id","field":"optional configured state field","value":"explicit public typed field value, otherwise null","simulation_scope":"discussion|in_session|external|retrospective","inline_content":"actual in-session result/content, otherwise empty"}}}}"""
     raw = ""
     parsed: dict[str, Any] = {}
     content = ""
@@ -402,9 +422,10 @@ Return strict JSON only:
         content = normalize_player_content(parsed.get("content") or "").strip()
         turn_id = sum(1 for message in messages if message.get("speaker_type") == "user") + 1
         validated_intent = validate_public_intent(
-            character={**player, "character_id": "user", "authority": {}},
+            character={**player, "character_id": "user"},
             intent=parsed.get("public_intent"),
             turn_id=turn_id,
+            allow_retrospective=evidence_mode == "retrospective_claim",
         )
         rejection = player_speech_rejection_reason(
             content, public_context=dialogue, validated_intent=validated_intent
@@ -424,9 +445,10 @@ Return strict JSON only:
         parsed = {"intent": "request_clarification", "requested_end": False, "public_intent": {}}
     turn_id = sum(1 for message in messages if message.get("speaker_type") == "user") + 1
     public_intent = validate_public_intent(
-        character={**player, "character_id": "user", "authority": {}},
+        character={**player, "character_id": "user"},
         intent=parsed.get("public_intent"),
         turn_id=turn_id,
+        allow_retrospective=evidence_mode == "retrospective_claim",
     )
     emit(
         "public_ledger.intent.validated",

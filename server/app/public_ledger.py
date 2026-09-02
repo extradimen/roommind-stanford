@@ -20,6 +20,15 @@ LIFECYCLE = (
 )
 TERMINAL_LIFECYCLE = {"accepted", "rejected"}
 MATERIAL_LIFECYCLE = {"submitted", "verified", "accepted", "rejected", "blocked"}
+MATERIAL_ENTITY_KINDS = {"artifact", "action", "verification"}
+CANONICAL_WORK_KINDS = MATERIAL_ENTITY_KINDS | {
+    "issue", "proposal", "decision", "commitment", "schedule", "handoff", "outcome",
+}
+SIMULATION_SCOPES = {"discussion", "in_session", "external", "retrospective"}
+_SUBJECT_QUALIFIERS = {
+    "a", "an", "and", "the", "for", "of", "to", "with", "draft",
+    "details", "detail", "summary", "update", "calculation", "calculate",
+}
 
 
 def initial_public_ledger() -> dict[str, Any]:
@@ -66,6 +75,66 @@ def _normalize_actor(value: Any) -> str:
     return "user" if str(value or "") == "player" else str(value or "")
 
 
+def _subject_key(value: Any) -> str:
+    words = [
+        token for token in re.findall(r"[\w-]+", str(value or "").casefold())
+        if token and token not in _SUBJECT_QUALIFIERS
+    ]
+    return "_".join(words[:12])[:96] or "unspecified"
+
+
+def _identity_tokens(value: Any) -> set[str]:
+    tokens: set[str] = set()
+    for token in _subject_key(value).split("_"):
+        if len(token) > 4 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
+            token = token[:-1]
+        if token:
+            tokens.add(token)
+    return tokens
+
+
+def _canonical_entity_id(
+    ledger: dict[str, Any], *, kind: str, subject: str, field: str
+) -> str:
+    """Resolve model wording to a stable public entity identity.
+
+    Configured fields are the strongest identity. Material work without a
+    field shares one ``work:`` namespace across action/artifact/verification,
+    so a later verification can advance the thing that was submitted. Obvious
+    subject aliases are merged deterministically before a new entity is made.
+    """
+    if field:
+        return f"field:{field}"
+    key = _subject_key(subject)
+    if kind not in CANONICAL_WORK_KINDS:
+        return f"{kind}:{key}"
+    wanted = _identity_tokens(key)
+    best_id = ""
+    best_score = 0.0
+    for entity_id, entity in (ledger.get("entities") or {}).items():
+        if not isinstance(entity, dict):
+            continue
+        existing_kind = str(entity.get("kind") or "")
+        if kind in MATERIAL_ENTITY_KINDS:
+            if not str(entity_id).startswith("work:"):
+                continue
+        elif existing_kind not in CANONICAL_WORK_KINDS:
+            continue
+        aliases = [str(entity.get("subject") or ""), *(entity.get("aliases") or [])]
+        for alias in aliases:
+            existing = _identity_tokens(alias)
+            overlap = wanted.intersection(existing)
+            score = len(overlap) / len(wanted.union(existing)) if wanted and existing else 0.0
+            subset = min(len(wanted), len(existing)) >= 2 and (
+                wanted <= existing or existing <= wanted
+            )
+            if (score >= 0.67 or subset) and score > best_score:
+                best_id, best_score = str(entity_id), score
+    if best_id:
+        return best_id
+    return f"work:{key}" if kind in MATERIAL_ENTITY_KINDS else f"{kind}:{key}"
+
+
 def _authority_allows(character: Any, intent: dict[str, Any]) -> bool:
     transition = str(intent.get("transition") or "proposed")
     field = str(intent.get("field") or "")
@@ -78,10 +147,19 @@ def _authority_allows(character: Any, intent: dict[str, Any]) -> bool:
         forbidden = set(authority.get("cannot_commit") or []) | set(authority.get("cannot_confirm") or [])
         if field in forbidden:
             return False
-    if kind == "action" and field and transition in {
-        "in_progress", "submitted", "verified", "accepted",
-    }:
-        if field not in set(authority.get("can_execute") or []):
+    if kind == "action" and transition in {"in_progress", "submitted", "verified", "accepted"}:
+        if not field or field not in set(authority.get("can_execute") or []):
+            return False
+    if kind == "artifact" and transition in {"submitted", "verified", "accepted"}:
+        artifact_authority = (
+            set(authority.get("can_execute") or [])
+            | set(authority.get("can_confirm") or [])
+            | set(authority.get("can_provide") or [])
+        )
+        if not field or field not in artifact_authority:
+            return False
+    if kind == "verification" and transition in {"verified", "accepted"}:
+        if not field or field not in set(authority.get("can_confirm") or []):
             return False
     if transition == "proposed" and field and authority.get("can_propose") is not None:
         return field in set(authority.get("can_propose") or [])
@@ -95,6 +173,7 @@ def _authority_allows(character: Any, intent: dict[str, Any]) -> bool:
 def validate_public_intent(
     *, character: Any, intent: dict[str, Any] | None, turn_id: int,
     state: dict[str, Any] | None = None,
+    allow_retrospective: bool = False,
 ) -> dict[str, Any]:
     """Validate an agent's proposed public-world transition before wording it.
 
@@ -120,6 +199,14 @@ def validate_public_intent(
     subject = " ".join(str(raw.get("subject") or kind).split())[:240]
     inline_content = str(raw.get("inline_content") or "").strip()[:4000]
     simulation_scope = str(raw.get("simulation_scope") or "discussion").lower()
+    if simulation_scope not in SIMULATION_SCOPES:
+        simulation_scope = "discussion"
+        initial_rejection = initial_rejection or "invalid_simulation_scope"
+    elif simulation_scope == "retrospective" and not allow_retrospective:
+        # The model cannot self-select a weaker evidence regime in a live
+        # simulation. Retrospective claims are enabled only by scenario policy.
+        simulation_scope = "discussion"
+        initial_rejection = initial_rejection or "retrospective_scope_not_enabled"
     actor_id = _normalize_actor(
         character.get("character_id") if isinstance(character, dict)
         else getattr(character, "character_id", "")
@@ -132,8 +219,21 @@ def validate_public_intent(
         else getattr(character, "authority", None)
     ) or {}
     field = str(raw.get("field") or "")[:96]
-    if kind == "action" and not field:
-        executable = [str(value) for value in (authority.get("can_execute") or []) if value]
+    raw_value = raw.get("value")
+    value = raw_value if isinstance(raw_value, (str, int, float, bool)) else None
+    if raw_value is not None and value is None:
+        rejection = rejection or "invalid_public_field_value"
+    if kind in MATERIAL_ENTITY_KINDS and not field:
+        capability_values = list(authority.get("can_execute") or [])
+        if kind == "artifact":
+            capability_values.extend(authority.get("can_provide") or [])
+            capability_values.extend(authority.get("can_confirm") or [])
+        elif kind == "verification":
+            capability_values.extend(authority.get("can_verify") or [])
+            capability_values.extend(authority.get("can_confirm") or [])
+        executable = list(dict.fromkeys(
+            str(value) for value in capability_values if value and str(value) != "*"
+        ))
         subject_tokens = set(re.findall(r"[\w]+", subject.casefold().replace("-", "_")))
         matching = [
             value for value in executable
@@ -142,42 +242,95 @@ def validate_public_intent(
         if len(matching) == 1:
             field = matching[0]
 
-    if not _authority_allows(character, {**raw, "field": field, "transition": transition}):
-        rejection = "actor_lacks_transition_authority"
+    if simulation_scope == "retrospective":
+        # Historical experience is a public claim, not a live world action.
+        # Preserve the subject and evidence without completing current work.
+        if kind in MATERIAL_ENTITY_KINDS or transition != "proposed":
+            rejection = rejection or "retrospective_claim_not_live_transition"
+        kind = "fact"
+        transition = "proposed"
+    elif not _authority_allows(character, {**raw, "kind": kind, "field": field, "transition": transition}):
+        rejection = rejection or "actor_lacks_transition_authority"
         transition = "proposed"
     elif kind == "artifact" and transition in {"submitted", "verified", "accepted"} and not inline_content:
-        rejection = "artifact_terminal_transition_requires_inline_content"
+        rejection = rejection or "artifact_terminal_transition_requires_inline_content"
         transition = "committed"
     elif kind == "action" and transition in {"submitted", "verified", "accepted"}:
         if simulation_scope != "in_session" or not inline_content:
-            rejection = "external_action_cannot_complete_without_in_session_result"
+            rejection = rejection or "external_action_cannot_complete_without_in_session_result"
             transition = "committed"
     elif kind == "verification" and transition in {"verified", "accepted"} and not inline_content:
-        rejection = "verification_requires_public_inline_evidence"
+        rejection = rejection or "verification_requires_public_inline_evidence"
+        transition = "proposed"
+    if field and transition in {"verified", "accepted"} and value is None:
+        rejection = rejection or "field_terminal_transition_requires_value"
         transition = "proposed"
 
     # Material entities advance monotonically. Concrete in-session work may be
     # submitted immediately, but it cannot also verify and accept itself in the
     # same event. A later authorized participant must perform those transitions.
-    if state is not None and kind in {"artifact", "action", "verification"}:
+    entity_id = ""
+    if state is not None:
         ledger = ensure_public_ledger(state)
-        subject_key = "_".join(subject.casefold().split())[:96]
-        prior = (ledger.get("entities") or {}).get(f"{kind}:{subject_key}") or {}
+        entity_id = _canonical_entity_id(
+            ledger, kind=kind, subject=subject, field=field
+        )
+    if state is not None and kind in MATERIAL_ENTITY_KINDS:
+        prior = (ledger.get("entities") or {}).get(entity_id) or {}
         prior_lifecycle = str(prior.get("lifecycle") or "")
         rank = {name: index for index, name in enumerate(LIFECYCLE[:6])}
-        if transition in {"submitted", "verified", "accepted"}:
-            requested_rank = rank.get(transition, 0)
-            prior_rank = rank.get(prior_lifecycle, -1)
-            if prior_lifecycle and requested_rank <= prior_rank:
-                rejection = rejection or "material_lifecycle_cannot_regress_or_repeat"
-                transition = prior_lifecycle
-                commit_allowed = False
-            else:
+        requested_rank = rank.get(transition, -1)
+        prior_rank = rank.get(prior_lifecycle, -1)
+        if (
+            prior_lifecycle in rank and transition in rank
+            and requested_rank <= prior_rank
+        ):
+            rejection = rejection or "material_lifecycle_cannot_regress_or_repeat"
+            transition = prior_lifecycle
+            commit_allowed = False
+        elif transition in {"submitted", "verified", "accepted"}:
+            if not prior_lifecycle or requested_rank > prior_rank:
                 next_rank = prior_rank + 1 if prior_lifecycle else rank["submitted"]
                 applied = LIFECYCLE[max(0, min(requested_rank, next_rank))]
                 if applied != transition:
                     rejection = rejection or "material_lifecycle_requires_separate_transitions"
                     transition = applied
+    elif state is not None and field:
+        # A later statement may discuss or challenge an accepted field, but it
+        # cannot silently move the authoritative lifecycle backwards. Explicit
+        # rejected/blocked transitions remain available for a real reversal.
+        prior = (ledger.get("entities") or {}).get(entity_id) or {}
+        prior_lifecycle = str(prior.get("lifecycle") or "")
+        prior_value = prior.get("value")
+        prior_actors = (prior.get("actors_by_transition") or {}).get(transition) or []
+        if prior_lifecycle == transition and actor_id in {
+            str(actor) for actor in prior_actors
+        }:
+            rejection = rejection or "field_lifecycle_repeat_by_actor"
+            commit_allowed = False
+        if (
+            prior_lifecycle == "accepted" and transition == "accepted"
+            and prior_value is not None and value != prior_value
+        ):
+            rejection = rejection or "accepted_field_value_conflict"
+            transition = "proposed"
+            commit_allowed = False
+        rank = {name: index for index, name in enumerate(LIFECYCLE[:6])}
+        if (
+            prior_lifecycle in rank and transition in rank
+            and rank[transition] < rank[prior_lifecycle]
+        ):
+            rejection = rejection or "field_lifecycle_cannot_regress"
+            transition = prior_lifecycle
+            commit_allowed = False
+    elif state is not None and kind in CANONICAL_WORK_KINDS:
+        prior = (ledger.get("entities") or {}).get(entity_id) or {}
+        prior_actors = (prior.get("actors_by_transition") or {}).get(transition) or []
+        if str(prior.get("lifecycle") or "") == transition and actor_id in {
+            str(value) for value in prior_actors
+        }:
+            rejection = rejection or "nonmaterial_lifecycle_repeat_by_actor"
+            commit_allowed = False
 
     return {
         "kind": kind,
@@ -186,6 +339,7 @@ def validate_public_intent(
         "actor_id": actor_id,
         "target_id": _normalize_actor(raw.get("target_id")),
         "field": field,
+        "value": value,
         "inline_content": inline_content,
         "simulation_scope": simulation_scope,
         "turn_id": int(turn_id),
@@ -193,7 +347,81 @@ def validate_public_intent(
         "validation_reason": rejection,
         "requested_transition": requested_transition,
         "commit_allowed": commit_allowed,
+        "entity_id": entity_id,
     }
+
+
+def ground_public_intent_in_quote(
+    intent: dict[str, Any] | None, public_quote: str
+) -> dict[str, Any]:
+    """Require a material structured intent to be stated in public speech.
+
+    The structured intent is model output and therefore untrusted.  Authority
+    and lifecycle validation alone cannot distinguish "please provide X" from
+    "I have provided X".  This final commit-boundary check prevents requests,
+    questions, and internal annotations from mutating the public world.
+    """
+    grounded = dict(intent or {})
+    if not grounded or not grounded.get("commit_allowed", True):
+        return grounded
+    transition = str(grounded.get("transition") or "proposed")
+    quote = " ".join(str(public_quote or "").casefold().split())
+    subject = str(grounded.get("subject") or "").strip()
+    field = str(grounded.get("field") or "").strip()
+    expected_tokens = _identity_tokens(f"{subject} {field}") if (subject or field) else set()
+    quote_tokens = _identity_tokens(quote)
+    if expected_tokens and not expected_tokens.intersection(quote_tokens):
+        prior_reason = str(grounded.get("validation_reason") or "")
+        grounded["commit_allowed"] = False
+        grounded["validation"] = "rejected"
+        grounded["validation_reason"] = ";".join(filter(None, [
+            prior_reason, "public_quote_does_not_support_subject",
+        ]))
+        return grounded
+    value = grounded.get("value")
+    if value is not None:
+        if isinstance(value, bool):
+            pattern = (
+                r"\b(?:accept|accepted|agree|agreed|approve|approved|confirm|confirmed|"
+                r"adopt|adopted|enable|enabled|active|activated|yes|true)\b"
+                if value else
+                r"\b(?:reject|rejected|decline|declined|not|no|false|inactive|disable|disabled)\b"
+            )
+            value_supported = bool(re.search(pattern, quote))
+        elif isinstance(value, (int, float)):
+            value_supported = bool(re.search(
+                rf"(?<![\w.]){re.escape(f'{float(value):g}')}(?![\w.])", quote
+            ))
+        else:
+            value_supported = str(value).strip().casefold() in quote
+        if not value_supported:
+            prior_reason = str(grounded.get("validation_reason") or "")
+            grounded["commit_allowed"] = False
+            grounded["validation"] = "rejected"
+            grounded["validation_reason"] = ";".join(filter(None, [
+                prior_reason, "public_quote_does_not_support_value",
+            ]))
+            return grounded
+    if transition == "proposed":
+        return grounded
+    patterns = {
+        "committed": r"\b(?:i|we)\s+(?:will|shall|commit(?:ted)?\s+to|agree\s+to|undertake\s+to|plan\s+to)\b",
+        "in_progress": r"\b(?:i(?:'m| am)|we(?:'re| are))\s+(?:now\s+)?(?:working|reviewing|preparing|executing|implementing|verifying|investigating)\b|\b(?:has|have)\s+(?:started|begun)\b",
+        "submitted": r"\b(?:i|we)\s+(?:have\s+|['’]ve\s+)?(?:provided|submitted|delivered|shared|presented)\b|\bhere\s+(?:is|are)\b",
+        "verified": r"\b(?:i|we)\s+(?:have\s+|['’]ve\s+)?(?:verified|validated|confirmed|checked)\b|\b(?:is|are|was|were|has been|have been)\s+(?:verified|validated|confirmed)\b",
+        "accepted": r"\b(?:i|we)\s+(?:accept|approve|agree|confirm)\b|\b(?:is|are|has been|have been)\s+(?:accepted|approved|agreed|confirmed|finalized)\b",
+        "rejected": r"\b(?:i|we)\s+(?:reject|decline|cannot accept|do not accept)\b|\b(?:is|are|has been|have been)\s+rejected\b",
+        "blocked": r"\b(?:i|we)\s+(?:cannot|can't|am unable|are unable)\b|\b(?:is|are|remains?)\s+blocked\b",
+    }
+    pattern = patterns.get(transition)
+    if pattern and not re.search(pattern, quote, flags=re.IGNORECASE):
+        prior_reason = str(grounded.get("validation_reason") or "")
+        grounded["commit_allowed"] = False
+        grounded["validation"] = "rejected"
+        grounded["validation_reason"] = ";".join(filter(None, [
+            prior_reason, "public_quote_does_not_support_transition",
+        ]))
+    return grounded
 
 
 def commit_public_intent(
@@ -204,8 +432,12 @@ def commit_public_intent(
     entities = ledger.setdefault("entities", {})
     events = ledger.setdefault("events", [])
     rejections = ledger.setdefault("rejections", [])
-    subject_key = "_".join(str(intent.get("subject") or "unspecified").casefold().split())[:96]
-    entity_id = f"{intent.get('kind')}:{subject_key}"
+    entity_id = str(intent.get("entity_id") or "") or _canonical_entity_id(
+        ledger,
+        kind=str(intent.get("kind") or "statement"),
+        subject=str(intent.get("subject") or "unspecified"),
+        field=str(intent.get("field") or ""),
+    )
     prior = dict(entities.get(entity_id) or {})
     transition = str(intent.get("transition") or "proposed")
     event_counter = int(ledger.get("event_counter") or 0) + 1
@@ -227,6 +459,7 @@ def commit_public_intent(
         "actor_id": str(intent.get("actor_id") or ""),
         "target_id": str(intent.get("target_id") or ""),
         "field": str(intent.get("field") or ""),
+        "value": intent.get("value"),
         "inline_content": str(intent.get("inline_content") or ""),
         "public_evidence": {"quote": str(public_quote or "")[:1000]},
         "provenance": "prevalidated_agent_intent",
@@ -234,7 +467,17 @@ def commit_public_intent(
         "validation_reason": str(intent.get("validation_reason") or ""),
         "validated_intent": deepcopy(intent),
         "clock_valid": event_clock_tuple >= prior_clock_tuple,
+        "committed": event_clock_tuple >= prior_clock_tuple,
     }
+    if not event["clock_valid"]:
+        rejections.append({
+            "event_id": event_id,
+            "requested_transition": str(intent.get("requested_transition") or ""),
+            "applied_transition": "none",
+            "reason": "simulation_clock_regression",
+        })
+        ledger["rejections"] = rejections[-100:]
+        return event
     events.append(event)
     if event["validation_reason"]:
         rejections.append({
@@ -243,15 +486,27 @@ def commit_public_intent(
             "applied_transition": transition,
             "reason": event["validation_reason"],
         })
+    actors_by_transition = dict(prior.get("actors_by_transition") or {})
+    actors = list(actors_by_transition.get(transition) or [])
+    if event["actor_id"] and event["actor_id"] not in actors:
+        actors.append(event["actor_id"])
+    actors_by_transition[transition] = actors
+    aliases = list(dict.fromkeys([
+        *(prior.get("aliases") or []), event["subject"],
+    ]))[-20:]
     entities[entity_id] = {
         **prior,
         "entity_id": entity_id,
         "kind": event["entity_kind"],
+        "kinds": list(dict.fromkeys([*(prior.get("kinds") or []), event["entity_kind"]])),
         "subject": event["subject"],
+        "aliases": aliases,
         "lifecycle": transition,
         "owner_id": event["actor_id"],
+        "actors_by_transition": actors_by_transition,
         "target_id": event["target_id"],
         "field": event["field"],
+        "value": event["value"] if event["value"] is not None else prior.get("value"),
         "inline_content": event["inline_content"] or prior.get("inline_content", ""),
         "last_event_id": event_id,
         "last_transition_turn": event["turn_id"],
@@ -270,7 +525,11 @@ def ledger_has_support(
     ledger = ensure_public_ledger(state)
     wanted = {token for token in "_".join(subject.casefold().split()).split("_") if token}
     for entity in (ledger.get("entities") or {}).values():
-        if str(entity.get("kind") or "") != kind:
+        entity_kinds = {
+            str(entity.get("kind") or ""),
+            *(str(value) for value in (entity.get("kinds") or [])),
+        }
+        if kind not in entity_kinds:
             continue
         if field and str(entity.get("field") or "") == field and entity.get("lifecycle") in minimum:
             return True

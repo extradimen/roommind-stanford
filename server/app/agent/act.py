@@ -14,7 +14,11 @@ from app.llm.client import LLMEmptyContentError, llm_client
 from app.models.db import CharacterTemplate, ScenarioTemplate
 from app.orchestrator.common import NPCReply
 from app.orchestrator.llm_binding import ResolvedLlm
-from app.public_ledger import commit_public_intent, validate_public_intent
+from app.public_ledger import (
+    commit_public_intent,
+    ground_public_intent_in_quote,
+    validate_public_intent,
+)
 from app.i18n.reply_language import (
     action_internal_note,
     action_internal_summary,
@@ -61,6 +65,15 @@ class ActionResult:
     memory_nodes: list[MemoryNode] = field(default_factory=list)
     world_events: list[WorldEvent] = field(default_factory=list)
     public_ledger_event: dict[str, Any] | None = None
+
+
+def configured_public_fallback(configured: dict[str, Any] | None) -> str:
+    """Return only fallback text explicitly authored as public dialogue.
+
+    ``fallback_actions.default`` is an internal action instruction consumed by
+    agent cognition and must never be copied into the meeting transcript.
+    """
+    return str((configured or {}).get("public_reply") or "").strip()
 
 
 async def render_npc_speech(
@@ -151,6 +164,10 @@ Requirements:
             active_plan_text=active_plan_text,
             public_context=f"{conversation_context}\n{user_input}",
             validated_intent=validated_intent,
+            public_draft_text=draft,
+            protected_secrets=list(
+                (character.private_state or {}).get("protected_secrets") or []
+            ),
         ) or ""
         if rejection:
             emit(
@@ -164,11 +181,19 @@ Requirements:
             return cleaned, emotion, gesture, True
 
     configured = character.fallback_actions or {}
-    fallback = str(configured.get("default") or "").strip()
+    # ``fallback_actions.default`` is an internal action instruction (for
+    # example, "Ask for the missing commercial conditions"), not dialogue.
+    # Older code exposed that instruction verbatim after two rejected model
+    # candidates.  Only an explicitly authored public reply may be spoken.
+    fallback = configured_public_fallback(configured)
     if fallback and speech_rejection_reason(
         fallback,
         active_plan_text=active_plan_text,
+        public_draft_text=draft,
         public_context=f"{conversation_context}\n{user_input}",
+        protected_secrets=list(
+            (character.private_state or {}).get("protected_secrets") or []
+        ),
     ):
         fallback = ""
     if not fallback:
@@ -245,6 +270,11 @@ async def _apply_speak(
     result.emotion = emotion
     result.gesture = gesture
 
+    if decision.public_intent:
+        decision.public_intent = ground_public_intent_in_quote(
+            decision.public_intent, content
+        )
+
     if (
         task_state is not None
         and decision.public_intent
@@ -312,6 +342,7 @@ async def execute_decision(
     timeline: WorldTimeline | None = None,
     reply_language: str = "en",
     task_state: dict[str, Any] | None = None,
+    allow_retrospective: bool = False,
 ) -> ActionResult:
     """Execute a structured decision: memory writes + optional speech on world line."""
 
@@ -320,6 +351,7 @@ async def execute_decision(
         intent=decision.public_intent,
         turn_id=turn_id,
         state=task_state,
+        allow_retrospective=allow_retrospective,
     )
     emit(
         "public_ledger.intent.validated",
