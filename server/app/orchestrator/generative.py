@@ -306,6 +306,11 @@ class GenerativeOrchestrator:
                     npc_llm=npc_llm_for(char),
                     timeline=timeline,
                     reply_language=reply_language,
+                    task_state=task_state,
+                    allow_retrospective=(
+                        str((scenario.task_config or {}).get("evidence_mode") or "")
+                        == "retrospective_claim"
+                    ),
                 )
                 if not fallback or not fallback.spoke:
                     continue

@@ -50,6 +50,118 @@ _PROTECTED_STOPWORDS = {
     "the", "their", "to", "we", "with",
 }
 
+_LIFECYCLE_RANK = {
+    "proposed": 0,
+    "committed": 1,
+    "in_progress": 2,
+    "submitted": 3,
+    "verified": 4,
+    "accepted": 5,
+}
+
+_STRONG_PUBLIC_CLAIMS = (
+    (4, re.compile(
+        r"\b(?:has|have|had)\s+"
+        r"(?:already\s+|now\s+)?(?:confirmed|verified|validated)\b",
+        flags=re.IGNORECASE,
+    )),
+    (5, re.compile(
+        r"\b(?:has|have|had)\s+"
+        r"(?:already\s+|now\s+)?"
+        r"(?:approved|accepted|finalized|resolved|complete|completed|executed)\b",
+        flags=re.IGNORECASE,
+    )),
+    (4, re.compile(
+        r"\b(?:is|are|was|were|has been|have been)\s+"
+        r"(?:already\s+|now\s+|fully\s+)?"
+        r"(?:confirmed|verified|validated|aligned|grounded)\b",
+        flags=re.IGNORECASE,
+    )),
+    (5, re.compile(
+        r"\b(?:is|are|was|were|has been|have been)\s+"
+        r"(?:already\s+|now\s+|fully\s+)?"
+        r"(?:approved|accepted|finalized|resolved|complete|completed)\b",
+        flags=re.IGNORECASE,
+    )),
+    (5, re.compile(
+        r"\b(?:will|shall)\s+be\s+(?:already\s+|fully\s+)?"
+        r"(?:confirmed|verified|validated|approved|accepted|finalized|"
+        r"resolved|complete|completed)\b",
+        flags=re.IGNORECASE,
+    )),
+    (3, re.compile(
+        r"\b(?:have|has|had)\s+(?:already\s+|now\s+)?"
+        r"(?:submitted|provided|delivered|shared|presented)\b",
+        flags=re.IGNORECASE,
+    )),
+    (2, re.compile(
+        r"\b(?:i(?:'m| am)|we(?:'re| are)|they(?:'re| are)|"
+        r"[a-z][\w .'-]{0,60}\s+(?:is|are))\s+"
+        r"(?:now\s+)?(?:working|reviewing|preparing|executing|implementing|"
+        r"verifying|investigating)\b",
+        flags=re.IGNORECASE,
+    )),
+    (1, re.compile(
+        r"\b(?:i|we)\s+(?:will|shall|commit(?:ted)?\s+to|agree\s+to|"
+        r"undertake\s+to|plan\s+to)\b",
+        flags=re.IGNORECASE,
+    )),
+    (5, re.compile(
+        r"\b(?:ready\s+to|can\s+now|will\s+now)\s+"
+        r"(?:proceed|move\s+forward|finalize|close)\b",
+        flags=re.IGNORECASE,
+    )),
+)
+
+_NON_ASSERTIVE_PREFIX_RE = re.compile(
+    r"\b(?:if|once|when|after|before|unless|until|whether|need(?:s)?\s+to|"
+    r"must|should|could|would|please|cannot|can't|not|without|await(?:ing)?|"
+    r"require(?:s|d)?\s+(?:us\s+|them\s+|him\s+|her\s+|you\s+)?to)\b",
+    flags=re.IGNORECASE,
+)
+
+_RETROSPECTIVE_ANCHOR_RE = re.compile(
+    r"\b(?:in\s+(?:my|our)\s+(?:previous|prior|former)\s+"
+    r"(?:role|job|team|company|organization)|previously|historically|"
+    r"in\s+the\s+past|last\s+(?:year|quarter|month|week)|at\s+the\s+time|"
+    r"back\s+then|when\s+(?:i|we)\s+(?:led|managed|worked|served|built|"
+    r"delivered|handled|joined|was|were)|during\s+(?:my|our|that|the)\s+"
+    r"(?:tenure|project|initiative|engagement|incident|launch)|"
+    r"(?:i|we)\s+once\b|in\s+20\d{2}\b)",
+    flags=re.IGNORECASE,
+)
+
+
+def retrospective_claim_grounded(text: str) -> bool:
+    """Return whether public wording actually locates a claim in the past."""
+    return bool(_RETROSPECTIVE_ANCHOR_RE.search(" ".join((text or "").split())))
+
+
+def _speech_exceeds_validated_lifecycle(text: str, intent: dict) -> bool:
+    """Detect public assertions stronger than the prevalidated transition.
+
+    The natural-language renderer is untrusted just like the decision model.
+    This check covers first- and third-person lifecycle claims so a fallback or
+    renderer cannot say that another participant confirmed/approved/completed
+    something when the authoritative intent is only proposed or committed.
+    """
+    if (
+        str(intent.get("simulation_scope") or "") == "retrospective"
+        and retrospective_claim_grounded(text)
+    ):
+        return False
+    transition = str(intent.get("transition") or "proposed")
+    allowed_rank = _LIFECYCLE_RANK.get(transition, 0)
+    for sentence in re.split(r"(?<=[.!?])\s+|[;]\s*", text):
+        for claimed_rank, pattern in _STRONG_PUBLIC_CLAIMS:
+            for match in pattern.finditer(sentence):
+                prefix = sentence[max(0, match.start() - 72):match.start()]
+                if _NON_ASSERTIVE_PREFIX_RE.search(prefix):
+                    continue
+                if claimed_rank > allowed_rank:
+                    return True
+    return False
+
 
 def protected_information_reason(
     content: str, *, protected_secrets: list[str] | None = None,
@@ -182,38 +294,27 @@ def speech_rejection_reason(
         return protected_reason
 
     intent = validated_intent or {}
+    retrospective_grounded = retrospective_claim_grounded(text)
     unsupported = unsupported_evidence_reason(
         text,
         public_context=public_context,
         allow_retrospective_artifact_claims=(
             str(intent.get("simulation_scope") or "") == "retrospective"
+            and retrospective_grounded
         ),
     )
     if unsupported:
         return unsupported
-
-    # G3: wording may not upgrade a transition that the public-world ledger
-    # downgraded. This closes the gap where natural-language rendering claimed
-    # completion after the action validator accepted only a commitment.
-    transition = str(intent.get("transition") or "")
     if (
-        str(intent.get("simulation_scope") or "") != "retrospective"
-        and transition in {"proposed", "committed", "in_progress", "submitted", "blocked"}
+        str(intent.get("simulation_scope") or "") == "retrospective"
+        and not retrospective_grounded
     ):
-        for sentence in re.split(r"(?<=[.!?])\s+|[;]\s*", text):
-            terminal_claim = re.search(
-                r"\b(?:(?:it|this|that|the\s+[\w -]+?)\s+(?:is|was|has been)\s+|"
-                r"(?:we|i)\s+(?:have\s+|['’]ve\s+)?)"
-                r"(?:complete(?:d)?|submitted|uploaded|sent|verified|approved|accepted|executed)\b",
-                sentence,
-                flags=re.IGNORECASE,
-            )
-            if terminal_claim and not re.search(
-                r"\b(?:if|once|when|after|before|unless|until)\b",
-                sentence[:terminal_claim.start()],
-                flags=re.IGNORECASE,
-            ):
-                return "speech_exceeds_validated_lifecycle"
+        return "retrospective_scope_not_grounded_in_quote"
+
+    # G3.2: the wording must be entailed by the approved lifecycle, including
+    # third-party claims ("the director has confirmed") and closure language.
+    if intent and _speech_exceeds_validated_lifecycle(text, intent):
+        return "speech_exceeds_validated_lifecycle"
 
     if text[-1] not in ".!?\"'”’":
         return "truncated"

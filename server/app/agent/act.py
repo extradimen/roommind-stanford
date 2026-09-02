@@ -191,6 +191,7 @@ Requirements:
         active_plan_text=active_plan_text,
         public_draft_text=draft,
         public_context=f"{conversation_context}\n{user_input}",
+        validated_intent=validated_intent,
         protected_secrets=list(
             (character.private_state or {}).get("protected_secrets") or []
         ),
@@ -586,6 +587,8 @@ async def execute_plan_fallback_speak(
     npc_llm: ResolvedLlm,
     timeline: WorldTimeline,
     reply_language: str = "en",
+    task_state: dict[str, Any] | None = None,
+    allow_retrospective: bool = False,
 ) -> ActionResult | None:
     """When no NPC spoke this turn, force one reply from the active plan."""
     plan = active_plan(nodes)
@@ -594,7 +597,26 @@ async def execute_plan_fallback_speak(
 
     draft = PUBLIC_RESPONSE_DRAFT
     reasoning = f"Respond from current plan ({scenario.title} / {current_phase})"
-    decision = AgentDecision(action="speak", reasoning=reasoning, speak_draft=draft)
+    decision = AgentDecision(
+        action="speak",
+        reasoning=reasoning,
+        speak_draft=draft,
+        public_intent=validate_public_intent(
+            character=character,
+            intent={
+                "kind": "statement",
+                "subject": "current open issue",
+                "transition": "proposed",
+                # A fallback is a current meeting response. Scenario policy may
+                # permit explicit historical examples, but it cannot turn all
+                # fallback speech into retrospective evidence.
+                "simulation_scope": "discussion",
+            },
+            turn_id=turn_id,
+            state=task_state,
+            allow_retrospective=allow_retrospective,
+        ),
+    )
     result = ActionResult(
         character_id=character.character_id,
         action="plan_fallback_speak",
@@ -616,6 +638,7 @@ async def execute_plan_fallback_speak(
         tick=tick,
         timeline=timeline,
         reply_language=reply_language,
+        task_state=task_state,
     )
 
 

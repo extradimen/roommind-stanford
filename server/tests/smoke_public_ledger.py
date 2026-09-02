@@ -116,6 +116,58 @@ def main() -> None:
         "We have completed the production deployment.",
         validated_intent=external,
     ) == "speech_exceeds_validated_lifecycle"
+    proposed_issue = {
+        "kind": "issue", "transition": "proposed",
+        "simulation_scope": "discussion",
+    }
+    assert speech_rejection_reason(
+        "The engineering director has confirmed that the architecture is grounded in real-world data.",
+        validated_intent=proposed_issue,
+    ) == "speech_exceeds_validated_lifecycle"
+    assert speech_rejection_reason(
+        "The engineering team is aligned and ready to move forward.",
+        validated_intent=proposed_issue,
+    ) == "speech_exceeds_validated_lifecycle"
+    assert speech_rejection_reason(
+        "We need to confirm whether the engineering team is aligned before moving forward.",
+        validated_intent=proposed_issue,
+    ) is None
+    assert speech_rejection_reason(
+        "We need to verify whether the architecture has been confirmed by the owner.",
+        validated_intent=proposed_issue,
+    ) is None
+    committed_issue = {
+        "kind": "issue", "transition": "committed",
+        "simulation_scope": "discussion",
+    }
+    assert speech_rejection_reason(
+        "We will review the architecture before deciding.",
+        validated_intent=committed_issue,
+    ) is None
+    assert speech_rejection_reason(
+        "The architecture has been verified and approved.",
+        validated_intent=committed_issue,
+    ) == "speech_exceeds_validated_lifecycle"
+    assert speech_rejection_reason(
+        "Engineering evidence will be accepted to close the requirement.",
+        validated_intent=proposed_issue,
+    ) == "speech_exceeds_validated_lifecycle"
+    assert speech_rejection_reason(
+        "Engineering evidence could be accepted if the authorized reviewer confirms it.",
+        validated_intent=proposed_issue,
+    ) is None
+    retrospective_issue = {
+        "kind": "fact", "transition": "proposed",
+        "simulation_scope": "retrospective",
+    }
+    assert speech_rejection_reason(
+        "In my previous role, I verified the architecture with the engineering lead.",
+        validated_intent=retrospective_issue,
+    ) is None
+    assert speech_rejection_reason(
+        "I am verifying the architecture now and will proceed without further review.",
+        validated_intent=retrospective_issue,
+    ) == "retrospective_scope_not_grounded_in_quote"
 
     state: dict = {}
     in_session = validate_public_intent(
