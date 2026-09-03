@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G3.5"
+    assert CURRENT_GENERATION_ID == "G3.6"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g3.5-atomic-confirmation-source-typed-evidence-simulation"
+        "g3.6-quote-grounded-capability-aware-simulation"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -220,6 +220,26 @@ def main() -> None:
     }
     grounded_tool_result = run_integrity_probes(g35_bundle)
     assert grounded_tool_result["checks"]["g35_completed_actions_require_tool_results"] is True
+
+    g36_bundle = deepcopy(g35_bundle)
+    g36_bundle["session"]["run_config"]["research_manifest"] = {
+        "generation_id": "G3.6",
+        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+    }
+    g36_bundle["messages"][0]["content"] = (
+        "Containment is now active at the edge firewall."
+    )
+    visible_action = run_integrity_probes(g36_bundle)
+    assert visible_action["checks"][
+        "g36_visible_current_world_actions_require_tool_results"
+    ] is False
+    g36_bundle["messages"][0]["content"] = (
+        "Containment will be activated after the evidence capture completes."
+    )
+    future_action = run_integrity_probes(g36_bundle)
+    assert future_action["checks"][
+        "g36_visible_current_world_actions_require_tool_results"
+    ] is True
 
 
 if __name__ == "__main__":

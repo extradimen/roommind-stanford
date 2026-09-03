@@ -14,6 +14,7 @@ from app.llm.client import llm_client
 from app.orchestrator.common import orch_support
 from app.orchestrator.llm_binding import resolve_llm
 from app.models.db import CharacterTemplate
+from app.telemetry import emit
 from app.public_ledger import (
     MATERIAL_LIFECYCLE,
     commit_public_intent,
@@ -155,9 +156,9 @@ def _project_field_ledger(
                 character_confirmers[field].add(character.character_id)
     for field, spec in schema.items():
         entity = (ledger.get("entities") or {}).get(f"field:{field}") or {}
-        value = entity.get("value")
+        value, value_valid = _coerce_value(entity.get("value"), spec)
         lifecycle = str(entity.get("lifecycle") or "")
-        if value is None or lifecycle not in {"proposed", "accepted"}:
+        if value is None or not value_valid or lifecycle not in {"proposed", "accepted"}:
             continue
         accepted_by = list(dict.fromkeys(
             str(actor) for actor in
@@ -345,15 +346,33 @@ def _coerce_value(value: Any, spec: dict[str, Any]) -> tuple[Any, bool]:
         if isinstance(value, bool):
             return value, False
         try:
-            number = int(value)
-            return number, float(value) == number
+            normalized = str(value).strip().replace(",", "")
+            if isinstance(value, str):
+                match = re.fullmatch(
+                    r"\s*([-+]?\d+(?:\.\d+)?)\s*(?:[A-Za-z%$€£¥/._-]+(?:\s+[A-Za-z%$€£¥/._-]+)*)?\s*",
+                    normalized,
+                )
+                if not match:
+                    return value, False
+                normalized = match.group(1)
+            number = int(float(normalized))
+            return number, float(normalized) == number
         except (TypeError, ValueError):
             return value, False
     if kind == "number":
         if isinstance(value, bool):
             return value, False
         try:
-            return float(value), True
+            normalized = str(value).strip().replace(",", "")
+            if isinstance(value, str):
+                match = re.fullmatch(
+                    r"\s*([-+]?\d+(?:\.\d+)?)\s*(?:[A-Za-z%$€£¥/._-]+(?:\s+[A-Za-z%$€£¥/._-]+)*)?\s*",
+                    normalized,
+                )
+                if not match:
+                    return value, False
+                normalized = match.group(1)
+            return float(normalized), True
         except (TypeError, ValueError):
             return value, False
     if kind == "string":
@@ -604,6 +623,16 @@ def prepare_turn_governance(
         })
 
     variables = state.get("variables") or {}
+    executable_fields = {
+        str(field)
+        for character in characters
+        for field in ((character.authority or {}).get("can_execute") or [])
+    }
+    tool_result_fields = {
+        str(result.get("field") or "")
+        for result in ((ensure_public_ledger(state).get("tool_results") or {}).values())
+        if isinstance(result, dict) and str(result.get("field") or "")
+    }
     for field_index, field in enumerate(state.get("open_issues") or []):
         if str(field).startswith("work:") or field not in variables:
             continue
@@ -613,18 +642,26 @@ def prepare_turn_governance(
             if field in ((character.authority or {}).get("can_confirm") or [])
         ]
         item = variables.get(field) or {}
+        tool_result_required = field in executable_fields
+        tool_result_available = field in tool_result_fields
         candidates.append({
-            "priority": 0 if closeout_required else 1,
+            "priority": 0 if closeout_required or (tool_result_required and not tool_result_available) else 1,
             "order": field_index,
             "key": f"state:{field}",
             "issue": str(field),
-            "kind": "state_variable",
+            "kind": (
+                "capability_boundary"
+                if tool_result_required and not tool_result_available
+                else "state_variable"
+            ),
             "status": str(item.get("status") or "unknown"),
             "subject": str(field),
             "owner_ids": owners,
             "age_turns": 0,
-            "due_now": closeout_required,
+            "due_now": closeout_required or (tool_result_required and not tool_result_available),
             "blocked_cooldown": False,
+            "tool_result_required": tool_result_required,
+            "tool_result_available": tool_result_available,
         })
 
     if candidates:
@@ -677,6 +714,13 @@ def prepare_turn_governance(
                 "truthfully now: confirm it with existing public evidence, explicitly reject "
                 "or block it, hand it off with an owner and review point, or state a "
                 "conditional, deferred, or failed outcome naming what remains unresolved."
+            )
+        elif focus.get("kind") == "capability_boundary":
+            instruction = (
+                "This state requires an environment/tool result that is not available in the "
+                "current text simulation. Do not claim that the action happened and do not ask "
+                "again for an impossible in-session result. State the proposed action and owner, "
+                "then close conditionally or defer to a named external follow-up and review point."
             )
         elif closeout_required:
             instruction = (
@@ -872,6 +916,160 @@ def _commit_explicit_field_confirmations(
                 state, intent=intent, public_quote=quote,
                 tick=len((ensure_public_ledger(state).get("events") or [])) + 1,
             )
+
+
+_EXPLICIT_ACCEPTANCE_RE = re.compile(
+    r"\b(?:(?:i|we)\s+(?:explicitly\s+|formally\s+)?"
+    r"(?:confirm|accept|approve|agree(?:\s+to)?|support)|"
+    r"(?:is|are|has\s+been|have\s+been)\s+(?:now\s+|fully\s+|formally\s+)?"
+    r"(?:confirmed|accepted|approved|agreed|identified|ready)|"
+    r"(?:is|are)\s+acceptable)\b",
+    flags=re.IGNORECASE,
+)
+_CONDITIONAL_OR_NEGATED_ACCEPTANCE_RE = re.compile(
+    r"\b(?:do\s+not|don't|cannot|can't|not\s+(?:yet\s+)?(?:confirm|accept|approve|"
+    r"agree|ready)|conditionally|conditional\s+on|subject\s+to|provided\s+that|"
+    r"pending|awaiting|before\s+(?:i|we)\s+(?:can|will)|until)\b",
+    flags=re.IGNORECASE,
+)
+_FIELD_REFERENCE_STOPWORDS = {
+    "agreed", "and", "are", "can", "concrete", "decision", "explicitly",
+    "final", "obtained", "support", "supported", "the", "with",
+}
+
+
+def _quote_references_field(field: str, spec: dict[str, Any], quote: str) -> bool:
+    text = " ".join(str(quote or "").casefold().replace("_", " ").split())
+    phrase = field.casefold().replace("_", " ")
+    if phrase in text:
+        return True
+    tokens = {
+        token for token in re.findall(
+            r"[a-z0-9]+", f"{phrase} {spec.get('description') or ''}".casefold()
+        )
+        if len(token) >= 4 and token not in _FIELD_REFERENCE_STOPWORDS
+    }
+    hits = {token for token in tokens if re.search(rf"\b{re.escape(token)}\b", text)}
+    return len(hits) >= min(2, max(1, len(tokens)))
+
+
+def _explicit_value_from_quote(
+    *, field: str, spec: dict[str, Any], quote: str, current_value: Any,
+) -> tuple[Any, bool]:
+    text = " ".join(str(quote or "").split())
+    kind = str(spec.get("type") or "string").lower()
+    if kind in {"number", "integer"}:
+        unit = str(spec.get("unit") or "").strip()
+        patterns = []
+        if unit:
+            patterns.append(
+                rf"(?<![\w.])([-+]?\d[\d,]*(?:\.\d+)?)\s*(?:[- ]?{re.escape(unit)})\b"
+            )
+        patterns.append(
+            rf"\b{re.escape(field.replace('_', ' '))}\b[^\d]{{0,30}}([-+]?\d[\d,]*(?:\.\d+)?)"
+        )
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return _coerce_value(f"{match.group(1)} {unit}".strip(), spec)
+        if current_value is not None and _quote_references_field(field, spec, text):
+            return _coerce_value(current_value, spec)
+        return None, False
+    if kind == "boolean":
+        if not _quote_references_field(field, spec, text):
+            return None, False
+        negative = bool(re.search(
+            r"\b(?:false|inactive|rejected|declined|not\s+(?:active|accepted|approved|"
+            r"confirmed|ready|obtained|identified))\b", text, flags=re.IGNORECASE,
+        ))
+        return (not negative), True
+    if kind == "string":
+        if current_value is not None:
+            normalized = str(current_value).strip()
+            variants = {normalized.casefold(), normalized.casefold().replace("_", " ")}
+            if any(value and value in text.casefold() for value in variants):
+                return normalized, True
+        description = str(spec.get("description") or "")
+        for candidate in re.findall(r"[a-z][a-z0-9_]+", description.casefold()):
+            if "_" in candidate and candidate.replace("_", " ") in text.casefold():
+                return candidate, True
+        return None, False
+    return None, False
+
+
+def _commit_quote_level_confirmations(
+    *, task_config: dict[str, Any], state: dict[str, Any],
+    characters: list[CharacterTemplate], turn_text: dict[str, str], turn_id: int,
+) -> None:
+    """Recover explicit confirmations independently of evaluator intent labels.
+
+    This is deliberately narrow: the quote must contain an unambiguous
+    acceptance cue, identify the configured field, state (or resolve to) a
+    typed value, and come from a configured confirmer.  It cannot infer
+    agreement from politeness, silence, questions, or conditional language.
+    """
+    schema = task_config.get("state_schema") or {}
+    variables = state.get("variables") or {}
+    by_id = {character.character_id: character for character in characters}
+    for speaker_id, raw_quote in turn_text.items():
+        quote = " ".join(str(raw_quote or "").split())
+        if (
+            not quote
+            or quote.rstrip().endswith("?")
+            or not _EXPLICIT_ACCEPTANCE_RE.search(quote)
+            or _CONDITIONAL_OR_NEGATED_ACCEPTANCE_RE.search(quote)
+        ):
+            continue
+        for field, spec in schema.items():
+            configured = set(spec.get("confirm_permissions") or [])
+            if "player" in configured:
+                configured.add("user")
+            authority = (
+                {"user"}
+                if speaker_id == "user"
+                else set((by_id.get(speaker_id).authority or {}).get("can_confirm") or [])
+                if by_id.get(speaker_id)
+                else set()
+            )
+            if configured and speaker_id not in configured:
+                continue
+            if speaker_id != "user" and field not in authority:
+                continue
+            executable = any(
+                field in ((character.authority or {}).get("can_execute") or [])
+                for character in characters
+            )
+            if executable and not ledger_has_support(
+                state, kind="action", subject=str(field), field=str(field),
+                minimum={"verified", "accepted"},
+            ):
+                emit(
+                    "task_state.quote_confirmation.rejected",
+                    field=str(field), speaker_id=speaker_id,
+                    reason="executable_field_requires_simulated_tool_result",
+                    turn_id=int(turn_id),
+                )
+                continue
+            value, valid = _explicit_value_from_quote(
+                field=str(field), spec=spec, quote=quote,
+                current_value=(variables.get(field) or {}).get("value"),
+            )
+            if not valid or value is None:
+                continue
+            before = len((ensure_public_ledger(state).get("events") or []))
+            _commit_explicit_field_confirmations(
+                field=str(field), spec=spec, value=value,
+                confirmations=[speaker_id],
+                evidence=[{"speaker_id": speaker_id, "quote": quote}],
+                state=state, characters=characters, turn_id=turn_id,
+            )
+            after = len((ensure_public_ledger(state).get("events") or []))
+            if after > before:
+                emit(
+                    "task_state.quote_confirmation.committed",
+                    field=str(field), speaker_id=speaker_id,
+                    normalized_value=value, turn_id=int(turn_id),
+                )
 
 
 def _event_claim_is_grounded(
@@ -1249,6 +1447,10 @@ def apply_evaluator_updates(
         current["status"] = status
         current["confirmations"] = confirmations
         current.setdefault("evidence", []).extend(valid_evidence)
+    _commit_quote_level_confirmations(
+        task_config=task_config, state=state, characters=characters,
+        turn_text=turn_text, turn_id=turn_id,
+    )
     apply_generic_events(state=state, parsed=parsed, turn_text=turn_text, turn_id=turn_id)
     _project_public_ledger(state)
     _project_field_ledger(task_config, state, characters)

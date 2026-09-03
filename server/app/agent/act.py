@@ -10,7 +10,11 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.memory_stream import AgentMemoryStore, MemoryNode, active_plan
-from app.agent.speech_safety import PUBLIC_RESPONSE_DRAFT, speech_rejection_reason
+from app.agent.speech_safety import (
+    PUBLIC_RESPONSE_DRAFT,
+    retain_safe_public_clauses,
+    speech_rejection_reason,
+)
 from app.llm.client import LLMEmptyContentError, llm_client
 from app.models.db import CharacterTemplate, ScenarioTemplate
 from app.orchestrator.common import NPCReply
@@ -177,6 +181,27 @@ async def render_npc_speech(
                 character_id=character.character_id,
             )
             return draft, emotion, gesture, True
+        repaired_draft = retain_safe_public_clauses(
+            draft, validated_intent=validated_intent
+        )
+        if repaired_draft and repaired_draft != draft:
+            repaired_rejection = speech_rejection_reason(
+                repaired_draft,
+                active_plan_text=active_plan_text,
+                public_context=f"{conversation_context}\n{user_input}",
+                validated_intent=validated_intent,
+                protected_secrets=list(
+                    (character.private_state or {}).get("protected_secrets") or []
+                ),
+            )
+            if not repaired_rejection:
+                emit(
+                    "dialogue.public_clause_repair.used",
+                    component="npc_speech_render",
+                    character_id=character.character_id,
+                    rejection_reason=draft_rejection,
+                )
+                return repaired_draft, emotion, gesture, True
 
     lang_rule = speech_language_rule(reply_language)
 
@@ -210,6 +235,10 @@ Requirements:
   evidence available now and treat an unavailable file as a post-meeting follow-up.
 - A question asking whether something happened is not evidence that it happened.
   Never convert a question or request for confirmation into an affirmative fact.
+- A completed current-world operation (deployment, containment, upload, archive,
+  health check, verification, publication, or similar side effect) may be reported
+  only when the validated intent names a registered simulated tool result. Otherwise
+  speak about the proposed next action, a condition, or an external follow-up.
 {lang_rule}
 - Output only what you say aloud; no JSON or explanation
 
@@ -283,26 +312,25 @@ Requirements:
     ):
         fallback = ""
     if not fallback:
-        fallback = contextual_public_fallback(character, validated_intent)
-    if speech_rejection_reason(
-        fallback,
-        active_plan_text=active_plan_text,
-        public_draft_text=draft,
-        public_context=f"{conversation_context}\n{user_input}",
-        validated_intent=validated_intent,
-        protected_secrets=list(
-            (character.private_state or {}).get("protected_secrets") or []
-        ),
-    ):
-        fallback = "I cannot confirm a final outcome from the evidence currently on record."
+        # A reusable deterministic sentence is visibly artificial and became
+        # the dominant G3.4/G3.5 dialogue failure.  After two bounded repairs,
+        # silence is safer and more realistic than publishing orchestration
+        # language.  The multi-party orchestrator may try another participant.
+        emit(
+            "dialogue.silent_recovery.used",
+            component="npc_speech_render",
+            character_id=character.character_id,
+            rejection_reason=rejection or "configured_reply_unavailable",
+        )
+        return "", emotion, gesture, False
     emit(
         "dialogue.safe_fallback.used",
         component="npc_speech_render",
         character_id=character.character_id,
         rejection_reason=rejection or "configured_reply_unavailable",
-        fallback_kind="contextual_public_reply",
+        fallback_kind="configured_public_reply",
     )
-    return fallback, emotion, gesture, False
+    return fallback, emotion, gesture, True
 
 
 async def _record_action_memory(
@@ -366,12 +394,12 @@ async def _apply_speak(
         reply_language=reply_language,
         validated_intent=decision.public_intent,
     )
-    result.spoke = True
+    result.spoke = bool(content.strip())
     result.content = content
     result.emotion = emotion
     result.gesture = gesture
 
-    if decision.public_intent:
+    if decision.public_intent and result.spoke:
         decision.public_intent = ground_public_intent_in_quote(
             decision.public_intent, content
         )
@@ -381,6 +409,7 @@ async def _apply_speak(
         and decision.public_intent
         and decision.public_intent.get("commit_allowed", True)
         and intent_rendered
+        and result.spoke
     ):
         ledger_event = commit_public_intent(
             task_state,
@@ -390,7 +419,7 @@ async def _apply_speak(
         )
         result.public_ledger_event = ledger_event
 
-    if timeline is not None:
+    if timeline is not None and result.spoke:
         evt = timeline.append(
             turn_id=turn_id,
             tick=tick,
@@ -405,6 +434,9 @@ async def _apply_speak(
             },
         )
         result.world_events.append(evt)
+
+    if not result.spoke:
+        return result
 
     await _record_action_memory(
         db,

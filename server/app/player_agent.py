@@ -13,7 +13,10 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.memory_stream import AgentMemoryStore, active_plan
-from app.agent.speech_safety import player_speech_rejection_reason
+from app.agent.speech_safety import (
+    player_speech_rejection_reason,
+    retain_safe_public_clauses,
+)
 from app.llm.client import LLMEmptyContentError, llm_client
 from app.models.db import GameSession, ScenarioTemplate
 from app.orchestrator.common import orch_support
@@ -370,6 +373,21 @@ Return strict JSON only:
         rejection = player_speech_rejection_reason(
             content, public_context=dialogue, validated_intent=validated_intent
         ) or ""
+        if rejection and content:
+            repaired = retain_safe_public_clauses(
+                content, validated_intent=validated_intent
+            )
+            repaired_rejection = player_speech_rejection_reason(
+                repaired, public_context=dialogue, validated_intent=validated_intent
+            ) if repaired else rejection
+            if repaired and not repaired_rejection:
+                emit(
+                    "dialogue.public_clause_repair.used",
+                    component="player_agent",
+                    rejection_reason=rejection,
+                )
+                content = repaired
+                rejection = ""
         if rejection:
             emit(
                 "llm.public_output.rejected",
@@ -536,6 +554,21 @@ Return strict JSON only:
         rejection = player_speech_rejection_reason(
             content, public_context=dialogue, validated_intent=validated_intent
         ) or ""
+        if rejection and content:
+            repaired = retain_safe_public_clauses(
+                content, validated_intent=validated_intent
+            )
+            repaired_rejection = player_speech_rejection_reason(
+                repaired, public_context=dialogue, validated_intent=validated_intent
+            ) if repaired else rejection
+            if repaired and not repaired_rejection:
+                emit(
+                    "dialogue.public_clause_repair.used",
+                    component="comparison_player",
+                    rejection_reason=rejection,
+                )
+                content = repaired
+                rejection = ""
         if rejection:
             emit(
                 "llm.public_output.rejected",

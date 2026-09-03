@@ -26,6 +26,9 @@ _UNSUPPORTED_ARTIFACT_PATTERNS = (
     r"\b(?:i(?:['’]ve| have)?|we(?:['’]ve| have)?)\s+(?:just\s+)?(?:sent|emailed|forwarded|submitted|archived|stored|streamed)\b",
     r"\b(?:has|have|had)\s+been\s+(?:attached|uploaded|sent|emailed|forwarded|submitted|archived|stored|streamed)\b",
     r"\b(?:attached|uploaded)\s+(?:is|are|you(?:'ll| will) find)\b",
+    r"\b(?:is|are)\s+(?:now\s+)?attached\b",
+    r"\battached\s+(?:below|here|herewith|for\s+(?:your\s+)?review)\b",
+    r"\bplease\s+find\b[^.!?]{0,140}\b(?:attached|enclosed)\b",
     r"\b(?:the\s+)?attachment\s+(?:contains|includes|is|has)\b",
     r"\b(?:archive|file|document|report|letter|draft|package)\s+(?:upload|submission|transfer)\s+(?:is\s+)?(?:complete|completed|verified)\b",
     r"\b(?:upload|submission|transfer)\s+(?:is\s+)?(?:complete|completed|verified)\b",
@@ -40,6 +43,42 @@ _URL_RE = re.compile(
     flags=re.IGNORECASE,
 )
 _HASH_RE = re.compile(r"(?<![A-Za-z0-9])[a-fA-F0-9]{32,64}(?![A-Za-z0-9])")
+
+# G3.6: classify visible operational completion from the words themselves,
+# independently of the model-authored ``public_intent.kind``.  In G3.5 a model
+# could label "containment is now active" as an ordinary statement and thereby
+# bypass the source-typed action check.  These patterns intentionally target
+# current-world side effects, not ordinary discussion outcomes such as agreeing
+# a price or approving a plan.
+_CURRENT_WORLD_OBJECT_RE = re.compile(
+    r"\b(?:containment|isolation|firewall|traffic(?:\s+shift)?|rollback|rollout|"
+    r"deployment|release|service|system|server|cluster|pod|node|snapshot|"
+    r"memory\s+dump|health\s+check|status(?:[- ]page)?|public\s+update|"
+    r"archive|upload|file|document|report|hash|checksum|log(?:s)?|"
+    r"transaction(?:s)?|monitoring)\b",
+    flags=re.IGNORECASE,
+)
+_CURRENT_WORLD_TERMINAL_RE = re.compile(
+    r"\b(?:is|are|was|were|has\s+been|have\s+been)\s+"
+    r"(?:already\s+|now\s+|fully\s+)?(?:active|activated|inactive|deactivated|"
+    r"complete|completed|finished|deployed|published|uploaded|attached|sent|"
+    r"archived|captured|stored|restored|rolled\s+back|verified|validated|"
+    r"healthy|stable|green)\b|"
+    r"\b(?:has|have)\s+(?:already\s+|now\s+|fully\s+|all\s+)?"
+    r"(?:completed|finished|deployed|published|uploaded|attached|sent|archived|"
+    r"captured|stored|restored|rolled\s+back|verified|validated|executed)\b|"
+    r"\b(?:i|we)\s+(?:have\s+|['’]ve\s+)?(?:activated|deactivated|completed|"
+    r"finished|deployed|published|uploaded|attached|sent|archived|captured|"
+    r"stored|restored|rolled\s+back|verified|validated|executed)\b",
+    flags=re.IGNORECASE,
+)
+_FUTURE_OR_CONDITIONAL_RE = re.compile(
+    r"\b(?:if|once|when|after|before|until|unless|would|could|should|must|"
+    r"will|shall|plan\s+to|intend\s+to|ready\s+to|need\s+to|expect(?:ed)?\s+to|"
+    r"need\s+confirmation\s+that|need\s+to\s+confirm|verification\s+status|"
+    r"in\s+progress|still\s+(?:running|pending|underway)|pending|awaiting)\b",
+    flags=re.IGNORECASE,
+)
 _ARTIFACT_REQUEST_PREFIX_RE = re.compile(
     r"\b(?:(?:could|can|would|will)\s+you|please\s+(?:confirm|send|forward|provide)|"
     r"confirm\s+(?:whether|if|once)|ask(?:ing)?\s+(?:whether|if)|"
@@ -318,6 +357,72 @@ def unsupported_evidence_reason(
     return None
 
 
+def terminal_current_world_action_reason(
+    content: str, *, validated_intent: dict | None = None,
+) -> str | None:
+    """Reject unsupported completed side effects in the visible transcript.
+
+    The check is deliberately quote-driven.  A model cannot evade it by
+    calling an action a ``statement`` or ``fact``.  A terminal operational
+    claim is publishable only when intent validation has already matched it to
+    a registered simulated tool result.
+    """
+    intent = validated_intent or {}
+    if (
+        str(intent.get("simulation_scope") or "") == "retrospective"
+        and retrospective_claim_grounded(content)
+    ):
+        return None
+    tool_grounded = (
+        str(intent.get("evidence_source") or "") == "simulated_tool_result"
+        and bool(str(intent.get("tool_result_id") or "").strip())
+        and str(intent.get("validation") or "") == "accepted"
+        and str(intent.get("transition") or "") in {"submitted", "verified", "accepted"}
+    )
+    if tool_grounded:
+        return None
+    for sentence in re.split(r"(?<=[.!?])\s+|[;]\s*", " ".join((content or "").split())):
+        if not sentence or sentence.rstrip().endswith("?"):
+            continue
+        terminal = _CURRENT_WORLD_TERMINAL_RE.search(sentence)
+        if not terminal or not _CURRENT_WORLD_OBJECT_RE.search(sentence):
+            continue
+        prefix = sentence[:terminal.start()]
+        if _FUTURE_OR_CONDITIONAL_RE.search(prefix):
+            continue
+        return "current_world_completion_requires_simulated_tool_result"
+    return None
+
+
+def retain_safe_public_clauses(
+    content: str, *, validated_intent: dict | None = None,
+) -> str:
+    """Keep safe clauses when only part of a draft invents a live result.
+
+    This bounded repair never writes replacement facts.  It removes the
+    offending clause and retains complete public clauses that independently
+    pass the current-world check, avoiding a second whole-message paraphrase.
+    """
+    clauses = re.split(r"(?<=[.!?])\s+|(?<=;)\s*", " ".join((content or "").split()))
+    kept = [
+        clause.strip()
+        for clause in clauses
+        if clause.strip()
+        and not terminal_current_world_action_reason(
+            clause, validated_intent=validated_intent
+        )
+        and not unsupported_evidence_reason(
+            clause,
+            allow_retrospective_artifact_claims=(
+                str((validated_intent or {}).get("simulation_scope") or "")
+                == "retrospective"
+                and retrospective_claim_grounded(clause)
+            ),
+        )
+    ]
+    return " ".join(kept).strip()
+
+
 def speech_rejection_reason(
     content: str, *, active_plan_text: str = "", public_context: str = "",
     validated_intent: dict | None = None,
@@ -381,6 +486,12 @@ def speech_rejection_reason(
     # third-party claims ("the director has confirmed") and closure language.
     if intent and _speech_exceeds_validated_lifecycle(text, intent):
         return "speech_exceeds_validated_lifecycle"
+
+    current_world_reason = terminal_current_world_action_reason(
+        text, validated_intent=intent
+    )
+    if current_world_reason:
+        return current_world_reason
 
     if text[-1] not in ".!?\"'”’":
         return "truncated"

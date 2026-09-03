@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.agent.speech_safety import unsupported_evidence_reason
+from app.agent.speech_safety import (
+    terminal_current_world_action_reason,
+    unsupported_evidence_reason,
+)
 from app.research_protocol import transcript_provenance
 
 
@@ -149,6 +152,42 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             or str(row.get("tool_result_id") or "") not in ledger_tool_results
         )
     ]
+    tool_grounded_quotes = {
+        " ".join(str((row.get("public_evidence") or {}).get("quote") or "").split())
+        for row in ledger_events
+        if isinstance(row, dict)
+        and row.get("provenance") == "simulated_tool_result"
+        and str(row.get("tool_result_id") or "") in ledger_tool_results
+    }
+    unsupported_visible_current_world_actions = []
+    for row in messages:
+        content = " ".join(str(row.get("content") or "").split())
+        grounded = content in tool_grounded_quotes
+        reason = terminal_current_world_action_reason(
+            content,
+            validated_intent=(
+                {
+                    "simulation_scope": "in_session",
+                    "evidence_source": "simulated_tool_result",
+                    "tool_result_id": "registered",
+                    "validation": "accepted",
+                    "transition": "verified",
+                }
+                if grounded else
+                {
+                    "simulation_scope": "discussion",
+                    "evidence_source": "public_statement",
+                    "validation": "accepted",
+                    "transition": "proposed",
+                }
+            ),
+        )
+        if reason:
+            unsupported_visible_current_world_actions.append({
+                "sequence_no": int(row.get("sequence_no") or 0),
+                "speaker_id": str(row.get("speaker_id") or ""),
+                "reason": reason,
+            })
     clock = public_ledger.get("simulation_clock") or {}
     clock_turn = int(clock.get("turn") or 0)
     future_ledger_events = [
@@ -228,7 +267,11 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         ),
         "g35_completed_actions_require_tool_results": (
             not unsupported_completed_action_sources
-            if is_g3_roommind and generation_id.startswith("G3.5") else None
+            if is_g3_roommind and generation_id.startswith(("G3.5", "G3.6")) else None
+        ),
+        "g36_visible_current_world_actions_require_tool_results": (
+            not unsupported_visible_current_world_actions
+            if is_g3_roommind and generation_id.startswith("G3.6") else None
         ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
@@ -263,6 +306,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "invalid_g3_ledger_event_ids": invalid_ledger_events,
             "unsupported_terminal_g3_event_ids": unsupported_terminal_ledger_events,
             "unsupported_completed_action_source_event_ids": unsupported_completed_action_sources,
+            "unsupported_visible_current_world_actions": unsupported_visible_current_world_actions,
             "future_g3_ledger_event_ids": future_ledger_events,
             "duplicate_g3_ledger_event_ids": duplicate_ledger_event_ids,
             "invalid_g3_entity_lifecycle": invalid_entity_lifecycle,

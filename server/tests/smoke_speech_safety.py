@@ -4,7 +4,9 @@ from app.agent.speech_safety import (
     PUBLIC_RESPONSE_DRAFT,
     player_speech_rejection_reason,
     protected_information_reason,
+    retain_safe_public_clauses,
     speech_rejection_reason,
+    terminal_current_world_action_reason,
 )
 from types import SimpleNamespace
 
@@ -184,6 +186,47 @@ def main() -> None:
         "user", "supplier_ceo",
     }
     assert projected_state["completion_status"] == "completed"
+
+    # G3.6 does not depend on the evaluator correctly filling confirmed_by.
+    # Quote-level parsing normalizes numeric values with units and accumulates
+    # the two authorized confirmations without inferring conditional language.
+    quote_projected = initial_task_state(accepted_config)
+    apply_evaluator_updates(
+        task_config=accepted_config, state=quote_projected,
+        parsed={"updates": [{
+            "field": "unit_price", "value": "84 RMB", "status": "proposed",
+            "proposed_by": "user", "confirmed_by": [],
+            "evidence": [{"speaker_id": "user", "quote": "I accept the unit price of 84 RMB."}],
+        }], "events": []},
+        characters=[supplier], player_text="I accept the unit price of 84 RMB.",
+        npc_turns=[], turn_id=1,
+    )
+    assert quote_projected["variables"]["unit_price"]["value"] == 84.0
+    assert quote_projected["variables"]["unit_price"]["confirmations"] == ["user"]
+    apply_evaluator_updates(
+        task_config=accepted_config, state=quote_projected,
+        parsed={"updates": [], "events": []}, characters=[supplier], player_text="",
+        npc_turns=[{
+            "speaker_id": "supplier_ceo",
+            "content": "We formally confirm the agreed unit price of 84 RMB.",
+        }], turn_id=2,
+    )
+    assert quote_projected["variables"]["unit_price"]["value"] == 84.0
+    assert quote_projected["variables"]["unit_price"]["status"] == "confirmed"
+    assert set(quote_projected["variables"]["unit_price"]["confirmations"]) == {
+        "user", "supplier_ceo",
+    }
+
+    conditional_quote = initial_task_state(accepted_config)
+    apply_evaluator_updates(
+        task_config=accepted_config, state=conditional_quote,
+        parsed={"updates": [], "events": []}, characters=[supplier], player_text="",
+        npc_turns=[{
+            "speaker_id": "supplier_ceo",
+            "content": "We confirm the unit price of 84 RMB conditionally, subject to capacity review.",
+        }], turn_id=1,
+    )
+    assert conditional_quote["variables"]["unit_price"]["status"] == "unknown"
     leaked_plan = (
         "I will first confirm the purchase volume to set the foundation, aiming "
         "to lock an annual framework agreement for at least 100k units. My bottom "
@@ -199,6 +242,31 @@ def main() -> None:
     assert speech_rejection_reason(
         "Thank you for the proposal. We can review the full package together."
     ) is None
+    mislabeled_statement = {
+        "kind": "statement", "transition": "proposed",
+        "simulation_scope": "discussion", "evidence_source": "public_statement",
+        "validation": "accepted", "tool_result_id": "",
+    }
+    assert terminal_current_world_action_reason(
+        "Containment is now active at the edge firewall.",
+        validated_intent=mislabeled_statement,
+    ) == "current_world_completion_requires_simulated_tool_result"
+    assert speech_rejection_reason(
+        "The memory dumps have been completed and archived.",
+        validated_intent=mislabeled_statement,
+    ) in {
+        "unsupported_artifact_claim",
+        "current_world_completion_requires_simulated_tool_result",
+        "speech_exceeds_validated_lifecycle",
+    }
+    assert speech_rejection_reason(
+        "Once the health check is complete, we will publish the update.",
+        validated_intent=mislabeled_statement,
+    ) is None
+    assert retain_safe_public_clauses(
+        "The impact affects all regions. Containment is now active at the edge firewall.",
+        validated_intent=mislabeled_statement,
+    ) == "The impact affects all regions."
     draft_instruction = "Ask for the commercial conditions needed to make the proposal workable without inventing a commitment."
     assert speech_rejection_reason(
         draft_instruction,
@@ -731,6 +799,14 @@ def main() -> None:
         }]},
     }
     executable_state = initial_task_state(executable_config)
+    capability_focus = prepare_turn_governance(
+        executable_state, characters=[executor], turn_id=1,
+        safety_max_turns=10, max_stagnant_turns=6,
+    )["progress"]["focus"]
+    assert capability_focus["kind"] == "capability_boundary"
+    assert capability_focus["tool_result_required"] is True
+    assert capability_focus["tool_result_available"] is False
+    assert "not available" in capability_focus["instruction"]
     claimed_update = {
         "updates": [{
             "field": "containment_active", "value": True, "status": "confirmed",
@@ -750,6 +826,13 @@ def main() -> None:
         field="containment_active", inline_content="Traffic isolation command executed.",
         turn_id=2,
     )
+    executable_state["coordination_history"] = []
+    available_focus = prepare_turn_governance(
+        executable_state, characters=[executor], turn_id=2,
+        safety_max_turns=10, max_stagnant_turns=6,
+    )["progress"]["focus"]
+    assert available_focus["kind"] == "state_variable"
+    assert available_focus["tool_result_available"] is True
     submitted_action = validate_public_intent(
         character=executor, state=executable_state, turn_id=2,
         intent={

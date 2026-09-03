@@ -475,7 +475,7 @@ def ground_public_intent_in_quote(
         "in_progress": r"\b(?:i(?:'m| am)|we(?:'re| are))\s+(?:now\s+)?(?:working|reviewing|preparing|executing|implementing|verifying|investigating)\b|\b(?:has|have)\s+(?:started|begun)\b",
         "submitted": r"\b(?:i|we)\s+(?:have\s+|['’]ve\s+)?(?:provided|submitted|delivered|shared|presented)\b|\bhere\s+(?:is|are)\b",
         "verified": r"\b(?:i|we)\s+(?:have\s+|['’]ve\s+)?(?:verified|validated|confirmed|checked)\b|\b(?:is|are|was|were|has been|have been)\s+(?:verified|validated|confirmed)\b",
-        "accepted": r"\b(?:i|we)\s+(?:accept|approve|agree|confirm)\b|\b(?:is|are|has been|have been)\s+(?:accepted|approved|agreed|confirmed|finalized)\b",
+        "accepted": r"\b(?:i|we)\s+(?:explicitly\s+|formally\s+)?(?:accept|approve|agree|confirm)\b|\b(?:is|are|has been|have been)\s+(?:explicitly\s+|formally\s+)?(?:accepted|approved|agreed|confirmed|finalized)\b",
         "rejected": r"\b(?:i|we)\s+(?:reject|decline|cannot accept|do not accept)\b|\b(?:is|are|has been|have been)\s+rejected\b",
         "blocked": r"\b(?:i|we)\s+(?:cannot|can't|am unable|are unable)\b|\b(?:is|are|remains?)\s+blocked\b",
     }

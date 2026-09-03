@@ -153,9 +153,25 @@ def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
         "dialogue_safe_fallback_count": sum(
             event.get("event") == "dialogue.safe_fallback.used" for event in events
         ),
+        "dialogue_silent_recovery_count": sum(
+            event.get("event") == "dialogue.silent_recovery.used" for event in events
+        ),
+        "dialogue_validated_draft_count": sum(
+            event.get("event") == "dialogue.validated_draft.used" for event in events
+        ),
+        "dialogue_public_clause_repair_count": sum(
+            event.get("event") == "dialogue.public_clause_repair.used" for event in events
+        ),
+        "quote_confirmation_commit_count": sum(
+            event.get("event") == "task_state.quote_confirmation.committed" for event in events
+        ),
         "public_grounding_rejection_count": sum(
             event.get("event") == "llm.public_output.rejected"
-            and str(event.get("rejection_reason") or "").startswith("unsupported_")
+            and (
+                str(event.get("rejection_reason") or "").startswith("unsupported_")
+                or str(event.get("rejection_reason") or "")
+                == "current_world_completion_requires_simulated_tool_result"
+            )
             for event in events
         ),
         "llm_total_duration_ms": sum(int(event.get("duration_ms") or 0) for event in successes),
@@ -196,7 +212,11 @@ def _coordination_summary(
             row.get("kind") == "work_item" for row in focuses
         ),
         "coordinator_task_critical_focus_count": sum(
-            row.get("kind") in {"state_variable", "work_item"} for row in focuses
+            row.get("kind") in {"state_variable", "work_item", "capability_boundary"}
+            for row in focuses
+        ),
+        "coordinator_capability_boundary_count": sum(
+            row.get("kind") == "capability_boundary" for row in focuses
         ),
         "task_critical_work_item_count": sum(
             isinstance(item, dict) and item.get("required") is True
