@@ -261,7 +261,7 @@ Requirements:
                 db_provider=npc_llm.provider,
                 db_model=npc_llm.model,
                 temperature=npc_llm.temperature,
-                max_tokens=min(max(npc_llm.max_tokens, 512), 1024),
+                max_tokens=min(max(npc_llm.max_tokens, 1024), 1536),
             )
         except LLMEmptyContentError:
             rejection = "empty_model_response"

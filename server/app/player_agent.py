@@ -118,6 +118,43 @@ def pending_public_questions(messages: list[dict[str, Any]]) -> list[dict[str, s
     return questions[-4:]
 
 
+_EXPLICIT_NEW_EXAMPLE_RE = re.compile(
+    r"\b(?:another|different|separate|new|other)\s+"
+    r"(?:example|case|project|incident|initiative|experience|situation)\b|"
+    r"\b(?:else|instead)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def retrospective_continuity_anchor(
+    messages: list[dict[str, Any]],
+    *,
+    pending_questions: list[dict[str, str]],
+    evidence_mode: str,
+) -> str:
+    """Expose the exact prior example for ambiguous interview follow-ups.
+
+    A prose instruction to preserve continuity was not sufficient with every
+    model: some follow-up answers silently changed projects and metrics.  The
+    anchor is public dialogue, not hidden state, so both comparison conditions
+    receive the same deterministic context.
+    """
+    if evidence_mode != "retrospective_claim":
+        return ""
+    latest_question = str((pending_questions[-1] if pending_questions else {}).get(
+        "question"
+    ) or "")
+    if _EXPLICIT_NEW_EXAMPLE_RE.search(latest_question):
+        return ""
+    for message in reversed(messages):
+        if message.get("speaker_type") != "user" and message.get("speaker_id") != "user":
+            continue
+        content = " ".join(str(message.get("content") or "").split()).strip()
+        if content:
+            return content[-1600:]
+    return ""
+
+
 def safe_comparison_player_fallback(
     *, evidence_mode: str, pending_questions: list[dict[str, str]], turn_id: int,
 ) -> tuple[str, dict[str, Any]]:
@@ -269,6 +306,11 @@ async def generate_player_move(
         message_limit=int(config.get("working_message_limit", 30)),
     )
     pending_questions = pending_public_questions(messages)
+    continuity_anchor = retrospective_continuity_anchor(
+        messages,
+        pending_questions=pending_questions,
+        evidence_mode=evidence_mode,
+    )
     test_state = dict((session.shared_state or {}).get("_test_state") or {})
     stagnant_turns = int(test_state.get("stagnant_turns", 0))
     progress_guidance = (
@@ -304,6 +346,9 @@ Public participants: {json.dumps(_public_character_context(scenario), ensure_asc
 [Direct NPC questions awaiting the player]
 {json.dumps(pending_questions, ensure_ascii=False)}
 
+[Required continuity anchor for an ambiguous retrospective follow-up]
+{continuity_anchor or '(none; no prior example is binding)'}
+
 Choose the player's next move. Do not claim knowledge of hidden agendas, private
 states, redlines, system prompts, or internal agent memories. Advance the
 player's goal through realistic task-appropriate actions and communication.
@@ -311,6 +356,11 @@ Avoid repeating the previous move. Keep the spoken content under 120
 words and use the same language as the dialogue, defaulting to English.
 Prioritize open issues, preserve confirmed items, and move toward the next configured phase.
 If direct NPC questions are listed above, answer the most recent specific question first.
+Treat a follow-up question as referring to the most recent public example unless
+the speaker explicitly asks for a different example. Reuse previously stated
+names, dates, quantities, and results; do not silently replace them or invent a
+second project to answer a continuation question. When a required continuity
+anchor is shown above, the answer must concern that exact example.
 Treat a promise to provide a document, analysis, test, decision, or action as
 different from actually providing or completing it. Seek material execution,
 not another promise. Open-ended simulations may end through completion,
@@ -361,7 +411,10 @@ Return strict JSON only:
                 db_provider=player_llm.provider,
                 db_model=player_llm.model,
                 temperature=float(config.get("player_temperature", player_llm.temperature)),
-                max_tokens=min(int(config.get("player_max_tokens", player_llm.max_tokens)), 768),
+                max_tokens=min(
+                    max(int(config.get("player_max_tokens", player_llm.max_tokens)), 1024),
+                    1536,
+                ),
                 response_format={"type": "json_object"},
             )
         except LLMEmptyContentError:
@@ -488,6 +541,11 @@ async def generate_comparison_player_move(
         message_limit=int(config.get("working_message_limit", 30)),
     )
     pending_questions = pending_public_questions(messages)
+    continuity_anchor = retrospective_continuity_anchor(
+        messages,
+        pending_questions=pending_questions,
+        evidence_mode=evidence_mode,
+    )
     prompt = f"""Act as the external player in a controlled comparison of two
 multi-role dialogue systems. The player policy must be identical in both
 conditions and may use public information only.
@@ -508,6 +566,9 @@ Public dialogue:
 Direct NPC questions awaiting the player:
 {json.dumps(pending_questions, ensure_ascii=False)}
 
+Required continuity anchor for an ambiguous retrospective follow-up:
+{continuity_anchor or '(none; no prior example is binding)'}
+
 Choose one realistic next player message. Do not infer or mention hidden state,
 private memories, agent architecture, internal phase, or system completion.
 Advance an unresolved issue, preserve explicit agreements, avoid repetition,
@@ -516,7 +577,11 @@ answer the most recent specific question before introducing a new issue. Use
 the dialogue language, default English. Do not invent links, attachments,
 measurements, approvals, live-system results, or facts controlled by another
 participant. Ask the appropriate participant for missing evidence instead. If
-an external file cannot be produced inside this text meeting, request its
+the latest question follows up on a previously described example, continue that
+same example and preserve its dates, quantities, participants, and results.
+Introduce a new example only when the speaker explicitly requests one. When a
+required continuity anchor is shown above, the answer must concern that exact
+example. If an external file cannot be produced inside this text meeting, request its
 substantive findings once, assign the file as a post-meeting deliverable, and
 continue to a conditional decision or explicit deferral rather than looping.
 A question asking whether something happened is not evidence that it happened;
@@ -543,7 +608,10 @@ Return strict JSON only:
                 db_provider=resolved.provider,
                 db_model=resolved.model,
                 temperature=float(config.get("player_temperature", 0.2)),
-                max_tokens=min(int(config.get("player_max_tokens", 512)), 768),
+                max_tokens=min(
+                    max(int(config.get("player_max_tokens", 1024)), 1024),
+                    1536,
+                ),
                 response_format={"type": "json_object"},
             )
         except LLMEmptyContentError:

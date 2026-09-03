@@ -2,11 +2,11 @@
 
 ## Disposition
 
-**G3.7 passes deterministic local engineering prequalification.** It is not yet
-qualified as a realism improvement and must not replace the frozen G3.6 result.
-The next evidence stage is a small, fixed-model RoomMind/Baseline generation
-probe followed by manual paired-transcript reading. No staging deployment has
-been performed.
+**G3.7 passes deterministic and fixed-model local engineering
+prequalification.** It is not yet qualified as a RoomMind realism improvement
+and must not replace the frozen G3.6 result: the real-model probes exercised the
+shared player and speech boundary, not a complete matched RoomMind/Baseline
+batch. No staging deployment has been performed.
 
 ## Frozen G3.6 failures used as counterexamples
 
@@ -79,6 +79,30 @@ are removed, and overlong questions are truncated only at word boundaries.
 Generic player recovery language was shortened and rewritten as ordinary
 meeting language rather than visible system-governance instructions.
 
+### 7. Structured-output budget and retrospective continuity
+
+The fixed model spent enough of a 768-token allowance on reasoning that its
+first interview answer ended as truncated JSON and invoked deterministic
+fallback. Public player and NPC-render allowances are now bounded at
+1024--1536 tokens. This does not permit longer public speeches: the existing
+120-word dialogue limit remains unchanged; it gives the model room to finish
+the required JSON envelope.
+
+Prompt-only continuity was also non-deterministic. For retrospective follow-up
+questions that do not explicitly request a new example, both comparison
+conditions now receive the exact most recent public player example as a
+required continuity anchor. The anchor uses public dialogue only and therefore
+does not give RoomMind privileged information.
+
+### 8. Clause-local evidence attribution
+
+A real-model incident probe exposed a mixed-clause loophole: an invented claim
+that rollback had started could be followed by `we cannot confirm recovery`,
+and the later disclaimer excused the whole response. Evidence attribution is
+now checked clause by clause. Unrelated negative evidence (for example, an
+unverified archive checksum) cannot ground a positive assertion about rollback
+completion or healthy service metrics. Fully cautious statements remain legal.
+
 ## Observability and archived probes
 
 Exports now include persistent capability boundaries. Batch summaries include
@@ -104,22 +128,45 @@ git diff --check
 
 The test set covers the exact frozen counterexamples, mixed conditional and
 unconditional confirmation, one-time capability focus, truthful conditional
-closure, post-decision side-issue isolation, and complete-question extraction.
+closure, post-decision side-issue isolation, complete-question extraction,
+retrospective anchor selection, mixed-clause evidence claims, and unrelated
+negative evidence.
 
-## Real-model probe status
+## Fixed-model local probe results
 
-The configured `gpt-oss:120b-cloud` behavior probe was not run because doing so
-would transmit repository-defined prompts to an external Ollama Cloud endpoint
-without separate external-data authorization. A localhost-only probe using the
-downloaded `qwen3.5:0.8b` model did not finish within a useful engineering time
-window and was stopped; that small model is not evidence about the fixed
-qualification model's realism.
+After explicit authorization, engineering probes were run through the local
+Ollama service using the fixed `ollama/gpt-oss:120b-cloud` model. These are
+prequalification observations, not confirmatory results:
+
+1. The four-case behavior probe produced 4/4 grounded messages: the negotiation
+   confirmed only stated terms, the launch decision stayed conditional, the
+   interview requested concrete evidence, and incident containment remained a
+   future action pending evidence.
+2. The first multi-turn run exposed one truncated structured response and one
+   fallback. Raising the bounded generation allowance eliminated that failure
+   on the exact rerun without increasing the public-message word limit.
+3. A later run exposed silent switching between interview projects. Adding the
+   public continuity anchor made all four interview answers stay on the same
+   onboarding example and preserve its core metrics.
+4. Another incident run invented rollback logs and healthy metrics after prior
+   turns had only requested them. The clause-local attribution regression was
+   added. In the final three-turn incident rerun, the player explicitly said
+   rollback and checksum verification remained unconfirmed and requested the
+   responsible participants' evidence.
+5. The final fixed-model probe had zero deterministic fallback. Its three
+   interview turns stayed on one onboarding case, and its three incident turns
+   contained no unsupported current-world completion.
+
+Temporary full probe artifacts were written under `/tmp` and are not research
+artifacts. The final claims above are also encoded as deterministic regression
+cases so they do not depend on retaining ephemeral model output.
 
 ## Gate before staging
 
 Before a G3.7 staging qualification:
 
-1. run a small fixed-`gpt-oss:120b` matched probe with explicit authorization;
+1. freeze the candidate and run a small fixed-`gpt-oss:120b` matched
+   RoomMind/Baseline batch; local component probes are insufficient;
 2. require zero unsupported visible current-world completions or artifacts;
 3. require capability focus at most once per unavailable field;
 4. require configured confirmations to remain closed unless explicitly

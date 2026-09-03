@@ -55,7 +55,7 @@ _CURRENT_WORLD_OBJECT_RE = re.compile(
     r"deployment|release|service|system|server|cluster|pod|node|snapshot|"
     r"memory\s+dump|health\s+check|status(?:[- ]page)?|public\s+update|"
     r"archive|upload|attachment|email|file|document|report|hash|checksum|log(?:s)?|"
-    r"transaction(?:s)?|monitoring)\b",
+    r"transaction(?:s)?|monitoring|metrics|telemetry)\b",
     flags=re.IGNORECASE,
 )
 _CURRENT_WORLD_TERMINAL_RE = re.compile(
@@ -216,12 +216,27 @@ _NON_ASSERTIVE_PREFIX_RE = re.compile(
 )
 
 _EVIDENCE_ATTRIBUTION_RE = re.compile(
-    r"\b(?:based\s+on\s+(?:the\s+)?(?:evidence|metrics|logs|data|record)|"
+    r"\b(?:based\s+on\s+(?:the\s+)?(?:(?:current|available|present|existing)\s+)?"
+    r"(?:evidence|metrics|logs|data|record)|"
     r"according\s+to\s+(?:the\s+)?(?:metrics|logs|data|report)|"
     r"(?:metrics|monitoring|logs|data|the\s+report)\s+"
     r"(?:show|shows|showed|confirm|confirms|confirmed|indicate|indicates|indicated)|"
     r"reported\s+(?:complete|completed|restored|recovered|healthy)|"
     r"showing\s+(?:no\s+)?(?:anomalies|errors|failures))\b",
+    flags=re.IGNORECASE,
+)
+
+_EVIDENCE_STATUS_ASSERTION_RE = re.compile(
+    r"\b(?:start(?:ed)?|initiated|begun|complete|completed|completion|"
+    r"recover(?:ed|y)?|restor(?:ed|ation)|"
+    r"verified|verification|validated|healthy|stable|normal\s+ranges?|"
+    r"back\s+up|degraded|above\s+\d+|below\s+\d+|no\s+(?:errors|failures|anomalies))\b",
+    flags=re.IGNORECASE,
+)
+
+_EVIDENCE_UNCERTAINTY_RE = re.compile(
+    r"\b(?:cannot|can't|do\s+not|don't|not\s+enough|insufficient|unverified|"
+    r"pending|defer|uncertain|no\s+basis|no\s+(?:confirmed|verified|verification))\b",
     flags=re.IGNORECASE,
 )
 
@@ -235,18 +250,7 @@ def _question_only_evidence_claim(text: str, public_context: str) -> bool:
     record contains no declarative evidence statement, it must remain a
     question or conditional proposal.
     """
-    if not _EVIDENCE_ATTRIBUTION_RE.search(text):
-        return False
-    # It is always safe to state that the available record is insufficient;
-    # this preserves uncertainty rather than manufacturing a positive fact.
-    if re.search(
-        r"\b(?:cannot|can't|do\s+not|don't|not\s+enough|insufficient|"
-        r"unverified|pending|defer|uncertain|no\s+basis)\b",
-        text,
-        flags=re.IGNORECASE,
-    ):
-        return False
-    declarative_rows = []
+    supported_rows: list[tuple[str, set[str]]] = []
     for row in (public_context or "").splitlines():
         cleaned = " ".join(row.split()).strip()
         if not cleaned or "?" in cleaned:
@@ -258,8 +262,41 @@ def _question_only_evidence_claim(text: str, public_context: str) -> bool:
             flags=re.IGNORECASE,
         ):
             continue
-        declarative_rows.append(cleaned)
-    return not declarative_rows
+        if _EVIDENCE_UNCERTAINTY_RE.search(cleaned):
+            continue
+        if not (
+            _EVIDENCE_STATUS_ASSERTION_RE.search(cleaned)
+            or _EVIDENCE_ATTRIBUTION_RE.search(cleaned)
+        ):
+            continue
+        supported_rows.append((
+            cleaned,
+            {match.casefold() for match in _CURRENT_WORLD_OBJECT_RE.findall(cleaned)},
+        ))
+    # Evaluate each clause independently.  A later disclaimer such as "we
+    # cannot confirm recovery" must not immunize an earlier invented positive
+    # assertion such as "the rollback was started" in the same response.
+    for clause in re.split(
+        r"(?<=[.!?])\s+|;\s*|,\s+(?=(?:but|however|although|while|because)\b)",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        if not _EVIDENCE_ATTRIBUTION_RE.search(clause):
+            continue
+        if _EVIDENCE_UNCERTAINTY_RE.search(clause):
+            continue
+        if not _EVIDENCE_STATUS_ASSERTION_RE.search(clause):
+            continue
+        claim_objects = {
+            match.casefold() for match in _CURRENT_WORLD_OBJECT_RE.findall(clause)
+        }
+        if any(
+            (not claim_objects) or bool(claim_objects & support_objects)
+            for _, support_objects in supported_rows
+        ):
+            continue
+        return True
+    return False
 
 _RETROSPECTIVE_ANCHOR_RE = re.compile(
     r"\b(?:in\s+(?:my|our)\s+(?:previous|prior|former)\s+"

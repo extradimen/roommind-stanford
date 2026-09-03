@@ -27,7 +27,11 @@ from app.task_state import (
     task_progress_signature,
 )
 from app.orchestrator.generative import generative_orchestrator
-from app.player_agent import normalize_player_content, pending_public_questions
+from app.player_agent import (
+    normalize_player_content,
+    pending_public_questions,
+    retrospective_continuity_anchor,
+)
 from app.public_ledger import (
     commit_public_intent, record_simulated_tool_result, validate_public_intent,
 )
@@ -394,6 +398,14 @@ def main() -> None:
         },
     ) is None
     assert player_speech_rejection_reason(
+        "Based on the logs, the rollback completed.",
+        public_context="[sre_lead]: The rollback completed at 10:15 UTC.",
+        validated_intent={
+            "kind": "statement", "transition": "proposed",
+            "simulation_scope": "discussion",
+        },
+    ) is None
+    assert player_speech_rejection_reason(
         "Based on the evidence available, we cannot confirm recovery and should defer closure pending verification.",
         public_context="[sre_lead]: Can you confirm the rollback is complete?",
         validated_intent={
@@ -401,6 +413,42 @@ def main() -> None:
             "simulation_scope": "discussion",
         },
     ) is None
+    assert player_speech_rejection_reason(
+        (
+            "Based on the evidence we have so far, the rollback was started. "
+            "We cannot yet confirm that it completed or restored service."
+        ),
+        public_context=(
+            "[sre_lead]: Can you confirm the rollback is complete?\n"
+            "[security_lead]: Please provide the rollback logs."
+        ),
+        validated_intent={
+            "kind": "statement", "transition": "proposed",
+            "simulation_scope": "discussion",
+        },
+    ) == "question_treated_as_public_evidence", (
+        "a later cautious clause must not excuse an earlier invented evidence claim"
+    )
+    assert player_speech_rejection_reason(
+        (
+            "Based on the current evidence—rollback logs showing completion and "
+            "service health metrics within normal ranges—we can safely conclude "
+            "the service is back up, but because the evidence archive and its "
+            "checksum have not yet been verified, we cannot confirm data integrity."
+        ),
+        public_context=(
+            "[sre_lead]: Can you confirm the rollback is complete and the service has recovered?\n"
+            "[user]: I need confirmation that the rollback has completed. Could you share the latest deployment status and health metrics?\n"
+            "[security_lead]: Have the evidence archive and checksum already been verified?\n"
+            "[user]: Security Lead, we have not yet verified the evidence archive or its checksum."
+        ),
+        validated_intent={
+            "kind": "decision", "transition": "proposed",
+            "simulation_scope": "discussion",
+        },
+    ) == "question_treated_as_public_evidence", (
+        "unrelated negative evidence must not ground a positive recovery claim"
+    )
     assert speech_rejection_reason(
         "The SHA-256 is 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef."
     ) == "unsupported_hash"
@@ -414,6 +462,27 @@ def main() -> None:
     assert normalize_player_content(
         '{"content":"{\\"content\\":\\"I am ready for the first question.\\"}"}'
     ) == "I am ready for the first question."
+    interview_messages = [
+        {
+            "speaker_id": "user", "speaker_type": "user",
+            "content": "In Q2 2021 I resolved the Feature Z rollout conflict.",
+        },
+        {
+            "speaker_id": "people_partner", "speaker_type": "npc",
+            "content": "How did you ensure different voices were heard?",
+        },
+    ]
+    assert retrospective_continuity_anchor(
+        interview_messages,
+        pending_questions=pending_public_questions(interview_messages),
+        evidence_mode="retrospective_claim",
+    ) == "In Q2 2021 I resolved the Feature Z rollout conflict."
+    interview_messages[-1]["content"] = "Can you give a different project example?"
+    assert retrospective_continuity_anchor(
+        interview_messages,
+        pending_questions=pending_public_questions(interview_messages),
+        evidence_mode="retrospective_claim",
+    ) == ""
     nested_evaluation = '{"content":"{\\"phase\\":\\"evidence\\",\\"updates\\":[{\\"field\\":\\"outcome\\",\\"value\\":true,\\"status\\":\\"proposed\\"}]}"}'
     assert normalize_evaluator_payload(nested_evaluation)["updates"][0]["field"] == "outcome"
     assert "bottom line" not in PUBLIC_RESPONSE_DRAFT.casefold()
