@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G3.3"
+    assert CURRENT_GENERATION_ID == "G3.4"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g3.3-contextual-speech-boundary-ledger-simulation"
+        "g3.4-natural-recovery-bounded-evidence-ledger-simulation"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
