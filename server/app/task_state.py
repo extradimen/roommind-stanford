@@ -1010,9 +1010,7 @@ def _field_update_is_grounded(
         )
         if len(token) >= 4 and token not in _GROUNDING_STOPWORDS
     }
-    if field_phrase not in text and not any(
-        re.search(rf"\b{re.escape(token)}\b", text) for token in tokens
-    ):
+    if not _quote_references_field(field, spec, text):
         return False
 
     value_type = str(spec.get("type") or "string").lower()
@@ -1026,7 +1024,7 @@ def _field_update_is_grounded(
         if not any(re.search(rf"(?<![\w.]){re.escape(item)}(?![\w.])", text) for item in candidates):
             return False
     elif value_type == "boolean":
-        positive = r"\b(?:accept|accepted|agree|agreed|approve|approved|confirm|confirmed|adopt|adopted|enable|enabled|active|activated|complete|completed|identified|ready|cover|covers|covered|satisfy|satisfies|satisfied|meet|meets|met|yes|true)\b"
+        positive = r"\b(?:accept|accepted|agree|agreed|approve|approved|confirm|confirmed|adopt|adopted|enable|enabled|active|activated|complete|completed|identified|ready|cover|covers|covered|satisfy|satisfies|satisfied|meet|meets|met|no\s+(?:further|remaining|additional)\s+questions?|yes|true)\b"
         negative = r"\b(?:reject|rejected|decline|declined|not|no|false|inactive|disable|disabled)\b"
         if bool(value) and not re.search(positive, text):
             return False
@@ -1035,10 +1033,10 @@ def _field_update_is_grounded(
     elif value is not None:
         normalized_value = str(value).strip().casefold()
         value_tokens = {
-            token for token in re.findall(r"[\w]+", normalized_value)
+            token for token in re.findall(r"[\w]+", normalized_value.replace("_", " "))
             if len(token) >= 3
         }
-        if normalized_value not in text and not (
+        if normalized_value not in text and normalized_value.replace("_", " ") not in text and not (
             value_tokens
             and any(re.search(rf"\b{re.escape(token)}\b", text) for token in value_tokens)
             and _quote_references_field(field, spec, text)
@@ -1074,9 +1072,7 @@ def _commit_explicit_field_confirmations(
              if str(candidate.get("speaker_id") or "") == speaker_id),
             None,
         )
-        if not row or not _field_update_is_grounded(
-            field=field, spec=spec, value=value, status="confirmed", evidence=[row],
-        ):
+        if not row:
             continue
         if speaker_id == "user":
             character: Any = {
@@ -1088,6 +1084,26 @@ def _commit_explicit_field_confirmations(
             if character is None:
                 continue
         quote = " ".join(str(row.get("quote") or "").split())
+        display_name = str(
+            character.get("character_id") if isinstance(character, dict)
+            else getattr(character, "display_name", "")
+            or getattr(character, "character_name", "")
+            or getattr(character, "character_id", "")
+        ).strip()
+        identity_grounded = (
+            str(spec.get("type") or "string").lower() == "string"
+            and str(value or "").strip().casefold() == display_name.casefold()
+            and bool(re.search(
+                r"\b(?:i\s+am|i['’]m|i\s+confirm\s+(?:that\s+)?i['’]m)\b"
+                r"[^.!?;]{0,60}\b(?:owner|assignee|lead|responsible)\b",
+                quote, flags=re.IGNORECASE,
+            ))
+            and _quote_references_field(field, spec, quote)
+        )
+        if not identity_grounded and not _field_update_is_grounded(
+            field=field, spec=spec, value=value, status="confirmed", evidence=[row],
+        ):
+            continue
         intent = validate_public_intent(
             character=character,
             intent={
@@ -1102,7 +1118,9 @@ def _commit_explicit_field_confirmations(
             turn_id=turn_id,
             state=state,
         )
-        intent = ground_public_intent_in_quote(intent, quote)
+        intent = ground_public_intent_in_quote(
+            intent, quote, actor_aliases=[display_name] if display_name else [],
+        )
         if intent.get("commit_allowed", True):
             commit_public_intent(
                 state, intent=intent, public_quote=quote,
@@ -1113,20 +1131,34 @@ def _commit_explicit_field_confirmations(
 _EXPLICIT_ACCEPTANCE_RE = re.compile(
     r"\b(?:(?:i|we)\s+(?:(?:can|hereby|now|fully|explicitly|formally)\s+)*"
     r"(?:confirm|accept|approve|agree(?:\s+to)?|support)|"
+    r"(?:i|we)(?:(?:\s+will|['’]ll)|(?:(?:\s+am|['’]m)\s+(?:pleased|ready)\s+to))?\s+"
+    r"(?:(?:can|hereby|now|fully|explicitly|formally)\s+)*"
+    r"(?:mark|record|declare)\b[^.!?;]{0,100}\b"
+    r"(?:complete|completed|approval|approved|decision|agreement)|"
+    r"(?:i|we)\b[^.!?;]{0,80}\b(?:have|['’]ve)\s+no\s+"
+    r"(?:further|remaining|additional)\s+questions|"
     r"(?:i|we)(?:(?:\s+will|['’]ll))?\s+consider\b[^.!?;]{0,100}\bcomplete|"
     r"(?:i|we)(?:(?:\s+am|['’]m|\s+are|['’]re))\s+(?:officially\s+)?(?:setting|assigning|designating|appointing)|"
     r"(?:i|we)\s+(?:officially\s+)?(?:set|assign|designate|appoint)|"
+    r"(?:i|we)(?:['’]ve|\s+have)\s+(?:officially\s+)?(?:wrapped|completed|finished)|"
+    r"(?:i|we)(?:(?:\s+am|['’]m|\s+are|['’]re))\s+(?:aligned|satisfied)\b[^.!?;]{0,100}\b"
+    r"(?:decision|agreement|terms?|outcome|result)|"
+    r"all\s+(?:now\s+|fully\s+|formally\s+)?confirmed|"
     r"confirmed\s*[-—:]|"
     r"(?:cover|covers|covered|satisfy|satisfies|satisfied|meet|meets|met)\b[^.!?;]{0,100}\b(?:evidence|requirement|criteria|need)|"
     r"(?:is|are|has\s+been|have\s+been)\s+(?:now\s+|fully\s+|formally\s+)?"
-    r"(?:confirmed|accepted|approved|agreed|identified|ready)|"
-    r"(?:is|are)\s+acceptable)\b",
+    r"(?:confirmed|accepted|approved|agreed|identified|ready|assigned|designated|appointed|scheduled|locked)|"
+    r"you(?:['’]re|\s+are)\s+(?:now\s+|formally\s+)?(?:assigned|designated|appointed)|"
+    r"(?:is|are)\s+acceptable)\b|"
+    r"^(?:lock|set|assign|designate|appoint|confirm|approve)\b"
+    r"(?=[^?]*$)",
     flags=re.IGNORECASE,
 )
 _CONDITIONAL_OR_NEGATED_ACCEPTANCE_RE = re.compile(
     r"\b(?:do\s+not|don't|cannot|can't|not\s+(?:yet\s+)?(?:confirm|accept|approve|"
     r"agree|ready)|conditionally|conditional\s+on|subject\s+to|provided\s+that|"
-    r"pending|awaiting|before\s+(?:i|we)\s+(?:can|will)|until)\b",
+    r"pending|awaiting|before\s+(?:i|we)\s+(?:can|will)|until|"
+    r"please|could\s+you|can\s+you|would\s+you)\b",
     flags=re.IGNORECASE,
 )
 _FIELD_REFERENCE_STOPWORDS = {
@@ -1136,7 +1168,9 @@ _FIELD_REFERENCE_STOPWORDS = {
 
 
 def _quote_references_field(field: str, spec: dict[str, Any], quote: str) -> bool:
-    text = " ".join(str(quote or "").casefold().replace("_", " ").split())
+    text = " ".join(
+        str(quote or "").casefold().replace("_", " ").replace("-", " ").split()
+    )
     phrase = field.casefold().replace("_", " ")
     if phrase in text:
         return True
@@ -1146,12 +1180,27 @@ def _quote_references_field(field: str, spec: dict[str, Any], quote: str) -> boo
         )
         if len(token) >= 4 and token not in _FIELD_REFERENCE_STOPWORDS
     }
-    hits = {token for token in tokens if re.search(rf"\b{re.escape(token)}\b", text)}
+    hits = {
+        token for token in tokens
+        if re.search(
+            rf"\b{re.escape(token)}\b"
+            + (
+                rf"|\b{re.escape(token[:-1])}\b"
+                if len(token) > 3 and token.endswith("s") else ""
+            ),
+            text,
+        )
+    }
+    if any(token.startswith("question") for token in tokens) and re.search(
+        r"\bno\s+(?:further|remaining|additional)\s+questions?\b", text,
+    ):
+        return True
     return len(hits) >= min(2, max(1, len(tokens)))
 
 
 def _explicit_value_from_quote(
     *, field: str, spec: dict[str, Any], quote: str, current_value: Any,
+    candidate_values: list[str] | None = None, speaker_value: str = "",
 ) -> tuple[Any, bool]:
     text = " ".join(str(quote or "").split())
     kind = str(spec.get("type") or "string").lower()
@@ -1159,8 +1208,12 @@ def _explicit_value_from_quote(
         unit = str(spec.get("unit") or "").strip()
         patterns = []
         if unit:
+            unit_variants = [unit]
+            if len(unit) > 1 and unit.casefold().endswith("s"):
+                unit_variants.append(unit[:-1])
+            unit_pattern = "|".join(re.escape(item) for item in unit_variants)
             patterns.append(
-                rf"(?<![\w.])([-+]?\d[\d,]*(?:\.\d+)?)\s*(?:[- ]?{re.escape(unit)})\b"
+                rf"(?<![\w.])([-+]?\d[\d,]*(?:\.\d+)?)\s*(?:[- ]?(?:{unit_pattern}))\b"
             )
         patterns.append(
             rf"\b{re.escape(field.replace('_', ' '))}\b[^\d]{{0,30}}([-+]?\d[\d,]*(?:\.\d+)?)"
@@ -1181,13 +1234,39 @@ def _explicit_value_from_quote(
         ))
         return (not negative), True
     if kind == "string":
-        if current_value is not None:
-            normalized = str(current_value).strip()
-            variants = {normalized.casefold(), normalized.casefold().replace("_", " ")}
-            if any(value and value in text.casefold() for value in variants):
-                return normalized, True
-            if _quote_references_field(field, spec, text):
-                return normalized, True
+        candidates = list(dict.fromkeys(
+            str(value).strip() for value in [current_value, *(candidate_values or [])]
+            if value is not None and str(value).strip()
+        ))
+        text_cf = text.casefold()
+        exact_matches = [
+            value for value in candidates
+            if value.casefold() in text_cf
+            or value.casefold().replace("_", " ") in text_cf
+        ]
+        if len(exact_matches) == 1:
+            return exact_matches[0], True
+        token_matches = []
+        for value in candidates:
+            distinctive = {
+                token for token in re.findall(r"[\w]+", value.casefold())
+                if len(token) >= 3
+            }
+            if distinctive and any(
+                re.search(rf"\b{re.escape(token)}\b", text_cf)
+                for token in distinctive
+            ):
+                token_matches.append(value)
+        if len(token_matches) == 1 and _quote_references_field(field, spec, text):
+            return token_matches[0], True
+        if speaker_value and _quote_references_field(field, spec, text) and re.search(
+            r"\b(?:i\s+am|i['’]m|i\s+confirm\s+(?:that\s+)?i['’]m)\b"
+            r"[^.!?;]{0,60}\b(?:owner|assignee|lead|responsible)\b",
+            text_cf,
+        ):
+            return speaker_value, True
+        if current_value is not None and _quote_references_field(field, spec, text):
+            return str(current_value).strip(), True
         description = str(spec.get("description") or "")
         for candidate in re.findall(r"[a-z][a-z0-9_]+", description.casefold()):
             if "_" in candidate and candidate.replace("_", " ") in text.casefold():
@@ -1210,6 +1289,22 @@ def _commit_quote_level_confirmations(
     schema = task_config.get("state_schema") or {}
     variables = state.get("variables") or {}
     by_id = {character.character_id: character for character in characters}
+    expected_values: dict[str, list[str]] = {}
+    completion = task_config.get("completion_conditions") or {}
+    for condition in [*(completion.get("all") or []), *(completion.get("any") or [])]:
+        if not isinstance(condition, dict) or not condition.get("field"):
+            continue
+        value = condition.get("value")
+        if value is not None and str(value).strip():
+            expected_values.setdefault(str(condition["field"]), []).append(str(value))
+    registered_names: dict[str, str] = {}
+    for character in characters:
+        display = str(
+            getattr(character, "display_name", "")
+            or getattr(character, "character_name", "")
+            or character.character_id
+        ).strip()
+        registered_names[str(character.character_id)] = display
     for speaker_id, raw_quote in turn_text.items():
         full_quote = " ".join(str(raw_quote or "").split())
         if not full_quote:
@@ -1264,6 +1359,11 @@ def _commit_quote_level_confirmations(
             value, valid = _explicit_value_from_quote(
                 field=str(field), spec=spec, quote=quote,
                 current_value=(variables.get(field) or {}).get("value"),
+                candidate_values=[
+                    *expected_values.get(str(field), []),
+                    *registered_names.values(),
+                ],
+                speaker_value=registered_names.get(speaker_id, ""),
             )
             if not valid or value is None:
                 continue

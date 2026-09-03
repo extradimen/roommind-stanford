@@ -61,8 +61,9 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     is_g22_roommind = session_mode == "test" and architecture_version.startswith(("g2.2", "g2.3", "g3"))
     is_g23_roommind = session_mode == "test" and architecture_version.startswith(("g2.3", "g3"))
     is_g3_roommind = session_mode == "test" and architecture_version.startswith("g3")
-    is_g37_roommind = session_mode == "test" and architecture_version.startswith(("g3.7", "g3.8"))
-    is_g38_roommind = session_mode == "test" and architecture_version.startswith("g3.8")
+    is_g37_roommind = session_mode == "test" and architecture_version.startswith(("g3.7", "g3.8", "g3.9"))
+    is_g38_roommind = session_mode == "test" and architecture_version.startswith(("g3.8", "g3.9"))
+    is_g39_roommind = session_mode == "test" and architecture_version.startswith("g3.9")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -243,6 +244,53 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         row for row in (task_result.get("condition_results") or [])
         if isinstance(row, dict)
     ]
+    field_projection_mismatches: list[str] = []
+    task_variables = task_result.get("variables") or {}
+    state_schema = task_config.get("state_schema") or {}
+    for field, spec in state_schema.items():
+        entity = ledger_entities.get(f"field:{field}") or {}
+        if not isinstance(entity, dict) or entity.get("lifecycle") != "accepted":
+            continue
+        accepted_by = {
+            "user" if str(actor) == "player" else str(actor)
+            for actor in ((entity.get("actors_by_transition") or {}).get("accepted") or [])
+        }
+        configured = {
+            "user" if str(actor) == "player" else str(actor)
+            for actor in (spec.get("confirm_permissions") or [])
+        }
+        authorized_counterparts = {
+            str(speaker_id) for speaker_id, speaker in directory.items()
+            if str(speaker_id) != "user"
+            and field in (((speaker or {}).get("authority") or {}).get("can_confirm") or [])
+        } | (configured - {"user"})
+        policy = str(spec.get("confirmation_policy") or "responsible_participant")
+        policy_satisfied = {
+            "player": "user" in accepted_by,
+            "responsible_participant": bool(accepted_by & authorized_counterparts),
+            "player_and_authorized_counterpart": (
+                "user" in accepted_by and bool(accepted_by & authorized_counterparts)
+            ),
+            "player_and_responsible_participant": (
+                "user" in accepted_by and bool(accepted_by & authorized_counterparts)
+            ),
+            "player_and_assignee": (
+                "user" in accepted_by and bool(accepted_by & authorized_counterparts)
+            ),
+        }.get(policy, False)
+        if not policy_satisfied:
+            continue
+        variable = task_variables.get(field) or {}
+        projected_confirmations = {
+            "user" if str(actor) == "player" else str(actor)
+            for actor in (variable.get("confirmations") or [])
+        }
+        if (
+            variable.get("status") != "confirmed"
+            or variable.get("value") != entity.get("value")
+            or not accepted_by.issubset(projected_confirmations)
+        ):
+            field_projection_mismatches.append(str(field))
     checks = {
         "public_transcript_nonempty": bool(messages),
         "sequence_numbers_unique": len(sequence) == len(set(sequence)),
@@ -291,11 +339,11 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         ),
         "g35_completed_actions_require_tool_results": (
             not unsupported_completed_action_sources
-            if is_g3_roommind and generation_id.startswith(("G3.5", "G3.6", "G3.7", "G3.8")) else None
+            if is_g3_roommind and generation_id.startswith(("G3.5", "G3.6", "G3.7", "G3.8", "G3.9")) else None
         ),
         "g36_visible_current_world_actions_require_tool_results": (
             not unsupported_visible_current_world_actions
-            if is_g3_roommind and generation_id.startswith(("G3.6", "G3.7", "G3.8")) else None
+            if is_g3_roommind and generation_id.startswith(("G3.6", "G3.7", "G3.8", "G3.9")) else None
         ),
         "g37_capability_boundaries_not_repeated": (
             not repeated_capability_focus_issues if is_g37_roommind else None
@@ -323,6 +371,17 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             )
             if is_g38_roommind and completion_status == "completed"
             else (True if is_g38_roommind else None)
+        ),
+        "g39_task_does_not_end_stalled": (
+            completion_status != "stalled" if is_g39_roommind else None
+        ),
+        "g39_completed_task_has_closure_lock": (
+            str((task_result.get("closure_lock") or {}).get("status") or "") == "locked"
+            if is_g39_roommind and completion_status == "completed"
+            else (True if is_g39_roommind else None)
+        ),
+        "g39_accepted_fields_project_atomically": (
+            not field_projection_mismatches if is_g39_roommind else None
         ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
@@ -364,6 +423,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "duplicate_g3_ledger_event_ids": duplicate_ledger_event_ids,
             "invalid_g3_entity_lifecycle": invalid_entity_lifecycle,
             "open_required_work_at_completion": open_required_work,
+            "g39_field_projection_mismatches": field_projection_mismatches,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }

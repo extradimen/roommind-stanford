@@ -111,7 +111,12 @@ def _subject_key(value: Any) -> str:
 
 def _identity_tokens(value: Any) -> set[str]:
     tokens: set[str] = set()
-    for token in _subject_key(value).split("_"):
+    # Unlike entity ids, evidence matching must inspect the whole public quote.
+    # Reusing the 12-token ``_subject_key`` silently discarded late but highly
+    # material phrases such as "customer-communication owner".
+    for token in re.findall(r"[\w]+", str(value or "").casefold().replace("_", " ").replace("-", " ")):
+        if token in _SUBJECT_QUALIFIERS:
+            continue
         if len(token) > 4 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
             token = token[:-1]
         if token:
@@ -418,7 +423,8 @@ def validate_public_intent(
 
 
 def ground_public_intent_in_quote(
-    intent: dict[str, Any] | None, public_quote: str
+    intent: dict[str, Any] | None, public_quote: str,
+    *, actor_aliases: list[str] | None = None,
 ) -> dict[str, Any]:
     """Require a material structured intent to be stated in public speech.
 
@@ -432,6 +438,17 @@ def ground_public_intent_in_quote(
         return grounded
     transition = str(grounded.get("transition") or "proposed")
     quote = " ".join(str(public_quote or "").casefold().split())
+    if transition != "proposed" and (
+        quote.rstrip().endswith("?")
+        or re.search(r"\b(?:please|could\s+you|can\s+you|would\s+you)\b", quote)
+    ):
+        prior_reason = str(grounded.get("validation_reason") or "")
+        grounded["commit_allowed"] = False
+        grounded["validation"] = "rejected"
+        grounded["validation_reason"] = ";".join(filter(None, [
+            prior_reason, "public_quote_is_request_not_transition",
+        ]))
+        return grounded
     subject = str(grounded.get("subject") or "").strip()
     field = str(grounded.get("field") or "").strip()
     expected_tokens = _identity_tokens(f"{subject} {field}") if (subject or field) else set()
@@ -450,7 +467,8 @@ def ground_public_intent_in_quote(
             pattern = (
                 r"\b(?:accept|accepted|agree|agreed|approve|approved|confirm|confirmed|"
                 r"adopt|adopted|enable|enabled|active|activated|complete|completed|identified|ready|"
-                r"cover|covers|covered|satisfy|satisfies|satisfied|meet|meets|met|yes|true)\b"
+                r"cover|covers|covered|satisfy|satisfies|satisfied|meet|meets|met|"
+                r"no\s+(?:further|remaining|additional)\s+questions?|yes|true)\b"
                 if value else
                 r"\b(?:reject|rejected|decline|declined|not|no|false|inactive|disable|disabled)\b"
             )
@@ -461,12 +479,29 @@ def ground_public_intent_in_quote(
             ))
         else:
             normalized_value = str(value).strip().casefold()
+            normalized_aliases = {
+                str(alias or "").strip().casefold()
+                for alias in (actor_aliases or []) if str(alias or "").strip()
+            }
+            first_person_identity = (
+                normalized_value in normalized_aliases
+                and bool(re.search(
+                    r"\b(?:i\s+am|i['’]m|i\s+confirm\s+(?:that\s+)?i['’]m)\b"
+                    r"[^.!?;]{0,60}\b(?:owner|assignee|lead|responsible)\b",
+                    quote,
+                ))
+            )
             value_tokens = {
-                token for token in re.findall(r"[\w]+", normalized_value)
+                token for token in re.findall(r"[\w]+", normalized_value.replace("_", " "))
                 if len(token) >= 3
             }
-            value_supported = normalized_value in quote or bool(
+            value_supported = (
+                normalized_value in quote
+                or normalized_value.replace("_", " ") in quote
+                or first_person_identity
+                or bool(
                 value_tokens.intersection(_identity_tokens(quote))
+                )
             )
         if not value_supported:
             prior_reason = str(grounded.get("validation_reason") or "")
@@ -483,7 +518,7 @@ def ground_public_intent_in_quote(
         "in_progress": r"\b(?:i(?:'m| am)|we(?:'re| are))\s+(?:now\s+)?(?:working|reviewing|preparing|executing|implementing|verifying|investigating)\b|\b(?:has|have)\s+(?:started|begun)\b",
         "submitted": r"\b(?:i|we)\s+(?:have\s+|['’]ve\s+)?(?:provided|submitted|delivered|shared|presented)\b|\bhere\s+(?:is|are)\b",
         "verified": r"\b(?:i|we)\s+(?:have\s+|['’]ve\s+)?(?:verified|validated|confirmed|checked)\b|\b(?:is|are|was|were|has been|have been)\s+(?:verified|validated|confirmed)\b",
-        "accepted": r"\b(?:i|we)\s+(?:(?:can|hereby|now|fully|explicitly|formally)\s+)*(?:accept|approve|agree|confirm)\b|\b(?:i|we)(?:(?:\s+will|['’]ll))?\s+consider\b[^.!?;]{0,100}\bcomplete|\b(?:i|we)(?:(?:\s+am|['’]m|\s+are|['’]re))\s+(?:officially\s+)?(?:setting|assigning|designating|appointing)\b|\b(?:i|we)\s+(?:officially\s+)?(?:set|assign|designate|appoint)\b|\bconfirmed\s*[-—:]|\b(?:cover|covers|covered|satisfy|satisfies|satisfied|meet|meets|met)\b[^.!?;]{0,100}\b(?:evidence|requirement|criteria|need)|\b(?:is|are|has been|have been)\s+(?:explicitly\s+|formally\s+)?(?:accepted|approved|agreed|confirmed|finalized)\b",
+        "accepted": r"\b(?:i|we)\s+(?:(?:can|hereby|now|fully|explicitly|formally)\s+)*(?:accept|approve|agree|confirm)\b|\b(?:i|we)(?:(?:\s+will|['’]ll)|(?:(?:\s+am|['’]m)\s+(?:pleased|ready)\s+to))?\s+(?:now\s+)?(?:mark|record|declare)\b[^.!?;]{0,100}\b(?:complete|completed|approval|approved|decision|agreement)|\b(?:i|we)\b[^.!?;]{0,80}\b(?:have|['’]ve)\s+no\s+(?:further|remaining|additional)\s+questions?|\b(?:i|we)(?:(?:\s+will|['’]ll))?\s+consider\b[^.!?;]{0,100}\bcomplete|\b(?:i|we)(?:(?:\s+am|['’]m|\s+are|['’]re))\s+(?:officially\s+)?(?:setting|assigning|designating|appointing)\b|\b(?:i|we)\s+(?:officially\s+)?(?:set|assign|designate|appoint)\b|\bconfirmed\s*[-—:]|\b(?:cover|covers|covered|satisfy|satisfies|satisfied|meet|meets|met)\b[^.!?;]{0,100}\b(?:evidence|requirement|criteria|need)|\b(?:is|are|has been|have been)\s+(?:explicitly\s+|formally\s+)?(?:accepted|approved|agreed|confirmed|finalized)\b|^(?:lock|set|assign|designate|appoint|confirm|approve)\b",
         "rejected": r"\b(?:i|we)\s+(?:reject|decline|cannot accept|do not accept)\b|\b(?:is|are|has been|have been)\s+rejected\b",
         "blocked": r"\b(?:i|we)\s+(?:cannot|can't|am unable|are unable)\b|\b(?:is|are|remains?)\s+blocked\b",
     }

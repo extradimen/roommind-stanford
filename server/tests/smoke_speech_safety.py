@@ -467,6 +467,177 @@ def main() -> None:
         for item in incident_state["work_items"].values()
     )
 
+    # G3.9 replays the exact natural closure forms observed in the frozen G3.8
+    # batch. They must complete a public multi-party policy without requiring
+    # every speaker to use the synthetic "I confirm <field_name>" form.
+    natural_interview = initial_task_state(interview_config)
+    for field in ("product_evidence", "engineering_evidence", "leadership_evidence"):
+        natural_interview["variables"][field].update(value=True, status="confirmed")
+    apply_evaluator_updates(
+        task_config=interview_config, state=natural_interview,
+        parsed={"updates": [], "events": []},
+        characters=[product_vp, engineering_director, people_partner],
+        player_text="I’m aligned with those goals and have no further questions.",
+        npc_turns=[{
+            "speaker_id": "product_vp",
+            "content": "I’ll now mark the candidate-questions portion complete.",
+        }], turn_id=17,
+    )
+    assert natural_interview["variables"]["candidate_questions_complete"]["status"] == "confirmed"
+    assert natural_interview["completion_status"] == "completed"
+    assert natural_interview["closure_lock"]["status"] == "locked"
+
+    launch_cfo = SimpleNamespace(
+        character_id="cfo", display_name="Dana Brooks",
+        authority={"can_confirm": ["launch_decision"]},
+    )
+    launch_config = {
+        "state_schema": {
+            "launch_decision": {
+                "type": "string",
+                "description": "Final decision: phased_launch, full_launch, or delay",
+                "confirmation_policy": "player_and_authorized_counterpart",
+                "confirm_permissions": ["player", "cfo"],
+            },
+        },
+        "phases": [{"phase_id": "decision"}],
+        "completion_conditions": {"all": [{
+            "field": "launch_decision", "operator": "==", "value": "phased_launch",
+            "required_status": "confirmed",
+        }]},
+    }
+    natural_launch = initial_task_state(launch_config)
+    apply_evaluator_updates(
+        task_config=launch_config, state=natural_launch,
+        parsed={"updates": [], "events": []}, characters=[launch_cfo],
+        player_text="", npc_turns=[{
+            "speaker_id": "cfo",
+            "content": "I can formally approve the phased launch decision.",
+        }], turn_id=1,
+    )
+    apply_evaluator_updates(
+        task_config=launch_config, state=natural_launch,
+        parsed={"updates": [], "events": []}, characters=[launch_cfo],
+        player_text="I’m pleased to record our joint approval for a phased launch.",
+        npc_turns=[], turn_id=2,
+    )
+    assert natural_launch["variables"]["launch_decision"]["value"] == "phased_launch"
+    assert natural_launch["variables"]["launch_decision"]["status"] == "confirmed"
+    assert natural_launch["closure_lock"]["status"] == "locked"
+
+    quality_director = SimpleNamespace(
+        character_id="quality_director", display_name="Emma Liu",
+        authority={"can_confirm": ["quality_protocol"]},
+    )
+    natural_negotiation_config = {
+        "state_schema": {
+            "unit_price": {
+                "type": "number", "unit": "RMB",
+                "description": "Agreed unit price",
+                "confirmation_policy": "player_and_authorized_counterpart",
+                "confirm_permissions": ["player", "supplier_ceo"],
+            },
+            "delivery_days": {
+                "type": "integer", "unit": "days",
+                "description": "Agreed delivery period",
+                "confirmation_policy": "player_and_authorized_counterpart",
+                "confirm_permissions": ["player", "supplier_ceo"],
+            },
+            "quality_protocol": {
+                "type": "boolean", "description": "Joint quality protocol",
+                "confirmation_policy": "player_and_authorized_counterpart",
+                "confirm_permissions": ["player", "quality_director"],
+            },
+        },
+        "phases": [{"phase_id": "closing"}],
+        "completion_conditions": {"all": [
+            {"field": "unit_price", "operator": "<=", "value": 85,
+             "required_status": "confirmed"},
+            {"field": "delivery_days", "operator": "<=", "value": 30,
+             "required_status": "confirmed"},
+            {"field": "quality_protocol", "operator": "==", "value": True,
+             "required_status": "confirmed"},
+        ]},
+    }
+    natural_negotiation = initial_task_state(natural_negotiation_config)
+    apply_evaluator_updates(
+        task_config=natural_negotiation_config, state=natural_negotiation,
+        parsed={"updates": [], "events": []},
+        characters=[supplier, quality_director], player_text=(
+            "I confirm the unit price of 84 RMB, 30-day delivery, and the joint "
+            "quality protocol."
+        ), npc_turns=[
+            {"speaker_id": "supplier_ceo", "content": (
+                "We confirm the unit price of 84 RMB and delivery within 30 days."
+            )},
+            {"speaker_id": "quality_director", "content": (
+                "I confirm the joint quality protocol."
+            )},
+        ], turn_id=9,
+    )
+    assert all(
+        natural_negotiation["variables"][field]["status"] == "confirmed"
+        for field in ("unit_price", "delivery_days", "quality_protocol")
+    )
+    assert natural_negotiation["completion_status"] == "completed"
+    assert natural_negotiation["closure_lock"]["status"] == "locked"
+
+    natural_comms = SimpleNamespace(
+        character_id="communications_lead", display_name="Sofia Martinez",
+        authority={"can_confirm": ["customer_owner_assigned", "next_review_minutes"]},
+    )
+    natural_incident_config = {
+        "state_schema": {
+            "customer_owner_assigned": {
+                "type": "string", "description": "Named owner for customer communication",
+                "confirmation_policy": "player_and_assignee",
+                "confirm_permissions": ["player", "communications_lead"],
+            },
+            "next_review_minutes": {
+                "type": "integer", "unit": "minutes",
+                "description": "Time until next incident review",
+                "confirmation_policy": "player_and_responsible_participant",
+                "confirm_permissions": ["player", "communications_lead"],
+            },
+        },
+        "phases": [{"phase_id": "handoff"}],
+        "completion_conditions": {"all": [
+            {"field": "customer_owner_assigned", "operator": "!=", "value": "",
+             "required_status": "confirmed"},
+            {"field": "next_review_minutes", "operator": "<=", "value": 30,
+             "required_status": "confirmed"},
+        ]},
+    }
+    natural_incident = initial_task_state(natural_incident_config)
+    apply_evaluator_updates(
+        task_config=natural_incident_config, state=natural_incident,
+        parsed={"updates": [], "events": []}, characters=[natural_comms],
+        player_text=(
+            "Recovery plan approved. Lock the 14:05 UTC review, set the next review "
+            "for 30 minutes, and confirm Sofia as the customer-communication owner."
+        ),
+        npc_turns=[{
+            "speaker_id": "communications_lead",
+            "content": (
+                "Confirmed: the next review is scheduled for 30 minutes. "
+                "I confirm I’m the owner for customer communication."
+            ),
+        }], turn_id=12,
+    )
+    assert natural_incident["variables"]["next_review_minutes"]["status"] == "confirmed"
+    assert natural_incident["variables"]["customer_owner_assigned"]["value"] == "Sofia Martinez"
+    assert natural_incident["variables"]["customer_owner_assigned"]["status"] == "confirmed"
+    assert natural_incident["closure_lock"]["status"] == "locked"
+
+    request_only = initial_task_state(natural_incident_config)
+    apply_evaluator_updates(
+        task_config=natural_incident_config, state=request_only,
+        parsed={"updates": [], "events": []}, characters=[natural_comms],
+        player_text="Please confirm the next review is scheduled for 30 minutes.",
+        npc_turns=[], turn_id=1,
+    )
+    assert request_only["variables"]["next_review_minutes"]["status"] == "unknown"
+
     # A generic shared word is insufficient to supersede required work before
     # closure. This protects open scenarios from accidental field matching.
     conservative_config = {

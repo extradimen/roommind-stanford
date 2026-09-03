@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G3.8"
+    assert CURRENT_GENERATION_ID == "G3.9"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g3.8-authoritative-state-reducer-closure-lock"
+        "g3.9-natural-joint-confirmation-closure"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -295,6 +295,46 @@ def main() -> None:
     })
     g38_probes = run_integrity_probes(g38_bundle)
     assert g38_probes["checks"]["g38_authoritative_closure_lock_consistent"] is True
+
+    g39_bundle = deepcopy(g38_bundle)
+    g39_bundle["session"]["run_config"]["research_manifest"] = {
+        "generation_id": "G3.9",
+        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+    }
+    g39_bundle["scenario"]["task_config"] = {
+        "state_schema": {"containment_active": {
+            "type": "boolean",
+            "confirmation_policy": "player_and_authorized_counterpart",
+            "confirm_permissions": ["player", "ceo"],
+        }},
+        "completion_conditions": {"all": [{
+            "field": "containment_active", "operator": "==", "value": True,
+            "required_status": "confirmed",
+        }]},
+    }
+    g39_bundle["speaker_directory"]["ceo"]["authority"] = {
+        "can_confirm": ["containment_active"],
+    }
+    g39_bundle["task_result"]["variables"] = {
+        "containment_active": {
+            "value": True, "status": "confirmed",
+            "confirmations": ["user", "ceo"],
+        },
+    }
+    g39_bundle["task_result"]["public_ledger"]["entities"]["field:containment_active"] = {
+        "entity_id": "field:containment_active", "kind": "decision",
+        "field": "containment_active", "value": True, "lifecycle": "accepted",
+        "actors_by_transition": {"accepted": ["user", "ceo"]},
+    }
+    g39_probes = run_integrity_probes(g39_bundle)
+    assert g39_probes["checks"]["g39_task_does_not_end_stalled"] is True
+    assert g39_probes["checks"]["g39_completed_task_has_closure_lock"] is True
+    assert g39_probes["checks"]["g39_accepted_fields_project_atomically"] is True
+    g39_bundle["task_result"]["completion_status"] = "stalled"
+    g39_bundle["task_result"]["variables"]["containment_active"]["status"] = "proposed"
+    failed_g39 = run_integrity_probes(g39_bundle)
+    assert failed_g39["checks"]["g39_task_does_not_end_stalled"] is False
+    assert failed_g39["checks"]["g39_accepted_fields_project_atomically"] is False
 
 
 if __name__ == "__main__":

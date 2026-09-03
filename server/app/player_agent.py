@@ -365,6 +365,13 @@ Treat a promise to provide a document, analysis, test, decision, or action as
 different from actually providing or completing it. Seek material execution,
 not another promise. Open-ended simulations may end through completion,
 conditional resolution, deferral, handoff, or acknowledged failure.
+The public task specification may require both the player and another role to
+accept the same decision. When the public dialogue already contains that
+role's explicit acceptance of a concrete value and you genuinely accept it,
+state the player's own acceptance explicitly (for example, "I confirm ...")
+before requesting documents or follow-up work. Never ask an already-confirmed
+participant to repeat the same acceptance merely because the player has not
+yet voiced its own half of the confirmation policy.
 If an external file cannot be produced inside this text meeting, do not keep
 requesting it. Ask for its substantive findings inline, assign the file as a
 post-meeting deliverable, and proceed to a conditional decision or deferral.
@@ -586,6 +593,14 @@ substantive findings once, assign the file as a post-meeting deliverable, and
 continue to a conditional decision or explicit deferral rather than looping.
 A question asking whether something happened is not evidence that it happened;
 do not convert questions or requests into affirmative findings.
+The public task specification may require both the player and another role to
+accept the same decision. When the public dialogue already contains that
+role's explicit acceptance of a concrete value and you genuinely accept it,
+state the player's own acceptance explicitly (for example, "I confirm ...")
+before requesting documents or follow-up work. Do not ask an already-confirmed
+participant to repeat the same acceptance merely because the player has not
+yet voiced its own half of the confirmation policy. This rule uses only the
+public transcript and applies identically in both comparison conditions.
 In retrospective_claim mode, recount past experience as kind=fact,
 simulation_scope=retrospective, transition=proposed. It is not a live action
 completed by this text simulation.
