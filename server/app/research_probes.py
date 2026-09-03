@@ -45,6 +45,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         if session_mode == "test" and speaker_id not in memories
     ]
     manifest = run_config.get("research_manifest") or {}
+    generation_id = str(manifest.get("generation_id") or run_config.get("generation_id") or "")
     architecture_version = str(
         manifest.get("architecture_version")
         or run_config.get("architecture_version")
@@ -120,11 +121,14 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     public_ledger = task_result.get("public_ledger") or {}
     ledger_events = public_ledger.get("recent_events") or []
     ledger_entities = public_ledger.get("entities") or {}
+    ledger_tool_results = public_ledger.get("tool_results") or {}
     invalid_ledger_events = [
         str(row.get("event_id") or "") for row in ledger_events
         if not isinstance(row, dict)
         or not row.get("event_id")
-        or row.get("provenance") != "prevalidated_agent_intent"
+        or row.get("provenance") not in {
+            "scenario_seed", "public_statement", "simulated_tool_result", "external_followup",
+        }
         or not str((row.get("public_evidence") or {}).get("quote") or "").strip()
     ]
     unsupported_terminal_ledger_events = [
@@ -133,6 +137,17 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         and row.get("entity_kind") in {"artifact", "action", "verification"}
         and row.get("transition_to") in {"submitted", "verified", "accepted"}
         and not str(row.get("inline_content") or "").strip()
+    ]
+    unsupported_completed_action_sources = [
+        str(row.get("event_id") or "") for row in ledger_events
+        if isinstance(row, dict)
+        and row.get("entity_kind") == "action"
+        and row.get("transition_to") in {"submitted", "verified", "accepted"}
+        and (
+            row.get("provenance") != "simulated_tool_result"
+            or not str(row.get("tool_result_id") or "").strip()
+            or str(row.get("tool_result_id") or "") not in ledger_tool_results
+        )
     ]
     clock = public_ledger.get("simulation_clock") or {}
     clock_turn = int(clock.get("turn") or 0)
@@ -211,6 +226,10 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "g3_terminal_actions_have_inline_evidence": (
             not unsupported_terminal_ledger_events if is_g3_roommind else None
         ),
+        "g35_completed_actions_require_tool_results": (
+            not unsupported_completed_action_sources
+            if is_g3_roommind and generation_id.startswith("G3.5") else None
+        ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
             and ledger_clock_sequence == sorted(ledger_clock_sequence)
@@ -243,6 +262,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "invalid_outcome_resolution_turns": invalid_outcome_resolution,
             "invalid_g3_ledger_event_ids": invalid_ledger_events,
             "unsupported_terminal_g3_event_ids": unsupported_terminal_ledger_events,
+            "unsupported_completed_action_source_event_ids": unsupported_completed_action_sources,
             "future_g3_ledger_event_ids": future_ledger_events,
             "duplicate_g3_ledger_event_ids": duplicate_ledger_event_ids,
             "invalid_g3_entity_lifecycle": invalid_entity_lifecycle,

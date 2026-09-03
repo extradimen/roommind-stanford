@@ -25,6 +25,9 @@ CANONICAL_WORK_KINDS = MATERIAL_ENTITY_KINDS | {
     "issue", "proposal", "decision", "commitment", "schedule", "handoff", "outcome",
 }
 SIMULATION_SCOPES = {"discussion", "in_session", "external", "retrospective"}
+EVIDENCE_SOURCES = {
+    "scenario_seed", "public_statement", "simulated_tool_result", "external_followup",
+}
 _SUBJECT_QUALIFIERS = {
     "a", "an", "and", "the", "for", "of", "to", "with", "draft",
     "details", "detail", "summary", "update", "calculation", "calculate",
@@ -38,6 +41,7 @@ def initial_public_ledger() -> dict[str, Any]:
         "simulation_clock": {"turn": 0, "tick": 0},
         "entities": {},
         "events": [],
+        "tool_results": {},
         "rejections": [],
         "event_counter": 0,
     }
@@ -51,6 +55,7 @@ def ensure_public_ledger(state: dict[str, Any]) -> dict[str, Any]:
     ledger.setdefault("simulation_clock", {"turn": 0, "tick": 0})
     ledger.setdefault("entities", {})
     ledger.setdefault("events", [])
+    ledger.setdefault("tool_results", {})
     ledger.setdefault("rejections", [])
     ledger.setdefault("event_counter", max([
         int(str(row.get("event_id") or "0").removeprefix("ple-") or 0)
@@ -68,7 +73,28 @@ def public_ledger_view(state: dict[str, Any], *, event_limit: int = 300) -> dict
         "entities": deepcopy(ledger.get("entities") or {}),
         "recent_events": deepcopy((ledger.get("events") or [])[-event_limit:]),
         "recent_rejections": deepcopy((ledger.get("rejections") or [])[-10:]),
+        "tool_results": deepcopy(ledger.get("tool_results") or {}),
     }
+
+
+def record_simulated_tool_result(
+    state: dict[str, Any], *, result_id: str, actor_id: str, field: str,
+    inline_content: str, turn_id: int,
+) -> dict[str, Any]:
+    """Register a trusted simulation-engine result before an agent cites it."""
+    stable_id = str(result_id or "").strip()[:160]
+    content = str(inline_content or "").strip()[:4000]
+    if not stable_id or not content:
+        raise ValueError("A simulated tool result requires an id and public content")
+    result = {
+        "result_id": stable_id,
+        "actor_id": _normalize_actor(actor_id),
+        "field": str(field or "")[:96],
+        "inline_content": content,
+        "turn_id": int(turn_id),
+    }
+    ensure_public_ledger(state).setdefault("tool_results", {})[stable_id] = result
+    return result
 
 
 def _normalize_actor(value: Any) -> str:
@@ -178,9 +204,10 @@ def validate_public_intent(
     """Validate an agent's proposed public-world transition before wording it.
 
     External side effects cannot occur inside a text simulation. A completed
-    action therefore needs an in-session scope and concrete inline result; an
-    artifact submission needs its actual inline contents. Unsupported terminal
-    claims are safely downgraded to commitments and remain auditable.
+    action therefore needs an in-session scope plus a trusted, pre-registered
+    simulated-tool result; an artifact submission needs its actual inline
+    contents. Unsupported terminal claims are safely downgraded to commitments
+    and remain auditable.
     """
     raw = dict(intent or {})
     kind = str(raw.get("kind") or "statement").lower()
@@ -213,12 +240,43 @@ def validate_public_intent(
     )
     rejection = initial_rejection
     commit_allowed = True
+    field = str(raw.get("field") or "")[:96]
+    evidence_source = str(raw.get("evidence_source") or "").lower()
+    if not evidence_source:
+        evidence_source = (
+            "external_followup" if simulation_scope == "external" and transition == "committed"
+            else "public_statement"
+        )
+    if evidence_source not in EVIDENCE_SOURCES:
+        evidence_source = "public_statement"
+        rejection = rejection or "invalid_evidence_source"
+    tool_result_id = str(raw.get("tool_result_id") or "").strip()[:160]
+    tool_result_registered = False
+    if evidence_source == "scenario_seed":
+        # Scenario facts enter through initialization, never through an agent's
+        # self-authored public intent.
+        evidence_source = "public_statement"
+        rejection = rejection or "agent_cannot_create_scenario_seed_evidence"
+    if evidence_source == "simulated_tool_result" and not tool_result_id:
+        rejection = rejection or "simulated_tool_result_requires_id"
+    if evidence_source == "simulated_tool_result" and state is not None and tool_result_id:
+        registered_result = (
+            ensure_public_ledger(state).get("tool_results") or {}
+        ).get(tool_result_id)
+        if (
+            not isinstance(registered_result, dict)
+            or _normalize_actor(registered_result.get("actor_id")) != actor_id
+            or (field and str(registered_result.get("field") or "") != field)
+            or str(registered_result.get("inline_content") or "").strip() != inline_content
+        ):
+            rejection = rejection or "unregistered_simulated_tool_result"
+        else:
+            tool_result_registered = True
 
     authority = (
         character.get("authority") if isinstance(character, dict)
         else getattr(character, "authority", None)
     ) or {}
-    field = str(raw.get("field") or "")[:96]
     raw_value = raw.get("value")
     value = raw_value if isinstance(raw_value, (str, int, float, bool)) else None
     if raw_value is not None and value is None:
@@ -256,8 +314,14 @@ def validate_public_intent(
         rejection = rejection or "artifact_terminal_transition_requires_inline_content"
         transition = "committed"
     elif kind == "action" and transition in {"submitted", "verified", "accepted"}:
-        if simulation_scope != "in_session" or not inline_content:
-            rejection = rejection or "external_action_cannot_complete_without_in_session_result"
+        if (
+            simulation_scope != "in_session"
+            or not inline_content
+            or evidence_source != "simulated_tool_result"
+            or not tool_result_id
+            or not tool_result_registered
+        ):
+            rejection = rejection or "action_completion_requires_simulated_tool_result"
             transition = "committed"
     elif kind == "verification" and transition in {"verified", "accepted"} and not inline_content:
         rejection = rejection or "verification_requires_public_inline_evidence"
@@ -342,6 +406,8 @@ def validate_public_intent(
         "value": value,
         "inline_content": inline_content,
         "simulation_scope": simulation_scope,
+        "evidence_source": evidence_source,
+        "tool_result_id": tool_result_id,
         "turn_id": int(turn_id),
         "validation": "downgraded" if rejection else "accepted",
         "validation_reason": rejection,
@@ -462,7 +528,8 @@ def commit_public_intent(
         "value": intent.get("value"),
         "inline_content": str(intent.get("inline_content") or ""),
         "public_evidence": {"quote": str(public_quote or "")[:1000]},
-        "provenance": "prevalidated_agent_intent",
+        "provenance": str(intent.get("evidence_source") or "public_statement"),
+        "tool_result_id": str(intent.get("tool_result_id") or ""),
         "validation": str(intent.get("validation") or "accepted"),
         "validation_reason": str(intent.get("validation_reason") or ""),
         "validated_intent": deepcopy(intent),
@@ -508,6 +575,8 @@ def commit_public_intent(
         "field": event["field"],
         "value": event["value"] if event["value"] is not None else prior.get("value"),
         "inline_content": event["inline_content"] or prior.get("inline_content", ""),
+        "evidence_source": event["provenance"],
+        "tool_result_id": event["tool_result_id"] or prior.get("tool_result_id", ""),
         "last_event_id": event_id,
         "last_transition_turn": event["turn_id"],
     }

@@ -322,7 +322,9 @@ Return strict JSON only:
     "field": "optional configured state field",
     "value": "explicit public typed field value, otherwise null",
     "simulation_scope": "discussion|in_session|external|retrospective",
-    "inline_content": "actual in-session result/content, otherwise empty"
+    "inline_content": "actual in-session result/content, otherwise empty",
+    "evidence_source": "public_statement|simulated_tool_result|external_followup",
+    "tool_result_id": "required only for a real simulation-supplied tool result, otherwise empty"
   }},
   "requested_end": false
 }}"""
@@ -495,7 +497,7 @@ completed by this text simulation.
 
 Return strict JSON only:
 {{"content":"exact spoken message","intent":"short label","requested_end":false,
-"public_intent":{{"kind":"statement|fact|proposal|decision|commitment|action|artifact|verification|schedule|issue|outcome|handoff","subject":"one concise public subject","transition":"proposed|committed|in_progress|submitted|verified|accepted|rejected|blocked","target_id":"optional character_id","field":"optional configured state field","value":"explicit public typed field value, otherwise null","simulation_scope":"discussion|in_session|external|retrospective","inline_content":"actual in-session result/content, otherwise empty"}}}}"""
+"public_intent":{{"kind":"statement|fact|proposal|decision|commitment|action|artifact|verification|schedule|issue|outcome|handoff","subject":"one concise public subject","transition":"proposed|committed|in_progress|submitted|verified|accepted|rejected|blocked","target_id":"optional character_id","field":"optional configured state field","value":"explicit public typed field value, otherwise null","simulation_scope":"discussion|in_session|external|retrospective","inline_content":"actual in-session result/content, otherwise empty","evidence_source":"public_statement|simulated_tool_result|external_followup","tool_result_id":"required only for a real simulation-supplied tool result, otherwise empty"}}}}"""
     raw = ""
     parsed: dict[str, Any] = {}
     content = ""

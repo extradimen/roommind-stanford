@@ -50,13 +50,47 @@ REALISM_DIMENSIONS: dict[str, list[str]] = {
 
 
 def missing_evaluation_dimensions(existing: dict[str, Any] | None) -> list[str]:
-    """Return only dimensions that do not already have a usable frozen score."""
+    """Return dimensions without a complete evidence-backed score structure."""
     dimensions = (existing or {}).get("dimensions") or {}
     return [
         name for name in REALISM_DIMENSIONS
-        if not isinstance(dimensions.get(name), dict)
-        or dimensions[name].get("dimension_score") is None
+        if not _dimension_result_usable(
+            dimensions.get(name), REALISM_DIMENSIONS[name]
+        )
     ]
+
+
+def _valid_score(value: Any) -> float | None:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return None
+    return score if 1.0 <= score <= 7.0 else None
+
+
+def _dimension_result_usable(value: Any, metrics: list[str]) -> bool:
+    """Reject total-only or placeholder-filled judge responses.
+
+    G3.4 exposed responses with a plausible dimension total but empty child
+    reasons and default score 1.  A dimension is complete only when every
+    required metric has a score, explanation, and transcript evidence.
+    """
+    if not isinstance(value, dict) or _valid_score(value.get("dimension_score")) is None:
+        return False
+    rows = value.get("metrics")
+    if not isinstance(rows, dict) or set(rows) != set(metrics):
+        return False
+    for name in metrics:
+        row = rows.get(name)
+        if (
+            not isinstance(row, dict)
+            or _valid_score(row.get("score")) is None
+            or not str(row.get("reason") or "").strip()
+            or not isinstance(row.get("evidence_sequence_nos"), list)
+            or not row.get("evidence_sequence_nos")
+        ):
+            return False
+    return True
 
 
 def _gold_specification(scenario: ScenarioTemplate, dispatch_rules: list[Any] | None = None) -> dict[str, Any]:
@@ -214,14 +248,24 @@ Do not add metrics or omit metrics."""
             for name in metrics:
                 row = source_metrics.get(name) if isinstance(source_metrics.get(name), dict) else {}
                 normalized_metrics[name] = {
-                    "score": _score(row.get("score")),
+                    "score": _valid_score(row.get("score")),
                     "evidence_sequence_nos": row.get("evidence_sequence_nos")
                     if isinstance(row.get("evidence_sequence_nos"), list) else [],
                     "reason": str(row.get("reason") or "")[:800],
                 }
             parsed["metrics"] = normalized_metrics
-            parsed["dimension_score"] = _score(parsed.get("dimension_score"))
-            return parsed
+            parsed["dimension_score"] = _valid_score(parsed.get("dimension_score"))
+            valid_sequence_nos = {
+                row.get("sequence_no") for row in transcript
+                if row.get("sequence_no") is not None
+            }
+            evidence_valid = all(
+                all(sequence_no in valid_sequence_nos for sequence_no in row["evidence_sequence_nos"])
+                for row in normalized_metrics.values()
+            )
+            if _dimension_result_usable(parsed, metrics) and evidence_valid:
+                return parsed
+            last_preview = json.dumps(parsed, ensure_ascii=False)[:2000]
         if attempt < EVALUATOR_ATTEMPTS - 1:
             await asyncio.sleep(0.5 * (attempt + 1))
     raise RuntimeError(

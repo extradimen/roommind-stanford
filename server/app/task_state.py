@@ -16,9 +16,12 @@ from app.orchestrator.llm_binding import resolve_llm
 from app.models.db import CharacterTemplate
 from app.public_ledger import (
     MATERIAL_LIFECYCLE,
+    commit_public_intent,
     ensure_public_ledger,
+    ground_public_intent_in_quote,
     ledger_has_support,
     public_ledger_view,
+    validate_public_intent,
 )
 
 
@@ -809,6 +812,68 @@ def _field_update_is_grounded(
     return True
 
 
+def _commit_explicit_field_confirmations(
+    *, field: str, spec: dict[str, Any], value: Any,
+    confirmations: list[str], evidence: list[dict[str, Any]],
+    state: dict[str, Any], characters: list[CharacterTemplate], turn_id: int,
+) -> None:
+    """Atomically project explicit authorized speech into the public ledger.
+
+    The semantic evaluator may describe a partially confirmed field as merely
+    ``proposed`` until the full confirmation policy is satisfied.  Waiting for
+    the aggregate status loses each participant's real acceptance and caused
+    G3.4 to repeat already-settled issues.  Each explicit, grounded acceptance
+    is committed independently; the normal ledger projection decides when the
+    configured multi-party policy is complete.
+    """
+    by_id = {character.character_id: character for character in characters}
+    configured = set(spec.get("confirm_permissions") or [])
+    if "player" in configured:
+        configured.add("user")
+    for speaker_id in dict.fromkeys(confirmations):
+        if configured and speaker_id not in configured:
+            continue
+        row = next(
+            (candidate for candidate in evidence
+             if str(candidate.get("speaker_id") or "") == speaker_id),
+            None,
+        )
+        if not row or not _field_update_is_grounded(
+            field=field, spec=spec, value=value, status="confirmed", evidence=[row],
+        ):
+            continue
+        if speaker_id == "user":
+            character: Any = {
+                "character_id": "user",
+                "authority": {"can_confirm": [field], "can_propose": [field]},
+            }
+        else:
+            character = by_id.get(speaker_id)
+            if character is None:
+                continue
+        quote = " ".join(str(row.get("quote") or "").split())
+        intent = validate_public_intent(
+            character=character,
+            intent={
+                "kind": "decision",
+                "subject": str(spec.get("description") or field.replace("_", " ")),
+                "transition": "accepted",
+                "field": field,
+                "value": value,
+                "simulation_scope": "discussion",
+                "evidence_source": "public_statement",
+            },
+            turn_id=turn_id,
+            state=state,
+        )
+        intent = ground_public_intent_in_quote(intent, quote)
+        if intent.get("commit_allowed", True):
+            commit_public_intent(
+                state, intent=intent, public_quote=quote,
+                tick=len((ensure_public_ledger(state).get("events") or [])) + 1,
+            )
+
+
 def _event_claim_is_grounded(
     event_type: str, actor_id: str, subject: str,
     evidence: list[dict[str, Any]],
@@ -1111,6 +1176,11 @@ def apply_evaluator_updates(
             confirmations = [speaker for speaker in confirmations if speaker in configured_confirmers]
             has_player = "user" in confirmations
             has_authorized = bool((authorized[field] | configured_confirmers).intersection(confirmations) - {"user", "player"})
+        _commit_explicit_field_confirmations(
+            field=str(field), spec=schema[field], value=value,
+            confirmations=confirmations, evidence=valid_evidence,
+            state=state, characters=characters, turn_id=turn_id,
+        )
         confirmation_valid = {
             "player": has_player,
             "responsible_participant": has_authorized,

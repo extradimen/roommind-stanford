@@ -355,6 +355,9 @@ Priority:
 13. Epistemic discipline: a question asking whether a fact is true is not evidence
     that it is true. Do not turn requests, assumptions, or proposed metrics into
     affirmative findings unless a participant already stated the evidence publicly.
+14. Evidence source: ordinary speech is public_statement. A promised action outside
+    this text meeting is external_followup. Never label an assertion as
+    simulated_tool_result unless the simulation supplied a concrete tool event and id.
 
 {decision_language_rule(reply_language)}
 
@@ -373,7 +376,9 @@ Output strict JSON only:
     "field": "optional configured state field",
     "value": "explicit public typed field value, otherwise null",
     "simulation_scope": "discussion|in_session|external|retrospective",
-    "inline_content": "actual in-session result or artifact content, otherwise empty"
+    "inline_content": "actual in-session result or artifact content, otherwise empty",
+    "evidence_source": "public_statement|simulated_tool_result|external_followup",
+    "tool_result_id": "required only for a real simulation-supplied tool result, otherwise empty"
   }},
   "moment_importance": integer 1-10
 }}"""

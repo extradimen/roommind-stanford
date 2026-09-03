@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
+import re
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -95,6 +96,12 @@ def contextual_public_fallback(
     field = str(intent.get("field") or "").replace("_", " ").strip()
     topic = field or subject.replace("_", " ")
 
+    if kind == "outcome" and transition == "blocked":
+        return (
+            f"We do not have enough verified evidence to close {topic} in this meeting. "
+            "We should defer the final decision and record the remaining condition and follow-up owner."
+        )
+
     # A rejected renderer must not expose the orchestration vocabulary in the
     # meeting ("remains open", "responsible owner", field identifiers, etc.).
     # Recover with ordinary task language and preserve the validated lifecycle.
@@ -142,6 +149,34 @@ async def render_npc_speech(
     draft = draft.strip()
     if not draft:
         return idle_ack(reply_language), emotion, gesture, False
+
+    # The decision model already produced public-facing speech together with
+    # its structured intent.  If that draft passes the exact same boundary
+    # checks, publish it directly instead of asking a second model call to
+    # paraphrase the whole utterance.  G3.4's unconditional paraphrase step was
+    # the main source of draft-echo rejections and visible fallback loops.
+    draft_is_instruction = bool(re.match(
+        r"^(?:state|say|explain|respond|ask|tell|mention|note|clarify|discuss)\b",
+        draft,
+        flags=re.IGNORECASE,
+    ))
+    if draft != PUBLIC_RESPONSE_DRAFT and not draft_is_instruction:
+        draft_rejection = speech_rejection_reason(
+            draft,
+            active_plan_text=active_plan_text,
+            public_context=f"{conversation_context}\n{user_input}",
+            validated_intent=validated_intent,
+            protected_secrets=list(
+                (character.private_state or {}).get("protected_secrets") or []
+            ),
+        )
+        if not draft_rejection:
+            emit(
+                "dialogue.validated_draft.used",
+                component="npc_speech_render",
+                character_id=character.character_id,
+            )
+            return draft, emotion, gesture, True
 
     lang_rule = speech_language_rule(reply_language)
 
@@ -662,6 +697,9 @@ async def execute_plan_fallback_speak(
 
     draft = PUBLIC_RESPONSE_DRAFT
     reasoning = f"Respond from current plan ({scenario.title} / {current_phase})"
+    focus = (((task_state or {}).get("progress") or {}).get("focus") or {})
+    resolving = focus.get("kind") == "outcome_resolution"
+    fallback_subject = str(focus.get("subject") or "current open issue")
     decision = AgentDecision(
         action="speak",
         reasoning=reasoning,
@@ -669,9 +707,9 @@ async def execute_plan_fallback_speak(
         public_intent=validate_public_intent(
             character=character,
             intent={
-                "kind": "statement",
-                "subject": "current open issue",
-                "transition": "proposed",
+                "kind": "outcome" if resolving else "statement",
+                "subject": fallback_subject,
+                "transition": "blocked" if resolving else "proposed",
                 # A fallback is a current meeting response. Scenario policy may
                 # permit explicit historical examples, but it cannot turn all
                 # fallback speech into retrospective evidence.

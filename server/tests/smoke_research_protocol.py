@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G3.4"
+    assert CURRENT_GENERATION_ID == "G3.5"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g3.4-natural-recovery-bounded-evidence-ledger-simulation"
+        "g3.5-atomic-confirmation-source-typed-evidence-simulation"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -167,7 +167,7 @@ def main() -> None:
                 "entity_kind": "artifact", "transition_to": "submitted",
                 "inline_content": "Capacity is 5,200 units per month.",
                 "public_evidence": {"quote": "Capacity is 5,200 units per month."},
-                "provenance": "prevalidated_agent_intent",
+                "provenance": "public_statement",
             }],
         },
     }
@@ -187,6 +187,39 @@ def main() -> None:
     invalid_g3_probes = run_integrity_probes(invalid_g3)
     assert invalid_g3_probes["checks"]["g3_terminal_actions_have_inline_evidence"] is False
     assert invalid_g3_probes["checks"]["g3_completion_reconciles_required_work"] is False
+
+    g35_bundle = deepcopy(g3_bundle)
+    g35_bundle["session"]["run_config"] = {
+        "comparison_protocol": "controlled",
+        "comparison_lock_model": True,
+        "research_manifest": {
+            "generation_id": "G3.5",
+            "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+        },
+    }
+    g35_bundle["task_result"]["public_ledger"]["entities"] = {
+        "action:rollback": {"kind": "action", "lifecycle": "submitted"},
+    }
+    g35_bundle["task_result"]["public_ledger"]["recent_events"] = [{
+        "event_id": "ple-00002", "turn_id": 1, "tick": 1,
+        "entity_kind": "action", "transition_to": "submitted",
+        "inline_content": "Rollback simulation completed with all checks green.",
+        "public_evidence": {"quote": "The simulated rollback completed."},
+        "provenance": "simulated_tool_result", "tool_result_id": "tool-rollback-1",
+    }]
+    g35_bundle["task_result"]["public_ledger"]["tool_results"] = {}
+    missing_tool_result = run_integrity_probes(g35_bundle)
+    assert missing_tool_result["checks"]["g35_completed_actions_require_tool_results"] is False
+    assert missing_tool_result["all_applicable_passed"] is False
+    g35_bundle["task_result"]["public_ledger"]["tool_results"] = {
+        "tool-rollback-1": {
+            "result_id": "tool-rollback-1", "actor_id": "ceo",
+            "field": "rollback", "turn_id": 1,
+            "inline_content": "Rollback simulation completed with all checks green.",
+        }
+    }
+    grounded_tool_result = run_integrity_probes(g35_bundle)
+    assert grounded_tool_result["checks"]["g35_completed_actions_require_tool_results"] is True
 
 
 if __name__ == "__main__":

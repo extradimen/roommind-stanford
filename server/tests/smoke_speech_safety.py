@@ -24,7 +24,9 @@ from app.task_state import (
 )
 from app.orchestrator.generative import generative_orchestrator
 from app.player_agent import normalize_player_content, pending_public_questions
-from app.public_ledger import commit_public_intent, validate_public_intent
+from app.public_ledger import (
+    commit_public_intent, record_simulated_tool_result, validate_public_intent,
+)
 
 
 def main() -> None:
@@ -150,6 +152,38 @@ def main() -> None:
     assert accepted_state["variables"]["unit_price"]["status"] == "confirmed"
     assert set(accepted_state["variables"]["unit_price"]["confirmations"]) == {"user", "supplier_ceo"}
     assert accepted_state["completion_status"] == "completed"
+
+    # G3.5 commits each explicit confirmation from the grounded evaluator
+    # evidence even while the aggregate field status is still proposed.
+    projected_state = initial_task_state(accepted_config)
+    apply_evaluator_updates(
+        task_config=accepted_config, state=projected_state,
+        parsed={"updates": [{
+            "field": "unit_price", "value": 85, "status": "proposed",
+            "proposed_by": "user", "confirmed_by": ["user"],
+            "evidence": [{"speaker_id": "user", "quote": "I accept the unit price of 85 RMB."}],
+        }], "events": []},
+        characters=[supplier], player_text="I accept the unit price of 85 RMB.",
+        npc_turns=[], turn_id=1,
+    )
+    assert projected_state["variables"]["unit_price"]["status"] == "proposed"
+    assert projected_state["variables"]["unit_price"]["confirmations"] == ["user"]
+    apply_evaluator_updates(
+        task_config=accepted_config, state=projected_state,
+        parsed={"updates": [{
+            "field": "unit_price", "value": 85, "status": "confirmed",
+            "proposed_by": "supplier_ceo", "confirmed_by": ["supplier_ceo"],
+            "evidence": [{"speaker_id": "supplier_ceo", "quote": "We accept the unit price of 85 RMB."}],
+        }], "events": []},
+        characters=[supplier], player_text="",
+        npc_turns=[{"speaker_id": "supplier_ceo", "content": "We accept the unit price of 85 RMB."}],
+        turn_id=2,
+    )
+    assert projected_state["variables"]["unit_price"]["status"] == "confirmed"
+    assert set(projected_state["variables"]["unit_price"]["confirmations"]) == {
+        "user", "supplier_ceo",
+    }
+    assert projected_state["completion_status"] == "completed"
     leaked_plan = (
         "I will first confirm the purchase volume to set the foundation, aiming "
         "to lock an annual framework agreement for at least 100k units. My bottom "
@@ -711,17 +745,51 @@ def main() -> None:
         turn_id=1,
     )
     assert executable_state["variables"]["containment_active"]["status"] == "proposed"
+    record_simulated_tool_result(
+        executable_state, result_id="sim-tool-1", actor_id="executor",
+        field="containment_active", inline_content="Traffic isolation command executed.",
+        turn_id=2,
+    )
     submitted_action = validate_public_intent(
         character=executor, state=executable_state, turn_id=2,
         intent={
             "kind": "action", "subject": "activate containment",
             "field": "containment_active", "transition": "submitted",
             "simulation_scope": "in_session", "inline_content": "Traffic isolation command executed.",
+            "evidence_source": "simulated_tool_result", "tool_result_id": "sim-tool-1",
         },
     )
+    unsupported_action = validate_public_intent(
+        character=executor, state=executable_state, turn_id=2,
+        intent={
+            "kind": "action", "subject": "activate containment",
+            "field": "containment_active", "transition": "submitted",
+            "simulation_scope": "in_session", "inline_content": "I say it ran.",
+            "evidence_source": "public_statement",
+        },
+    )
+    assert unsupported_action["transition"] == "committed"
+    assert unsupported_action["validation_reason"] == "action_completion_requires_simulated_tool_result"
+    invented_tool_action = validate_public_intent(
+        character=executor, state=executable_state, turn_id=2,
+        intent={
+            "kind": "action", "subject": "activate containment",
+            "field": "containment_active", "transition": "submitted",
+            "simulation_scope": "in_session", "inline_content": "Invented result.",
+            "evidence_source": "simulated_tool_result", "tool_result_id": "invented-id",
+        },
+    )
+    assert invented_tool_action["transition"] == "committed"
+    assert "unregistered_simulated_tool_result" in invented_tool_action["validation_reason"]
     commit_public_intent(
         executable_state, intent=submitted_action,
         public_quote="Traffic isolation command executed.", tick=1,
+    )
+    record_simulated_tool_result(
+        executable_state, result_id="sim-tool-2", actor_id="executor",
+        field="containment_active",
+        inline_content="Isolation verified from the stated traffic result.",
+        turn_id=3,
     )
     verified_action = validate_public_intent(
         character=executor, state=executable_state, turn_id=3,
@@ -730,6 +798,7 @@ def main() -> None:
             "field": "containment_active", "transition": "verified",
             "value": True,
             "simulation_scope": "in_session", "inline_content": "Isolation verified from the stated traffic result.",
+            "evidence_source": "simulated_tool_result", "tool_result_id": "sim-tool-2",
         },
     )
     commit_public_intent(

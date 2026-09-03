@@ -8,6 +8,7 @@ from app.public_ledger import (
     ensure_public_ledger,
     ground_public_intent_in_quote,
     ledger_has_support,
+    record_simulated_tool_result,
     validate_public_intent,
 )
 from app.player_character import resolve_player_character
@@ -178,6 +179,12 @@ def main() -> None:
     ) == "retrospective_scope_not_grounded_in_quote"
 
     state: dict = {}
+    record_simulated_tool_result(
+        state, result_id="calculator-event-1", actor_id="ops_lead",
+        field="recovery_window",
+        inline_content="Recovery window: 14:00-14:20 UTC, based on the stated timeline.",
+        turn_id=4,
+    )
     in_session = validate_public_intent(
         character=operator,
         turn_id=4,
@@ -190,6 +197,8 @@ def main() -> None:
             "transition": "verified",
             "simulation_scope": "in_session",
             "inline_content": "Recovery window: 14:00-14:20 UTC, based on the stated timeline.",
+            "evidence_source": "simulated_tool_result",
+            "tool_result_id": "calculator-event-1",
         },
     )
     assert in_session["transition"] == "submitted"
@@ -206,7 +215,7 @@ def main() -> None:
         tick=2,
     )
     ledger = ensure_public_ledger(state)
-    assert event["provenance"] == "prevalidated_agent_intent"
+    assert event["provenance"] == "simulated_tool_result"
     assert ledger["simulation_clock"] == {"turn": 4, "tick": 2}
     assert ledger["entities"][event["entity_id"]]["lifecycle"] == "submitted"
     verified = validate_public_intent(

@@ -4,17 +4,19 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import httpx
 
 from app.llm.client import LLMClient, LLMEmptyContentError, llm_provider_failover_enabled
-from app.agent.act import contextual_public_fallback
+from app.agent.act import contextual_public_fallback, render_npc_speech
 from app.player_agent import bounded_dialogue, safe_comparison_player_fallback
 from app.external_evaluator import (
     REALISM_DIMENSIONS as EVALUATOR_DIMENSIONS,
     _dispatch_metrics,
+    _evaluate_dimension,
     _normalize_evaluation,
     _public_transcript,
     evaluate_public_transcript,
@@ -130,6 +132,33 @@ async def main() -> None:
     assert "remains open" not in npc_fallback.casefold()
     assert "responsible owner" not in npc_fallback.casefold()
     assert "highest-priority open issue" not in npc_fallback
+    direct_character = SimpleNamespace(
+        character_id="operations_lead", display_name="Operations Lead",
+        persona="Concise and evidence-led", authority={}, private_state={},
+        system_prompt="",
+    )
+    direct_reply, _, _, direct_used = await render_npc_speech(
+        character=direct_character,
+        conversation_context="The team is discussing pilot readiness.",
+        user_input="What can we decide?",
+        reasoning="Offer a bounded proposal.",
+        draft="I propose a limited pilot while the remaining evidence is reviewed.",
+        npc_llm=SimpleNamespace(
+            provider="ollama", model="unused", temperature=0.0, max_tokens=512,
+        ),
+        validated_intent={
+            "kind": "proposal", "subject": "limited pilot",
+            "transition": "proposed", "simulation_scope": "discussion",
+            "evidence_source": "public_statement",
+        },
+    )
+    assert direct_used is True
+    assert direct_reply == "I propose a limited pilot while the remaining evidence is reviewed."
+    outcome_fallback = contextual_public_fallback(
+        direct_character,
+        {"kind": "outcome", "subject": "the launch decision", "transition": "blocked"},
+    )
+    assert "defer the final decision" in outcome_fallback
 
     artifact_content, artifact_intent = safe_comparison_player_fallback(
         evidence_mode="live_operation",
@@ -144,20 +173,30 @@ async def main() -> None:
 
     partial_evaluation = {
         "dimensions": {
-            name: {"dimension_score": 6, "metrics": {}}
-            for name in (
-                "epistemic_fidelity", "temporal_coherence",
-                "interaction_structure_fidelity", "multi_party_dynamics_fidelity",
-                "procedural_fidelity",
-            )
+            name: {
+                "dimension_score": 6,
+                "metrics": {
+                    metric: {"score": 6, "evidence_sequence_nos": [1], "reason": "frozen"}
+                    for metric in EVALUATOR_DIMENSIONS[name]
+                },
+            }
+            for name in EVALUATOR_DIMENSIONS if name != "role_strategic_fidelity"
         },
         "evaluation_errors": {"role_strategic_fidelity": "truncated JSON"},
     }
     assert missing_evaluation_dimensions(partial_evaluation) == ["role_strategic_fidelity"]
     partial_evaluation["dimensions"]["role_strategic_fidelity"] = {
-        "dimension_score": 5, "metrics": {}
+        "dimension_score": 5,
+        "metrics": {
+            metric: {"score": 5, "evidence_sequence_nos": [1], "reason": "retried"}
+            for metric in EVALUATOR_DIMENSIONS["role_strategic_fidelity"]
+        },
     }
     assert missing_evaluation_dimensions(partial_evaluation) == []
+    partial_evaluation["dimensions"]["temporal_coherence"]["metrics"]["fact_retention"] = {
+        "score": 1, "evidence_sequence_nos": [], "reason": "",
+    }
+    assert missing_evaluation_dimensions(partial_evaluation) == ["temporal_coherence"]
     compact_source = [
         {"role": "system", "content": "S" * 20000},
         *({"role": "user", "content": f"old-{i}-" + "x" * 4000} for i in range(20)),
@@ -232,7 +271,7 @@ async def main() -> None:
         name: {
             "dimension_score": 6,
             "metrics": {
-                metric: {"score": 6, "evidence_sequence_nos": [], "reason": "frozen"}
+                metric: {"score": 6, "evidence_sequence_nos": [1], "reason": "frozen"}
                 for metric in metrics
             },
             "strengths": [], "issues": [], "notes": "frozen",
@@ -251,7 +290,7 @@ async def main() -> None:
         return {
             "dimension_score": 5,
             "metrics": {
-                metric: {"score": 5, "evidence_sequence_nos": [], "reason": "retry"}
+                metric: {"score": 5, "evidence_sequence_nos": [1], "reason": "retry"}
                 for metric in kwargs["metrics"]
             },
             "strengths": [], "issues": [], "notes": "retried",
@@ -275,6 +314,35 @@ async def main() -> None:
     assert incremental_result["dimensions"]["epistemic_fidelity"] == frozen_dimensions["epistemic_fidelity"]
     assert incremental_result["dimension_scores"]["role_strategic_fidelity"] == 5
     assert incremental_result["evaluation_errors"] == {}
+
+    malformed_then_valid = [
+        '{"dimension_score":6,"metrics":{}}',
+        json.dumps({
+            "dimension_score": 5,
+            "metrics": {
+                metric: {
+                    "score": 5, "evidence_sequence_nos": [1], "reason": "Grounded reason",
+                }
+                for metric in EVALUATOR_DIMENSIONS["role_strategic_fidelity"]
+            },
+            "strengths": [], "issues": [], "notes": "valid",
+        }),
+    ]
+    with patch(
+        "app.external_evaluator.llm_client.chat_completion",
+        AsyncMock(side_effect=malformed_then_valid),
+    ):
+        strict_dimension = await _evaluate_dimension(
+            dimension="role_strategic_fidelity",
+            metrics=EVALUATOR_DIMENSIONS["role_strategic_fidelity"],
+            gold={},
+            transcript=[{
+                "sequence_no": 1, "turn_id": 1, "speaker_id": "npc", "content": "Evidence",
+            }],
+            system_claim={}, provider="ollama", model="fixture", max_tokens=600,
+        )
+    assert strict_dimension["dimension_score"] == 5
+    assert all(row["reason"] for row in strict_dimension["metrics"].values())
     generation_session = SimpleNamespace(
         shared_state={},
         run_config={"working_message_limit": 5, "comparison_lock_model": True},
