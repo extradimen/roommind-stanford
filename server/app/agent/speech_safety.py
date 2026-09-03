@@ -54,22 +54,33 @@ _CURRENT_WORLD_OBJECT_RE = re.compile(
     r"\b(?:containment|isolation|firewall|traffic(?:\s+shift)?|rollback|rollout|"
     r"deployment|release|service|system|server|cluster|pod|node|snapshot|"
     r"memory\s+dump|health\s+check|status(?:[- ]page)?|public\s+update|"
-    r"archive|upload|file|document|report|hash|checksum|log(?:s)?|"
+    r"archive|upload|attachment|email|file|document|report|hash|checksum|log(?:s)?|"
     r"transaction(?:s)?|monitoring)\b",
     flags=re.IGNORECASE,
 )
 _CURRENT_WORLD_TERMINAL_RE = re.compile(
     r"\b(?:is|are|was|were|has\s+been|have\s+been)\s+"
-    r"(?:already\s+|now\s+|fully\s+)?(?:active|activated|inactive|deactivated|"
-    r"complete|completed|finished|deployed|published|uploaded|attached|sent|"
+    r"(?:already\s+|now\s+|fully\s+|successfully\s+)?(?:active|activated|inactive|deactivated|"
+    r"complete|completed|finished|deployed|published|uploaded|attached|sent|delivered|"
+    r"blocked|isolated|disabled|enabled|redirected|shifted|"
     r"archived|captured|stored|restored|rolled\s+back|verified|validated|"
     r"healthy|stable|green)\b|"
     r"\b(?:has|have)\s+(?:already\s+|now\s+|fully\s+|all\s+)?"
     r"(?:completed|finished|deployed|published|uploaded|attached|sent|archived|"
-    r"captured|stored|restored|rolled\s+back|verified|validated|executed)\b|"
+    r"captured|stored|restored|rolled\s+back|verified|validated|executed|"
+    r"blocked|isolated|disabled|enabled|redirected|shifted|delivered)\b|"
     r"\b(?:i|we)\s+(?:have\s+|['’]ve\s+)?(?:activated|deactivated|completed|"
     r"finished|deployed|published|uploaded|attached|sent|archived|captured|"
-    r"stored|restored|rolled\s+back|verified|validated|executed)\b",
+    r"stored|restored|rolled\s+back|verified|validated|executed|blocked|isolated|"
+    r"disabled|enabled|redirected|shifted|delivered)\b",
+    flags=re.IGNORECASE,
+)
+
+_TERSE_TERMINAL_RE = re.compile(
+    r"^(?:the\s+)?(?:sample\s+)?(?:log(?:\s+entries|s)?|attachment|email|file|"
+    r"document|report|traffic|service|system)\s+(?:successfully\s+|now\s+)?"
+    r"(?:attached|uploaded|sent|delivered|blocked|isolated|restored|verified|"
+    r"completed|deployed)\b",
     flags=re.IGNORECASE,
 )
 _FUTURE_OR_CONDITIONAL_RE = re.compile(
@@ -89,6 +100,49 @@ _PROTECTED_STOPWORDS = {
     "a", "an", "and", "are", "exact", "has", "have", "is", "of", "our",
     "the", "their", "to", "we", "with",
 }
+
+
+def normalized_public_propositions(content: str) -> list[dict[str, str]]:
+    """Normalize visible completion claims before applying source policy.
+
+    The model's intent label is not trusted.  Each complete public clause is
+    reduced to an object, terminal predicate, and modality so active voice,
+    passive voice, perfect aspect, and terse status fragments receive the same
+    grounding rule.
+    """
+    propositions: list[dict[str, str]] = []
+    normalized = " ".join((content or "").split())
+    for clause in re.split(r"(?<=[.!?])\s+|[;]\s*", normalized):
+        clause = clause.strip()
+        if not clause or clause.rstrip().endswith("?"):
+            continue
+        terminal = _CURRENT_WORLD_TERMINAL_RE.search(clause) or _TERSE_TERMINAL_RE.search(clause)
+        object_match = _CURRENT_WORLD_OBJECT_RE.search(clause)
+        if not terminal or not object_match:
+            continue
+        prefix = clause[:terminal.start()]
+        modality = "conditional" if _FUTURE_OR_CONDITIONAL_RE.search(prefix) else "asserted_current"
+        predicate_tokens = re.findall(
+            r"\b(?:active|activated|complete|completed|finished|deployed|published|"
+            r"uploaded|attached|sent|delivered|archived|captured|stored|restored|"
+            r"blocked|isolated|disabled|enabled|redirected|shifted|verified|"
+            r"validated|executed|healthy|stable|green)\b",
+            terminal.group(0),
+            flags=re.IGNORECASE,
+        )
+        object_text = object_match.group(0).casefold()
+        propositions.append({
+            "clause": clause,
+            "object": object_text,
+            "predicate": (predicate_tokens[-1].casefold() if predicate_tokens else "terminal"),
+            "modality": modality,
+            "kind": (
+                "artifact"
+                if re.search(r"\b(?:attachment|email|file|document|report|log)\b", object_text)
+                else "action"
+            ),
+        })
+    return propositions
 
 _LIFECYCLE_RANK = {
     "proposed": 0,
@@ -298,8 +352,19 @@ def protected_information_reason(
 
 def _contains_unsupported_artifact_claim(text: str) -> bool:
     """Separate impossible completed claims from legitimate requests/promises."""
+    if any(
+        row["kind"] == "artifact" and row["modality"] == "asserted_current"
+        for row in normalized_public_propositions(text)
+    ):
+        return True
     sentences = re.split(r"(?<=[.!?])\s+|[;]\s*", text)
     for sentence in sentences:
+        if _TERSE_TERMINAL_RE.search(sentence) and re.search(
+            r"\b(?:log|attachment|email|file|document|report)\b",
+            sentence,
+            flags=re.IGNORECASE,
+        ):
+            return True
         for pattern in _UNSUPPORTED_ARTIFACT_PATTERNS:
             match = re.search(pattern, sentence, flags=re.IGNORECASE)
             if not match:
@@ -381,15 +446,10 @@ def terminal_current_world_action_reason(
     )
     if tool_grounded:
         return None
-    for sentence in re.split(r"(?<=[.!?])\s+|[;]\s*", " ".join((content or "").split())):
-        if not sentence or sentence.rstrip().endswith("?"):
-            continue
-        terminal = _CURRENT_WORLD_TERMINAL_RE.search(sentence)
-        if not terminal or not _CURRENT_WORLD_OBJECT_RE.search(sentence):
-            continue
-        prefix = sentence[:terminal.start()]
-        if _FUTURE_OR_CONDITIONAL_RE.search(prefix):
-            continue
+    if any(
+        row["modality"] == "asserted_current"
+        for row in normalized_public_propositions(content)
+    ):
         return "current_world_completion_requires_simulated_tool_result"
     return None
 

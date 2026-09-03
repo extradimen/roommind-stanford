@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G3.6"
+    assert CURRENT_GENERATION_ID == "G3.7"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g3.6-quote-grounded-capability-aware-simulation"
+        "g3.7-proposition-grounded-convergent-simulation"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -194,7 +194,7 @@ def main() -> None:
         "comparison_lock_model": True,
         "research_manifest": {
             "generation_id": "G3.5",
-            "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+            "architecture_version": "g3.5-atomic-grounded-simulation",
         },
     }
     g35_bundle["task_result"]["public_ledger"]["entities"] = {
@@ -224,7 +224,7 @@ def main() -> None:
     g36_bundle = deepcopy(g35_bundle)
     g36_bundle["session"]["run_config"]["research_manifest"] = {
         "generation_id": "G3.6",
-        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+        "architecture_version": "g3.6-quote-grounded-capability-aware-simulation",
     }
     g36_bundle["messages"][0]["content"] = (
         "Containment is now active at the edge firewall."
@@ -240,6 +240,42 @@ def main() -> None:
     assert future_action["checks"][
         "g36_visible_current_world_actions_require_tool_results"
     ] is True
+
+    g37_bundle = deepcopy(g36_bundle)
+    g37_bundle["session"]["run_config"]["research_manifest"] = {
+        "generation_id": "G3.7",
+        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+    }
+    g37_bundle["task_result"].update({
+        "completion_status": "conditional",
+        "capability_boundaries": {
+            "containment_active": {"status": "unavailable"},
+        },
+        "outcome": {
+            "type": "conditional",
+            "status": "capability_boundary_reconciled",
+            "unmet_conditions": ["containment_active"],
+        },
+        "coordination_history": [{
+            "turn_id": 1,
+            "focus": {
+                "issue": "containment_active", "kind": "capability_boundary",
+                "focus_streak": 1, "owner_ids": ["ceo"],
+            },
+        }],
+    })
+    g37_probes = run_integrity_probes(g37_bundle)
+    assert g37_probes["checks"]["g37_capability_boundaries_not_repeated"] is True
+    assert g37_probes["checks"]["g37_capability_boundary_closure_consistent"] is True
+    g37_bundle["task_result"]["coordination_history"].append({
+        "turn_id": 2,
+        "focus": {
+            "issue": "containment_active", "kind": "capability_boundary",
+            "focus_streak": 2, "owner_ids": ["ceo"],
+        },
+    })
+    repeated_boundary = run_integrity_probes(g37_bundle)
+    assert repeated_boundary["checks"]["g37_capability_boundaries_not_repeated"] is False
 
 
 if __name__ == "__main__":

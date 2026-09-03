@@ -3,6 +3,7 @@
 from app.agent.speech_safety import (
     PUBLIC_RESPONSE_DRAFT,
     player_speech_rejection_reason,
+    normalized_public_propositions,
     protected_information_reason,
     retain_safe_public_clauses,
     speech_rejection_reason,
@@ -21,6 +22,7 @@ from app.task_state import (
     normalize_evaluator_payload,
     public_task_result,
     prepare_turn_governance,
+    reconcile_capability_boundary_closure,
     set_progress_metadata,
     task_progress_signature,
 )
@@ -217,6 +219,18 @@ def main() -> None:
         "user", "supplier_ceo",
     }
 
+    atomic_quote = initial_task_state(accepted_config)
+    apply_evaluator_updates(
+        task_config=accepted_config, state=atomic_quote,
+        parsed={"updates": [], "events": []}, characters=[supplier],
+        player_text=(
+            "I confirm the unit price of 84 RMB. "
+            "Delivery remains conditional on the capacity review."
+        ),
+        npc_turns=[], turn_id=1,
+    )
+    assert atomic_quote["variables"]["unit_price"]["confirmations"] == ["user"]
+
     conditional_quote = initial_task_state(accepted_config)
     apply_evaluator_updates(
         task_config=accepted_config, state=conditional_quote,
@@ -251,6 +265,32 @@ def main() -> None:
         "Containment is now active at the edge firewall.",
         validated_intent=mislabeled_statement,
     ) == "current_world_completion_requires_simulated_tool_result"
+    passive = normalized_public_propositions(
+        "All traffic to the affected service has been blocked."
+    )
+    assert passive and passive[0]["object"] == "traffic"
+    assert passive[0]["predicate"] == "blocked"
+    assert passive[0]["modality"] == "asserted_current"
+    # Frozen G3.6 counterexamples: passive voice and terse artifact fragments
+    # must not bypass source-typed grounding.
+    assert terminal_current_world_action_reason(
+        "All traffic to the affected service has been blocked, so the ETA for completion is zero minutes.",
+        validated_intent=mislabeled_statement,
+    ) == "current_world_completion_requires_simulated_tool_result"
+    assert speech_rejection_reason(
+        "Sample log entries attached.", validated_intent=mislabeled_statement,
+    ) in {
+        "unsupported_artifact_claim",
+        "current_world_completion_requires_simulated_tool_result",
+    }
+    assert speech_rejection_reason(
+        "The email has been successfully delivered.",
+        validated_intent=mislabeled_statement,
+    ) in {
+        "unsupported_artifact_claim",
+        "current_world_completion_requires_simulated_tool_result",
+        "speech_exceeds_validated_lifecycle",
+    }
     assert speech_rejection_reason(
         "The memory dumps have been completed and archived.",
         validated_intent=mislabeled_statement,
@@ -620,6 +660,29 @@ def main() -> None:
         safety_max_turns=10, max_stagnant_turns=6,
     )["progress"]["focus"] is None
 
+    # A side issue cannot promote itself into a new completion prerequisite in
+    # a schema-driven task just by using the word "blocked".
+    scoped_state = initial_task_state(accepted_config)
+    apply_evaluator_updates(
+        task_config=accepted_config, state=scoped_state,
+        parsed={"updates": [], "events": [{
+            "event_type": "blocker", "subject": "optional liability appendix",
+            "status": "blocked", "actor_id": "supplier_ceo",
+            "task_critical": True,
+            "criticality_reason": "called a blocker",
+            "evidence": [{
+                "speaker_id": "supplier_ceo",
+                "quote": "The optional liability appendix is blocked.",
+            }],
+        }]},
+        characters=[supplier], player_text="",
+        npc_turns=[{
+            "speaker_id": "supplier_ceo",
+            "content": "The optional liability appendix is blocked.",
+        }], turn_id=1,
+    )
+    assert scoped_state["work_items"]["optional_liability_appendix"].get("required") is not True
+
     # A blocked item can lead for two turns, then rotates to another critical
     # state instead of monopolizing the rest of the meeting.
     rotation_state = initial_task_state(cross_turn_config)
@@ -807,6 +870,22 @@ def main() -> None:
     assert capability_focus["tool_result_required"] is True
     assert capability_focus["tool_result_available"] is False
     assert "not available" in capability_focus["instruction"]
+    persisted_boundary = prepare_turn_governance(
+        {**executable_state, "capability_boundaries": {
+            "containment_active": {
+                "field": "containment_active", "status": "unavailable",
+                "first_observed_turn": 1,
+            },
+        }},
+        characters=[executor], turn_id=2,
+        safety_max_turns=10, max_stagnant_turns=6,
+    )
+    assert persisted_boundary["progress"]["focus"] is None
+    reconcile_capability_boundary_closure(
+        executable_config, persisted_boundary, turn_id=2,
+    )
+    assert persisted_boundary["completion_status"] == "conditional"
+    assert persisted_boundary["outcome"]["unmet_conditions"] == ["containment_active"]
     claimed_update = {
         "updates": [{
             "field": "containment_active", "value": True, "status": "confirmed",
@@ -936,6 +1015,17 @@ def main() -> None:
         {"speaker_id": "second", "speaker_type": "npc", "content": "What decision do you recommend?"},
     ])
     assert [row["speaker_id"] for row in pending] == ["first", "second"]
+    long_pending = pending_public_questions([
+        {"speaker_id": "user", "speaker_type": "user", "content": "Please advise."},
+        {
+            "speaker_id": "lead", "speaker_type": "npc",
+            "content": "x" * 800 + ". Can you confirm the bounded decision now?",
+        },
+    ])
+    assert long_pending == [{
+        "speaker_id": "lead",
+        "question": "Can you confirm the bounded decision now?",
+    }]
 
     chars = [
         SimpleNamespace(character_id="first", display_name="First", character_name="First", job_title="Lead", aliases=[], sort_order=0),

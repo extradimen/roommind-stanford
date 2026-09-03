@@ -222,12 +222,18 @@ def _event_is_task_critical(
     claim_text = " ".join([str(raw.get("subject") or ""), evidence_text])
     claim_tokens = _work_key_tokens(claim_text)
     open_tokens: set[str] = set()
+    has_open_state = False
     for issue in state.get("open_issues") or []:
         if not str(issue).startswith("work:"):
+            has_open_state = True
             open_tokens.update(_work_key_tokens(issue))
     overlaps_open_state = bool(claim_tokens & open_tokens)
     explicit_blocking_language = bool(_CRITICAL_LANGUAGE_RE.search(claim_text))
-    if overlaps_open_state or explicit_blocking_language:
+    # In schema-driven tasks, a newly mentioned side issue cannot become a
+    # completion prerequisite merely because someone calls it a blocker.  It
+    # must overlap a configured open field.  Open-ended tasks without state
+    # conditions may still promote an explicit public blocker.
+    if overlaps_open_state or (explicit_blocking_language and not has_open_state):
         reason = str(raw.get("criticality_reason") or "").strip()[:300]
         return True, reason or (
             "overlaps_open_state" if overlaps_open_state else "explicit_public_blocker"
@@ -295,6 +301,7 @@ def public_task_result(task_state: dict[str, Any] | None) -> dict[str, Any]:
         "open_issues": list(state.get("open_issues") or []),
         "condition_results": list(state.get("condition_results") or []),
         "work_items": deepcopy(state.get("work_items") or {}),
+        "capability_boundaries": deepcopy(state.get("capability_boundaries") or {}),
         "recent_events": deepcopy((state.get("event_ledger") or [])[-30:]),
         "outcome": deepcopy(state.get("outcome") or {}),
         "progress": deepcopy(state.get("progress") or {}),
@@ -419,7 +426,7 @@ def initial_task_state(task_config: dict[str, Any]) -> dict[str, Any]:
             "evidence": [],
         }
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "phase": first,
         "completion_status": "in_progress",
         "variables": variables,
@@ -427,6 +434,7 @@ def initial_task_state(task_config: dict[str, Any]) -> dict[str, Any]:
         "condition_results": [],
         "event_ledger": [],
         "work_items": {},
+        "capability_boundaries": {},
         "outcome": {"type": None, "status": "open", "reason": "", "evidence": []},
         "progress": {"stagnant_turns": 0, "last_progress_turn": 0},
         "public_ledger": ensure_public_ledger({}),
@@ -633,6 +641,7 @@ def prepare_turn_governance(
         for result in ((ensure_public_ledger(state).get("tool_results") or {}).values())
         if isinstance(result, dict) and str(result.get("field") or "")
     }
+    capability_boundaries = state.setdefault("capability_boundaries", {})
     for field_index, field in enumerate(state.get("open_issues") or []):
         if str(field).startswith("work:") or field not in variables:
             continue
@@ -644,6 +653,22 @@ def prepare_turn_governance(
         item = variables.get(field) or {}
         tool_result_required = field in executable_fields
         tool_result_available = field in tool_result_fields
+        prior_boundary = capability_boundaries.get(str(field)) or {}
+        if tool_result_available and prior_boundary:
+            capability_boundaries[str(field)] = {
+                **prior_boundary,
+                "status": "resolved",
+                "resolved_turn": int(turn_id),
+            }
+        if (
+            tool_result_required
+            and not tool_result_available
+            and str(prior_boundary.get("status") or "") == "unavailable"
+        ):
+            # The environment boundary is durable public state.  Repeatedly
+            # asking for the same impossible in-session result adds no facts
+            # and previously trapped incident simulations in a loop.
+            continue
         candidates.append({
             "priority": 0 if closeout_required or (tool_result_required and not tool_result_available) else 1,
             "order": field_index,
@@ -705,6 +730,17 @@ def prepare_turn_governance(
         focus["focus_streak"] = (
             trailing_focus_streak + 1 if focus["issue"] == last_issue else 1
         )
+        if focus.get("kind") == "capability_boundary":
+            field = str(focus.get("subject") or focus.get("issue") or "")
+            existing = capability_boundaries.get(field) or {}
+            capability_boundaries[field] = {
+                **existing,
+                "field": field,
+                "status": "unavailable",
+                "reason": "registered_simulated_tool_result_unavailable",
+                "first_observed_turn": int(existing.get("first_observed_turn") or turn_id),
+                "last_checked_turn": int(turn_id),
+            }
 
     if focus:
         if focus.get("kind") == "outcome_resolution":
@@ -762,6 +798,59 @@ def prepare_turn_governance(
     })
     state["coordination_history"] = history[-100:]
     return state
+
+
+def reconcile_capability_boundary_closure(
+    task_config: dict[str, Any], task_state: dict[str, Any], *, turn_id: int = 0,
+) -> dict[str, Any]:
+    """Close truthfully when only unavailable environment actions remain.
+
+    This reducer never marks an action complete.  It converts an otherwise
+    endless text-only simulation into a conditional outcome once every unmet
+    completion condition is a persisted capability boundary and all other
+    required public work is resolved.
+    """
+    if (task_state.get("outcome") or {}).get("type") in TERMINAL_OUTCOMES:
+        return task_state
+    root = task_config.get("completion_conditions") or {"all": []}
+    variables = task_state.get("variables") or {}
+    all_results = [_condition_result(c, variables) for c in root.get("all", [])]
+    any_results = [_condition_result(c, variables) for c in root.get("any", [])]
+    unmet_all = [row for row in all_results if not row["met"]]
+    unmet_any = [] if (not any_results or any(row["met"] for row in any_results)) else any_results
+    unmet = [*unmet_all, *unmet_any]
+    if not unmet:
+        return task_state
+    boundaries = task_state.get("capability_boundaries") or {}
+    unmet_fields = {
+        str(row.get("condition", {}).get("field") or "") for row in unmet
+    }
+    bounded_fields = {
+        str(field) for field, row in boundaries.items()
+        if isinstance(row, dict) and row.get("status") == "unavailable"
+    }
+    required_work_open = any(
+        isinstance(item, dict)
+        and item.get("required") is True
+        and item.get("status") not in {"submitted", "completed", "rejected"}
+        for item in (task_state.get("work_items") or {}).values()
+    )
+    if not unmet_fields or not unmet_fields.issubset(bounded_fields) or required_work_open:
+        return task_state
+    ordered = sorted(field for field in unmet_fields if field)
+    task_state["outcome"] = {
+        "type": "conditional",
+        "status": "capability_boundary_reconciled",
+        "reason": (
+            "The text simulation resolved every available requirement; the remaining "
+            "conditions require registered environment or tool results."
+        ),
+        "turn_id": int(turn_id),
+        "unmet_conditions": ordered,
+        "evidence": [],
+    }
+    task_state["completion_status"] = "conditional"
+    return task_state
 
 
 def finalize_stalled_task_state(
@@ -1012,15 +1101,27 @@ def _commit_quote_level_confirmations(
     variables = state.get("variables") or {}
     by_id = {character.character_id: character for character in characters}
     for speaker_id, raw_quote in turn_text.items():
-        quote = " ".join(str(raw_quote or "").split())
-        if (
-            not quote
-            or quote.rstrip().endswith("?")
-            or not _EXPLICIT_ACCEPTANCE_RE.search(quote)
-            or _CONDITIONAL_OR_NEGATED_ACCEPTANCE_RE.search(quote)
-        ):
+        full_quote = " ".join(str(raw_quote or "").split())
+        if not full_quote:
             continue
+        clauses = [
+            clause.strip()
+            for clause in re.split(r"(?<=[.!?])\s+|;\s*", full_quote)
+            if clause.strip()
+        ]
         for field, spec in schema.items():
+            # Confirmation is atomic at field/clause level.  A conditional
+            # delivery sentence must not erase an unconditional price
+            # acceptance elsewhere in the same public turn.
+            quote = next((
+                clause for clause in clauses
+                if not clause.rstrip().endswith("?")
+                and _EXPLICIT_ACCEPTANCE_RE.search(clause)
+                and not _CONDITIONAL_OR_NEGATED_ACCEPTANCE_RE.search(clause)
+                and _quote_references_field(str(field), spec, clause)
+            ), "")
+            if not quote:
+                continue
             configured = set(spec.get("confirm_permissions") or [])
             if "player" in configured:
                 configured.add("user")
@@ -1455,6 +1556,9 @@ def apply_evaluator_updates(
     _project_public_ledger(state)
     _project_field_ledger(task_config, state, characters)
     evaluate_conditions(task_config, state)
+    reconcile_capability_boundary_closure(
+        task_config, state, turn_id=turn_id,
+    )
     apply_explicit_closure(task_config, state, turn_text)
     return evaluate_conditions(task_config, state)
 

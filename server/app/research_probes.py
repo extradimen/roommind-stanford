@@ -61,6 +61,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     is_g22_roommind = session_mode == "test" and architecture_version.startswith(("g2.2", "g2.3", "g3"))
     is_g23_roommind = session_mode == "test" and architecture_version.startswith(("g2.3", "g3"))
     is_g3_roommind = session_mode == "test" and architecture_version.startswith("g3")
+    is_g37_roommind = session_mode == "test" and architecture_version.startswith("g3.7")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -214,6 +215,24 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         }
     )
     completion_status = str(task_result.get("completion_status") or "")
+    capability_boundaries = task_result.get("capability_boundaries") or {}
+    capability_focus_issues = [
+        str((row.get("focus") or {}).get("issue") or "")
+        for row in coordination_history if isinstance(row, dict)
+        and (row.get("focus") or {}).get("kind") == "capability_boundary"
+    ]
+    repeated_capability_focus_issues = sorted({
+        issue for issue in capability_focus_issues
+        if issue and capability_focus_issues.count(issue) > 1
+    })
+    outcome = task_result.get("outcome") or {}
+    boundary_closure_unmet = {
+        str(field) for field in (outcome.get("unmet_conditions") or []) if field
+    }
+    unavailable_boundary_fields = {
+        str(field) for field, row in capability_boundaries.items()
+        if isinstance(row, dict) and row.get("status") == "unavailable"
+    }
     open_required_work = [
         str(key) for key, item in (task_result.get("work_items") or {}).items()
         if isinstance(item, dict) and item.get("required") is True
@@ -267,11 +286,24 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         ),
         "g35_completed_actions_require_tool_results": (
             not unsupported_completed_action_sources
-            if is_g3_roommind and generation_id.startswith(("G3.5", "G3.6")) else None
+            if is_g3_roommind and generation_id.startswith(("G3.5", "G3.6", "G3.7")) else None
         ),
         "g36_visible_current_world_actions_require_tool_results": (
             not unsupported_visible_current_world_actions
-            if is_g3_roommind and generation_id.startswith("G3.6") else None
+            if is_g3_roommind and generation_id.startswith(("G3.6", "G3.7")) else None
+        ),
+        "g37_capability_boundaries_not_repeated": (
+            not repeated_capability_focus_issues if is_g37_roommind else None
+        ),
+        "g37_capability_boundary_closure_consistent": (
+            (
+                completion_status == "conditional"
+                and bool(boundary_closure_unmet)
+                and boundary_closure_unmet.issubset(unavailable_boundary_fields)
+            )
+            if is_g37_roommind
+            and outcome.get("status") == "capability_boundary_reconciled"
+            else (True if is_g37_roommind else None)
         ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
@@ -307,6 +339,8 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "unsupported_terminal_g3_event_ids": unsupported_terminal_ledger_events,
             "unsupported_completed_action_source_event_ids": unsupported_completed_action_sources,
             "unsupported_visible_current_world_actions": unsupported_visible_current_world_actions,
+            "repeated_capability_focus_issues": repeated_capability_focus_issues,
+            "unavailable_capability_boundary_fields": sorted(unavailable_boundary_fields),
             "future_g3_ledger_event_ids": future_ledger_events,
             "duplicate_g3_ledger_event_ids": duplicate_ledger_event_ids,
             "invalid_g3_entity_lifecycle": invalid_entity_lifecycle,

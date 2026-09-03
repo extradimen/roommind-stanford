@@ -193,6 +193,8 @@ def _coordination_summary(
     ]
     focuses = [row.get("focus") for row in history if isinstance(row.get("focus"), dict)]
     test_state = (shared_state or {}).get("_test_state") or {}
+    boundaries = task.get("capability_boundaries") or {}
+    outcome = task.get("outcome") or {}
     return {
         "coordinator_focus_turn_count": len(focuses),
         "coordinator_due_focus_turn_count": sum(bool(row.get("due_now")) for row in focuses),
@@ -217,6 +219,13 @@ def _coordination_summary(
         ),
         "coordinator_capability_boundary_count": sum(
             row.get("kind") == "capability_boundary" for row in focuses
+        ),
+        "persistent_capability_boundary_count": sum(
+            isinstance(row, dict) and row.get("status") == "unavailable"
+            for row in boundaries.values()
+        ),
+        "capability_boundary_closure": (
+            outcome.get("status") == "capability_boundary_reconciled"
         ),
         "task_critical_work_item_count": sum(
             isinstance(item, dict) and item.get("required") is True

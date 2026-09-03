@@ -7,6 +7,7 @@ private_state and system prompts must never be included in this context.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -99,9 +100,20 @@ def pending_public_questions(messages: list[dict[str, Any]]) -> list[dict[str, s
     for message in reversed(tail):
         content = str(message.get("content") or "").strip()
         if "?" in content:
+            # Keep complete question sentences.  Taking the last N characters
+            # of a long message used to start mid-word and leaked malformed
+            # fragments into the next autonomous player turn.
+            parts = re.split(r"(?<=[.!?])\s+|[\r\n]+", content)
+            complete = [" ".join(part.split()) for part in parts if "?" in part]
+            question = complete[-1] if complete else ""
+            question = re.sub(r"[`{}\[\]]", "", question).strip()
+            if len(question) > 360:
+                question = question[:360].rsplit(" ", 1)[0].rstrip(" ,;:") + "?"
+            if not question or not question.rstrip().endswith("?"):
+                continue
             questions.append({
                 "speaker_id": str(message.get("speaker_id") or "unknown"),
-                "question": content[-700:],
+                "question": question,
             })
     return questions[-4:]
 
@@ -179,16 +191,16 @@ def safe_comparison_player_fallback(
         subject = "external evidence follow-up"
     elif question_topic:
         variants = (
-            f"On your question—{question_topic}—I don't have enough public evidence to confirm more. {target_label}, what can you establish from your area?",
-            f"Let's answer the point directly: {question_topic}. {target_label}, please add the evidence within your responsibility so we can decide what follows.",
-            f"For {question_topic}, let's distinguish what is established now from what remains conditional. {target_label}, what can you confirm?",
+            f"On your question—{question_topic}—I cannot confirm more from what we have heard. {target_label}, what can you verify from your area?",
+            f"Let's answer that directly: {question_topic}. {target_label}, what evidence can you add so we can decide?",
+            f"For {question_topic}, I suggest we separate what we know from what still needs checking. {target_label}, what can you confirm now?",
         )
         subject = question_topic
     else:
         variants = (
-            "Let's use the evidence already stated to make the narrowest defensible decision and record any external follow-up separately.",
-            "We appear to be repeating the same request. Let's either resolve it with evidence available here or close with a conditional outcome and named follow-up.",
-            "Let's stop recirculating the issue: state what is established, what remains conditional, and who owns the next step after this meeting.",
+            "We have enough to choose a bounded next step. I suggest we record the remaining uncertainty, name an owner, and close on that basis.",
+            "I don't think another repetition will resolve this. Let's make the decision we can support now and assign the remaining check to a named owner.",
+            "Let's agree on what we can decide today, then record the unresolved point and who will follow it up.",
         )
         subject = "conditional resolution of the current issue"
     return variants[(max(turn_id, 1) - 1) % len(variants)], {
