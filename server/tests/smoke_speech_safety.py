@@ -245,6 +245,258 @@ def main() -> None:
         }], turn_id=1,
     )
     assert conditional_quote["variables"]["unit_price"]["status"] == "unknown"
+
+    # G3.8 replays the public confirmation forms that G3.7 failed to project.
+    # Natural professional phrases such as "can confirm", "covers the
+    # evidence", and "consider ... complete" must update the same canonical
+    # field ledger as evaluator-authored updates.
+    product_vp = SimpleNamespace(
+        character_id="product_vp",
+        authority={"can_confirm": ["product_evidence", "candidate_questions_complete"]},
+    )
+    engineering_director = SimpleNamespace(
+        character_id="engineering_director",
+        authority={"can_confirm": ["engineering_evidence"]},
+    )
+    people_partner = SimpleNamespace(
+        character_id="people_partner",
+        authority={"can_confirm": ["leadership_evidence"]},
+    )
+    interview_config = {
+        "state_schema": {
+            "product_evidence": {
+                "type": "boolean", "description": "Concrete product decision evidence obtained",
+                "confirmation_policy": "responsible_participant",
+                "propose_permissions": ["player"], "confirm_permissions": ["product_vp"],
+            },
+            "engineering_evidence": {
+                "type": "boolean", "description": "Concrete engineering collaboration evidence obtained",
+                "confirmation_policy": "responsible_participant",
+                "propose_permissions": ["player"], "confirm_permissions": ["engineering_director"],
+            },
+            "leadership_evidence": {
+                "type": "boolean", "description": "Concrete conflict or people leadership evidence obtained",
+                "confirmation_policy": "responsible_participant",
+                "propose_permissions": ["player"], "confirm_permissions": ["people_partner"],
+            },
+            "candidate_questions_complete": {
+                "type": "boolean", "description": "Candidate questions were invited and completed",
+                "confirmation_policy": "player_and_responsible_participant",
+                "propose_permissions": ["player", "product_vp"],
+                "confirm_permissions": ["player", "product_vp"],
+            },
+        },
+        "phases": [{"phase_id": "evidence_questions"}],
+        "completion_conditions": {"all": [
+            {"field": field, "operator": "==", "value": True, "required_status": "confirmed"}
+            for field in (
+                "product_evidence", "engineering_evidence", "leadership_evidence",
+                "candidate_questions_complete",
+            )
+        ]},
+    }
+    interview_state = initial_task_state(interview_config)
+    interview_state["variables"]["product_evidence"].update(value=True, status="proposed")
+    interview_state["variables"]["engineering_evidence"].update(value=True, status="proposed")
+    interview_state["variables"]["leadership_evidence"].update(value=True, status="proposed")
+    interview_state["variables"]["candidate_questions_complete"].update(value=True, status="proposed")
+    interview_state["work_items"]["optional_kpi_dashboard"] = {
+        "required": True, "status": "proposed", "subject": "optional KPI dashboard",
+        "owner_id": "product_vp",
+    }
+    apply_evaluator_updates(
+        task_config=interview_config, state=interview_state,
+        parsed={"updates": [], "events": []},
+        characters=[product_vp, engineering_director, people_partner],
+        player_text="I’ll consider the candidate-questions portion complete.",
+        npc_turns=[
+            {"speaker_id": "product_vp", "content": "I can confirm the product evidence you shared."},
+            {"speaker_id": "engineering_director", "content": "I can confirm the engineering collaboration evidence."},
+            {"speaker_id": "people_partner", "content": "That covers the people-leadership evidence we need."},
+        ], turn_id=1,
+    )
+    assert interview_state["variables"]["product_evidence"]["status"] == "confirmed"
+    assert interview_state["variables"]["engineering_evidence"]["status"] == "confirmed"
+    assert interview_state["variables"]["leadership_evidence"]["status"] == "confirmed"
+    assert interview_state["variables"]["candidate_questions_complete"]["confirmations"] == ["user"]
+    apply_evaluator_updates(
+        task_config=interview_config, state=interview_state,
+        parsed={"updates": [], "events": []},
+        characters=[product_vp, engineering_director, people_partner], player_text="",
+        npc_turns=[{
+            "speaker_id": "product_vp",
+            "content": "I can confirm the candidate questions are complete.",
+        }], turn_id=2,
+    )
+    assert interview_state["completion_status"] == "completed"
+    assert interview_state["closure_lock"]["status"] == "locked"
+    assert interview_state["work_items"]["optional_kpi_dashboard"]["required"] is False
+    apply_evaluator_updates(
+        task_config=interview_config, state=interview_state,
+        parsed={"updates": [], "events": [{
+            "event_type": "artifact_offered", "subject": "optional scorecard export",
+            "status": "proposed", "actor_id": "product_vp", "task_critical": True,
+            "summary": "An optional scorecard could be exported after the interview.",
+            "evidence": [{
+                "speaker_id": "product_vp",
+                "quote": "I can prepare an optional scorecard export after the interview",
+            }],
+        }]},
+        characters=[product_vp, engineering_director, people_partner], player_text="",
+        npc_turns=[{
+            "speaker_id": "product_vp",
+            "content": "I can prepare an optional scorecard export after the interview.",
+        }], turn_id=3,
+    )
+    assert interview_state["closure_lock"]["status"] == "locked"
+    assert interview_state["work_items"]["optional_scorecard_export"].get("required") is not True
+
+    # G3.8 also replays the incident path that stalled in G3.7.  Speech may
+    # approve the recovery plan, assign the communications owner, and set the
+    # review time, but it must not manufacture an executable containment
+    # result.  Once every speech-resolvable field is settled, the persisted
+    # capability boundary is the sole remaining condition and closes the text
+    # simulation truthfully as conditional.
+    sre_lead = SimpleNamespace(
+        character_id="sre_lead",
+        authority={
+            "can_confirm": ["recovery_plan_approved", "next_review_minutes"],
+            "can_execute": ["containment_active"],
+        },
+    )
+    security_lead = SimpleNamespace(
+        character_id="security_lead",
+        authority={"can_confirm": ["recovery_plan_approved"]},
+    )
+    communications_lead = SimpleNamespace(
+        character_id="communications_lead",
+        authority={"can_confirm": ["customer_owner_assigned", "next_review_minutes"]},
+    )
+    incident_config = {
+        "state_schema": {
+            "containment_active": {
+                "type": "boolean", "description": "Traffic containment is explicitly activated",
+                "confirmation_policy": "responsible_participant",
+                "confirm_permissions": ["sre_lead"],
+            },
+            "recovery_plan_approved": {
+                "type": "boolean", "description": "A concrete recovery plan is approved",
+                "confirmation_policy": "player_and_responsible_participant",
+                "confirm_permissions": ["player", "security_lead"],
+            },
+            "customer_owner_assigned": {
+                "type": "string", "description": "Named owner for customer communication",
+                "confirmation_policy": "player_and_assignee",
+                "confirm_permissions": ["player", "communications_lead"],
+            },
+            "next_review_minutes": {
+                "type": "integer", "unit": "minutes",
+                "description": "Time until next incident review",
+                "confirmation_policy": "player_and_responsible_participant",
+                "confirm_permissions": ["player", "communications_lead"],
+            },
+        },
+        "phases": [{"phase_id": "incident_command"}],
+        "completion_conditions": {"all": [
+            {"field": "containment_active", "operator": "==", "value": True,
+             "required_status": "confirmed"},
+            {"field": "recovery_plan_approved", "operator": "==", "value": True,
+             "required_status": "confirmed"},
+            {"field": "customer_owner_assigned", "operator": "!=", "value": "",
+             "required_status": "confirmed"},
+            {"field": "next_review_minutes", "operator": "<=", "value": 30,
+             "required_status": "confirmed"},
+        ]},
+    }
+    incident_state = initial_task_state(incident_config)
+    incident_state["variables"]["recovery_plan_approved"].update(value=True, status="proposed")
+    incident_state["variables"]["customer_owner_assigned"].update(
+        value="Sofia Martinez", status="proposed",
+    )
+    incident_state["variables"]["next_review_minutes"].update(value=20, status="proposed")
+    incident_state["work_items"] = {
+        "activate_containment": {
+            "required": True, "status": "proposed", "subject": "activate traffic containment",
+            "owner_id": "sre_lead",
+        },
+        "approve_recovery_plan": {
+            "required": True, "status": "proposed", "subject": "approve the recovery plan",
+            "owner_id": "security_lead",
+        },
+        "assign_customer_owner": {
+            "required": True, "status": "proposed", "subject": "assign customer communications owner",
+            "owner_id": "communications_lead",
+        },
+        "schedule_next_review": {
+            "required": True, "status": "proposed", "subject": "set next incident review minutes",
+            "owner_id": "communications_lead",
+        },
+    }
+    incident_state = prepare_turn_governance(
+        incident_state,
+        characters=[sre_lead, security_lead, communications_lead],
+        turn_id=1, safety_max_turns=12, max_stagnant_turns=6,
+    )
+    assert incident_state["progress"]["focus"]["kind"] == "capability_boundary"
+    assert incident_state["capability_boundaries"]["containment_active"]["status"] == "unavailable"
+    apply_evaluator_updates(
+        task_config=incident_config, state=incident_state,
+        parsed={"updates": [], "events": []},
+        characters=[sre_lead, security_lead, communications_lead],
+        player_text=(
+            "I hereby approve the recovery plan. "
+            "I am assigning Sofia Martinez as the customer communications owner. "
+            "I am setting the next incident review for 20 minutes."
+        ),
+        npc_turns=[
+            {"speaker_id": "security_lead", "content": "I can confirm the recovery plan is approved."},
+            {"speaker_id": "communications_lead", "content": (
+                "I can confirm Sofia Martinez as the customer communications owner. "
+                "Confirmed—the next incident review is in 20 minutes."
+            )},
+        ], turn_id=2,
+    )
+    assert incident_state["variables"]["containment_active"]["status"] == "unknown"
+    assert incident_state["variables"]["recovery_plan_approved"]["status"] == "confirmed"
+    assert incident_state["variables"]["customer_owner_assigned"]["status"] == "confirmed"
+    assert incident_state["variables"]["next_review_minutes"]["status"] == "confirmed"
+    assert incident_state["completion_status"] == "conditional"
+    assert incident_state["outcome"]["unmet_conditions"] == ["containment_active"]
+    assert all(
+        item.get("required") is not True
+        for item in incident_state["work_items"].values()
+    )
+
+    # A generic shared word is insufficient to supersede required work before
+    # closure. This protects open scenarios from accidental field matching.
+    conservative_config = {
+        "state_schema": {
+            "next_review_minutes": {
+                "type": "integer", "description": "Time until next incident review",
+            },
+            "decision_approved": {
+                "type": "boolean", "description": "Final decision approved",
+            },
+        },
+        "phases": [{"phase_id": "active"}],
+        "completion_conditions": {"all": [
+            {"field": "next_review_minutes", "operator": "<=", "value": 30,
+             "required_status": "confirmed"},
+            {"field": "decision_approved", "operator": "==", "value": True,
+             "required_status": "confirmed"},
+        ]},
+    }
+    conservative_state = initial_task_state(conservative_config)
+    conservative_state["variables"]["next_review_minutes"].update(
+        value=20, status="confirmed",
+    )
+    conservative_state["work_items"]["review_vendor_materials"] = {
+        "required": True, "status": "proposed", "subject": "review vendor materials",
+    }
+    evaluate_conditions(conservative_config, conservative_state)
+    assert conservative_state["work_items"]["review_vendor_materials"]["required"] is True
+    assert conservative_state["closure_lock"] == {}
+
     leaked_plan = (
         "I will first confirm the purchase volume to set the foundation, aiming "
         "to lock an annual framework agreement for at least 100k units. My bottom "

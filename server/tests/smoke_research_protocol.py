@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G3.7"
+    assert CURRENT_GENERATION_ID == "G3.8"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g3.7-proposition-grounded-convergent-simulation"
+        "g3.8-authoritative-state-reducer-closure-lock"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -244,7 +244,7 @@ def main() -> None:
     g37_bundle = deepcopy(g36_bundle)
     g37_bundle["session"]["run_config"]["research_manifest"] = {
         "generation_id": "G3.7",
-        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+        "architecture_version": "g3.7-proposition-grounded-convergent-simulation",
     }
     g37_bundle["task_result"].update({
         "completion_status": "conditional",
@@ -276,6 +276,25 @@ def main() -> None:
     })
     repeated_boundary = run_integrity_probes(g37_bundle)
     assert repeated_boundary["checks"]["g37_capability_boundaries_not_repeated"] is False
+
+    g38_bundle = deepcopy(g37_bundle)
+    g38_bundle["session"]["run_config"]["research_manifest"] = {
+        "generation_id": "G3.8",
+        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+    }
+    g38_bundle["task_result"].update({
+        "completion_status": "completed",
+        "closure_lock": {"status": "locked", "resolved_fields": ["containment_active"]},
+        "condition_results": [{
+            "met": True,
+            "condition": {"field": "containment_active", "operator": "==", "value": True},
+        }],
+        "work_items": {},
+        "outcome": {"type": "completed", "status": "closed"},
+        "coordination_history": [],
+    })
+    g38_probes = run_integrity_probes(g38_bundle)
+    assert g38_probes["checks"]["g38_authoritative_closure_lock_consistent"] is True
 
 
 if __name__ == "__main__":

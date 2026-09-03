@@ -208,6 +208,8 @@ def _event_is_task_critical(
     Ordinary offers remain auditable work items, but only obligations that
     demonstrably block configured state or closure enter the coordinator queue.
     """
+    if str((state.get("closure_lock") or {}).get("status") or "") == "locked":
+        return False, "configured_completion_closure_locked"
     if existing_item.get("required") is True:
         return True, str(existing_item.get("criticality_reason") or "existing_required_work")
     if raw.get("task_critical") is not True:
@@ -302,6 +304,7 @@ def public_task_result(task_state: dict[str, Any] | None) -> dict[str, Any]:
         "condition_results": list(state.get("condition_results") or []),
         "work_items": deepcopy(state.get("work_items") or {}),
         "capability_boundaries": deepcopy(state.get("capability_boundaries") or {}),
+        "closure_lock": deepcopy(state.get("closure_lock") or {}),
         "recent_events": deepcopy((state.get("event_ledger") or [])[-30:]),
         "outcome": deepcopy(state.get("outcome") or {}),
         "progress": deepcopy(state.get("progress") or {}),
@@ -426,7 +429,7 @@ def initial_task_state(task_config: dict[str, Any]) -> dict[str, Any]:
             "evidence": [],
         }
     return {
-        "schema_version": 6,
+        "schema_version": 7,
         "phase": first,
         "completion_status": "in_progress",
         "variables": variables,
@@ -435,6 +438,7 @@ def initial_task_state(task_config: dict[str, Any]) -> dict[str, Any]:
         "event_ledger": [],
         "work_items": {},
         "capability_boundaries": {},
+        "closure_lock": {},
         "outcome": {"type": None, "status": "open", "reason": "", "evidence": []},
         "progress": {"stagnant_turns": 0, "last_progress_turn": 0},
         "public_ledger": ensure_public_ledger({}),
@@ -466,6 +470,92 @@ def _condition_result(condition: dict[str, Any], variables: dict[str, Any]) -> d
     return {"condition": condition, "met": bool(status_ok and value_ok), "actual": state.get("value"), "status": state.get("status", "unknown")}
 
 
+def _completion_field_results(
+    task_config: dict[str, Any], variables: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], bool]:
+    """Evaluate configured fields without letting derived work shadow them."""
+    root = task_config.get("completion_conditions") or {"all": []}
+    all_results = [_condition_result(c, variables) for c in root.get("all", [])]
+    any_results = [_condition_result(c, variables) for c in root.get("any", [])]
+    complete = bool(all_results or any_results) and all(
+        row["met"] for row in all_results
+    ) and (not any_results or any(row["met"] for row in any_results))
+    return all_results, any_results, complete
+
+
+def _reconcile_required_work_with_authoritative_fields(
+    task_config: dict[str, Any], task_state: dict[str, Any], *, turn_id: int = 0,
+) -> None:
+    """Make configured field state authoritative over extractor-created work."""
+    schema = task_config.get("state_schema") or {}
+    variables = task_state.get("variables") or {}
+    boundaries = task_state.get("capability_boundaries") or {}
+    work_items = task_state.get("work_items") or {}
+    field_tokens = {
+        str(field): (
+            _work_key_tokens(str(field)),
+            _work_key_tokens(f"{field} {(spec or {}).get('description') or ''}"),
+        )
+        for field, spec in schema.items()
+    }
+    for key, item in work_items.items():
+        if not isinstance(item, dict) or item.get("required") is not True:
+            continue
+        tokens = _work_key_tokens(" ".join([
+            str(key), str(item.get("subject") or ""),
+            str(item.get("criticality_reason") or ""),
+        ]))
+        related = []
+        for field, (identity_tokens, configured_tokens) in field_tokens.items():
+            overlap = tokens.intersection(configured_tokens)
+            # A single generic word such as "review", "plan", or "owner"
+            # must not close unrelated work. Multi-token fields need at least
+            # two grounded terms; genuinely single-token fields need one.
+            minimum_overlap = 1 if len(identity_tokens) <= 1 else 2
+            if len(overlap) >= minimum_overlap:
+                related.append(field)
+        resolved = [
+            field for field in related
+            if (variables.get(field) or {}).get("status") == "confirmed"
+            or str((boundaries.get(field) or {}).get("status") or "")
+            in {"unavailable", "resolved"}
+        ]
+        if resolved:
+            item["required"] = False
+            item["closure_superseded_by_fields"] = resolved
+            item["closure_reconciled_turn"] = int(turn_id)
+
+    all_results, any_results, fields_complete = _completion_field_results(
+        task_config, variables
+    )
+    if fields_complete:
+        completed_fields = list(dict.fromkeys(
+            str(row["condition"].get("field"))
+            for row in [*all_results, *any_results]
+            if row["met"] and row["condition"].get("field")
+        ))
+        task_state["closure_lock"] = {
+            "status": "locked",
+            "turn_id": int(turn_id),
+            "resolved_fields": completed_fields,
+            "reason": "configured_completion_fields_satisfied",
+        }
+        for item in work_items.values():
+            if not isinstance(item, dict) or item.get("required") is not True:
+                continue
+            item["required"] = False
+            item["closure_superseded_by_fields"] = completed_fields
+            item["closure_reconciled_turn"] = int(turn_id)
+    elif str((task_state.get("closure_lock") or {}).get("status") or "") == "locked":
+        task_state["closure_lock"] = {
+            **dict(task_state.get("closure_lock") or {}),
+            "status": "reopened",
+            "reopened_turn": int(turn_id),
+            "reason": "authorized_field_challenge_or_condition_change",
+        }
+    task_state["work_items"] = work_items
+
+
 def conditions_met(root: dict[str, Any] | None, variables: dict[str, Any]) -> bool:
     if not root:
         return False
@@ -493,20 +583,23 @@ def advance_phase(task_config: dict[str, Any], task_state: dict[str, Any]) -> st
 
 def evaluate_conditions(task_config: dict[str, Any], task_state: dict[str, Any]) -> dict[str, Any]:
     _project_public_ledger(task_state)
-    root = task_config.get("completion_conditions") or {"all": []}
     variables = task_state.get("variables") or {}
-    all_results = [_condition_result(c, variables) for c in root.get("all", [])]
-    any_results = [_condition_result(c, variables) for c in root.get("any", [])]
+    _reconcile_required_work_with_authoritative_fields(
+        task_config, task_state,
+        turn_id=int(
+            ((ensure_public_ledger(task_state).get("simulation_clock") or {}).get("turn"))
+            or 0
+        ),
+    )
+    all_results, any_results, fields_complete = _completion_field_results(
+        task_config, variables
+    )
     required_work_open = any(
         isinstance(item, dict) and item.get("required") is True
         and item.get("status") not in {"submitted", "completed", "rejected"}
         for item in (task_state.get("work_items") or {}).values()
     )
-    complete = (
-        all(r["met"] for r in all_results)
-        and (not any_results or any(r["met"] for r in any_results))
-        and not required_work_open
-    )
+    complete = fields_complete and not required_work_open
     task_state["condition_results"] = all_results + any_results
     explicit_outcome = (task_state.get("outcome") or {}).get("type")
     has_configured_conditions = bool(all_results or any_results)
@@ -933,14 +1026,24 @@ def _field_update_is_grounded(
         if not any(re.search(rf"(?<![\w.]){re.escape(item)}(?![\w.])", text) for item in candidates):
             return False
     elif value_type == "boolean":
-        positive = r"\b(?:accept|accepted|agree|agreed|approve|approved|confirm|confirmed|adopt|adopted|enable|enabled|active|activated|yes|true)\b"
+        positive = r"\b(?:accept|accepted|agree|agreed|approve|approved|confirm|confirmed|adopt|adopted|enable|enabled|active|activated|complete|completed|identified|ready|cover|covers|covered|satisfy|satisfies|satisfied|meet|meets|met|yes|true)\b"
         negative = r"\b(?:reject|rejected|decline|declined|not|no|false|inactive|disable|disabled)\b"
         if bool(value) and not re.search(positive, text):
             return False
         if not bool(value) and not re.search(negative, text):
             return False
-    elif value is not None and str(value).strip().casefold() not in text:
-        return False
+    elif value is not None:
+        normalized_value = str(value).strip().casefold()
+        value_tokens = {
+            token for token in re.findall(r"[\w]+", normalized_value)
+            if len(token) >= 3
+        }
+        if normalized_value not in text and not (
+            value_tokens
+            and any(re.search(rf"\b{re.escape(token)}\b", text) for token in value_tokens)
+            and _quote_references_field(field, spec, text)
+        ):
+            return False
 
     return True
 
@@ -1008,8 +1111,13 @@ def _commit_explicit_field_confirmations(
 
 
 _EXPLICIT_ACCEPTANCE_RE = re.compile(
-    r"\b(?:(?:i|we)\s+(?:explicitly\s+|formally\s+)?"
+    r"\b(?:(?:i|we)\s+(?:(?:can|hereby|now|fully|explicitly|formally)\s+)*"
     r"(?:confirm|accept|approve|agree(?:\s+to)?|support)|"
+    r"(?:i|we)(?:(?:\s+will|['’]ll))?\s+consider\b[^.!?;]{0,100}\bcomplete|"
+    r"(?:i|we)(?:(?:\s+am|['’]m|\s+are|['’]re))\s+(?:officially\s+)?(?:setting|assigning|designating|appointing)|"
+    r"(?:i|we)\s+(?:officially\s+)?(?:set|assign|designate|appoint)|"
+    r"confirmed\s*[-—:]|"
+    r"(?:cover|covers|covered|satisfy|satisfies|satisfied|meet|meets|met)\b[^.!?;]{0,100}\b(?:evidence|requirement|criteria|need)|"
     r"(?:is|are|has\s+been|have\s+been)\s+(?:now\s+|fully\s+|formally\s+)?"
     r"(?:confirmed|accepted|approved|agreed|identified|ready)|"
     r"(?:is|are)\s+acceptable)\b",
@@ -1077,6 +1185,8 @@ def _explicit_value_from_quote(
             normalized = str(current_value).strip()
             variants = {normalized.casefold(), normalized.casefold().replace("_", " ")}
             if any(value and value in text.casefold() for value in variants):
+                return normalized, True
+            if _quote_references_field(field, spec, text):
                 return normalized, True
         description = str(spec.get("description") or "")
         for candidate in re.findall(r"[a-z][a-z0-9_]+", description.casefold()):

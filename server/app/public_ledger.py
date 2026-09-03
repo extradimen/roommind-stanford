@@ -449,7 +449,8 @@ def ground_public_intent_in_quote(
         if isinstance(value, bool):
             pattern = (
                 r"\b(?:accept|accepted|agree|agreed|approve|approved|confirm|confirmed|"
-                r"adopt|adopted|enable|enabled|active|activated|yes|true)\b"
+                r"adopt|adopted|enable|enabled|active|activated|complete|completed|identified|ready|"
+                r"cover|covers|covered|satisfy|satisfies|satisfied|meet|meets|met|yes|true)\b"
                 if value else
                 r"\b(?:reject|rejected|decline|declined|not|no|false|inactive|disable|disabled)\b"
             )
@@ -459,7 +460,14 @@ def ground_public_intent_in_quote(
                 rf"(?<![\w.]){re.escape(f'{float(value):g}')}(?![\w.])", quote
             ))
         else:
-            value_supported = str(value).strip().casefold() in quote
+            normalized_value = str(value).strip().casefold()
+            value_tokens = {
+                token for token in re.findall(r"[\w]+", normalized_value)
+                if len(token) >= 3
+            }
+            value_supported = normalized_value in quote or bool(
+                value_tokens.intersection(_identity_tokens(quote))
+            )
         if not value_supported:
             prior_reason = str(grounded.get("validation_reason") or "")
             grounded["commit_allowed"] = False
@@ -475,7 +483,7 @@ def ground_public_intent_in_quote(
         "in_progress": r"\b(?:i(?:'m| am)|we(?:'re| are))\s+(?:now\s+)?(?:working|reviewing|preparing|executing|implementing|verifying|investigating)\b|\b(?:has|have)\s+(?:started|begun)\b",
         "submitted": r"\b(?:i|we)\s+(?:have\s+|['’]ve\s+)?(?:provided|submitted|delivered|shared|presented)\b|\bhere\s+(?:is|are)\b",
         "verified": r"\b(?:i|we)\s+(?:have\s+|['’]ve\s+)?(?:verified|validated|confirmed|checked)\b|\b(?:is|are|was|were|has been|have been)\s+(?:verified|validated|confirmed)\b",
-        "accepted": r"\b(?:i|we)\s+(?:explicitly\s+|formally\s+)?(?:accept|approve|agree|confirm)\b|\b(?:is|are|has been|have been)\s+(?:explicitly\s+|formally\s+)?(?:accepted|approved|agreed|confirmed|finalized)\b",
+        "accepted": r"\b(?:i|we)\s+(?:(?:can|hereby|now|fully|explicitly|formally)\s+)*(?:accept|approve|agree|confirm)\b|\b(?:i|we)(?:(?:\s+will|['’]ll))?\s+consider\b[^.!?;]{0,100}\bcomplete|\b(?:i|we)(?:(?:\s+am|['’]m|\s+are|['’]re))\s+(?:officially\s+)?(?:setting|assigning|designating|appointing)\b|\b(?:i|we)\s+(?:officially\s+)?(?:set|assign|designate|appoint)\b|\bconfirmed\s*[-—:]|\b(?:cover|covers|covered|satisfy|satisfies|satisfied|meet|meets|met)\b[^.!?;]{0,100}\b(?:evidence|requirement|criteria|need)|\b(?:is|are|has been|have been)\s+(?:explicitly\s+|formally\s+)?(?:accepted|approved|agreed|confirmed|finalized)\b",
         "rejected": r"\b(?:i|we)\s+(?:reject|decline|cannot accept|do not accept)\b|\b(?:is|are|has been|have been)\s+rejected\b",
         "blocked": r"\b(?:i|we)\s+(?:cannot|can't|am unable|are unable)\b|\b(?:is|are|remains?)\s+blocked\b",
     }
