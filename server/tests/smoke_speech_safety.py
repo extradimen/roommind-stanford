@@ -227,8 +227,38 @@ def main() -> None:
         "Could you confirm whether the signed capacity letter has been emailed?"
     ) is None, "a request for evidence is not itself a fabricated completion claim"
     assert speech_rejection_reason(
+        "We still need confirmation that the evidence archive and its checksum have been verified. Could you share the verification status?"
+    ) is None, "a grammatical confirmation request must not become a completed artifact claim"
+    assert speech_rejection_reason(
         "Review https://invented.example/report for the evidence."
     ) == "unsupported_url"
+    assert player_speech_rejection_reason(
+        "Based on the evidence so far, rollback was reported complete and monitoring shows no anomalies.",
+        public_context=(
+            "[sre_lead]: Can you confirm the rollback is complete?\n"
+            "[security_lead]: Have the checksums been verified?"
+        ),
+        validated_intent={
+            "kind": "decision", "transition": "proposed",
+            "simulation_scope": "discussion",
+        },
+    ) == "question_treated_as_public_evidence"
+    assert player_speech_rejection_reason(
+        "Based on the metrics, the service remains degraded.",
+        public_context="[sre_lead]: Metrics show the error rate remains above 10%.",
+        validated_intent={
+            "kind": "statement", "transition": "proposed",
+            "simulation_scope": "discussion",
+        },
+    ) is None
+    assert player_speech_rejection_reason(
+        "Based on the evidence available, we cannot confirm recovery and should defer closure pending verification.",
+        public_context="[sre_lead]: Can you confirm the rollback is complete?",
+        validated_intent={
+            "kind": "statement", "transition": "proposed",
+            "simulation_scope": "discussion",
+        },
+    ) is None
     assert speech_rejection_reason(
         "The SHA-256 is 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef."
     ) == "unsupported_hash"

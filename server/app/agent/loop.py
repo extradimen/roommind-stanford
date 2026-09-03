@@ -340,6 +340,9 @@ Priority:
     authority. Do not invent links, attachments, hashes, measurements, live-system results,
     approvals, or actions. In this text simulation, provide the relevant artifact contents
     inline when known; otherwise label it as a draft, proposal, assumption, or blocker.
+    If an external file cannot be produced in this meeting, do not promise or request it
+    repeatedly. Summarize the evidence that can be stated now, assign the file as a
+    post-meeting deliverable, and continue toward a conditional decision or explicit deferral.
 11. Role boundary: never supply another participant's internal operational data or claim
     to have performed work controlled by another role.
 12. Public-world intent: before speaking, describe the single public state transition your
@@ -349,6 +352,9 @@ Priority:
     In a retrospective interview, describe past experience as kind=fact,
     simulation_scope=retrospective, transition=proposed. It is evidence offered in
     conversation, not a live action completed by the simulation.
+13. Epistemic discipline: a question asking whether a fact is true is not evidence
+    that it is true. Do not turn requests, assumptions, or proposed metrics into
+    affirmative findings unless a participant already stated the evidence publicly.
 
 {decision_language_rule(reply_language)}
 

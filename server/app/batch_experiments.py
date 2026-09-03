@@ -150,6 +150,9 @@ def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
         "llm_degraded_fallback_count": sum(
             event.get("event") == "llm.degraded_fallback" for event in events
         ),
+        "dialogue_safe_fallback_count": sum(
+            event.get("event") == "dialogue.safe_fallback.used" for event in events
+        ),
         "public_grounding_rejection_count": sum(
             event.get("event") == "llm.public_output.rejected"
             and str(event.get("rejection_reason") or "").startswith("unsupported_")
@@ -420,6 +423,7 @@ async def _execute_run(
                                 "llm_events": [
                                     row for row in turn_events
                                     if str(row.get("event") or "").startswith("llm.")
+                                    or row.get("event") == "dialogue.safe_fallback.used"
                                 ],
                             })
                             if step_attempt == 1:
@@ -441,6 +445,7 @@ async def _execute_run(
                             "llm_events": [
                                 row for row in turn_events
                                 if str(row.get("event") or "").startswith("llm.")
+                                or row.get("event") == "dialogue.safe_fallback.used"
                             ],
                         }
                         performance_trace.append(trace_row)
@@ -757,7 +762,8 @@ async def _evaluate_run(run_id: int) -> None:
                 "stage": "independent_external_evaluation", "duration_ms": monotonic_ms(started),
                 "recorded_at": _now().isoformat(),
                 "llm_events": [row for row in evaluation_events
-                               if str(row.get("event") or "").startswith("llm.")],
+                               if str(row.get("event") or "").startswith("llm.")
+                               or row.get("event") == "dialogue.safe_fallback.used"],
             }]
             prior_evaluation_trace = list(existing.get("evaluation_performance_trace") or [])
             merged = {**existing, **evaluated,

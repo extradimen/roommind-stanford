@@ -42,7 +42,8 @@ _URL_RE = re.compile(
 _HASH_RE = re.compile(r"(?<![A-Za-z0-9])[a-fA-F0-9]{32,64}(?![A-Za-z0-9])")
 _ARTIFACT_REQUEST_PREFIX_RE = re.compile(
     r"\b(?:(?:could|can|would|will)\s+you|please\s+(?:confirm|send|forward|provide)|"
-    r"confirm\s+(?:whether|if|once)|ask(?:ing)?\s+(?:whether|if))\b",
+    r"confirm\s+(?:whether|if|once)|ask(?:ing)?\s+(?:whether|if)|"
+    r"(?:still\s+)?need\s+(?:confirmation\s+that|to\s+confirm(?:\s+whether|\s+if)?))\b",
     flags=re.IGNORECASE,
 )
 _PROTECTED_STOPWORDS = {
@@ -116,9 +117,56 @@ _STRONG_PUBLIC_CLAIMS = (
 _NON_ASSERTIVE_PREFIX_RE = re.compile(
     r"\b(?:if|once|when|after|before|unless|until|whether|need(?:s)?\s+to|"
     r"must|should|could|would|please|cannot|can't|not|without|await(?:ing)?|"
-    r"require(?:s|d)?\s+(?:us\s+|them\s+|him\s+|her\s+|you\s+)?to)\b",
+    r"require(?:s|d)?\s+(?:us\s+|them\s+|him\s+|her\s+|you\s+)?to|"
+    r"need\s+confirmation\s+that)\b",
     flags=re.IGNORECASE,
 )
+
+_EVIDENCE_ATTRIBUTION_RE = re.compile(
+    r"\b(?:based\s+on\s+(?:the\s+)?(?:evidence|metrics|logs|data|record)|"
+    r"according\s+to\s+(?:the\s+)?(?:metrics|logs|data|report)|"
+    r"(?:metrics|monitoring|logs|data|the\s+report)\s+"
+    r"(?:show|shows|showed|confirm|confirms|confirmed|indicate|indicates|indicated)|"
+    r"reported\s+(?:complete|completed|restored|recovered|healthy)|"
+    r"showing\s+(?:no\s+)?(?:anomalies|errors|failures))\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _question_only_evidence_claim(text: str, public_context: str) -> bool:
+    """Reject treating questions as if they were affirmative evidence.
+
+    In autonomous dialogue a model sometimes answers "is rollback complete?"
+    with "rollback was reported complete" even though nobody supplied that
+    fact.  If a response attributes a conclusion to evidence but the public
+    record contains no declarative evidence statement, it must remain a
+    question or conditional proposal.
+    """
+    if not _EVIDENCE_ATTRIBUTION_RE.search(text):
+        return False
+    # It is always safe to state that the available record is insufficient;
+    # this preserves uncertainty rather than manufacturing a positive fact.
+    if re.search(
+        r"\b(?:cannot|can't|do\s+not|don't|not\s+enough|insufficient|"
+        r"unverified|pending|defer|uncertain|no\s+basis)\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return False
+    declarative_rows = []
+    for row in (public_context or "").splitlines():
+        cleaned = " ".join(row.split()).strip()
+        if not cleaned or "?" in cleaned:
+            continue
+        # Requests for confirmation describe an information gap, not evidence.
+        if re.search(
+            r"\b(?:need|request|ask|await|pending|could\s+you|please)\b",
+            cleaned,
+            flags=re.IGNORECASE,
+        ):
+            continue
+        declarative_rows.append(cleaned)
+    return not declarative_rows
 
 _RETROSPECTIVE_ANCHOR_RE = re.compile(
     r"\b(?:in\s+(?:my|our)\s+(?:previous|prior|former)\s+"
@@ -313,6 +361,11 @@ def speech_rejection_reason(
     )
     if unsupported:
         return unsupported
+    if (
+        str(intent.get("simulation_scope") or "discussion") != "retrospective"
+        and _question_only_evidence_claim(text, public_context)
+    ):
+        return "question_treated_as_public_evidence"
     if (
         str(intent.get("simulation_scope") or "") == "retrospective"
         and not retrospective_grounded

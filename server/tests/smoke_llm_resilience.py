@@ -20,7 +20,7 @@ from app.external_evaluator import (
     evaluate_public_transcript,
     missing_evaluation_dimensions,
 )
-from app.batch_experiments import _dialogue_retry_result
+from app.batch_experiments import _dialogue_retry_result, _performance_summary
 from app.baseline_chat import (
     BASELINE_MEMORY_KEY,
     _agent_memory,
@@ -87,21 +87,37 @@ async def call_client(responses: list[FakeResponse | Exception], max_tokens: int
 
 
 async def main() -> None:
+    performance = _performance_summary([{"llm_events": [
+        {"event": "dialogue.safe_fallback.used"},
+        {"event": "llm.degraded_fallback"},
+    ]}])
+    assert performance["dialogue_safe_fallback_count"] == 1
+    assert performance["llm_degraded_fallback_count"] == 1
     historical_fallbacks = [
         safe_comparison_player_fallback(
             evidence_mode="retrospective_claim", pending_questions=[], turn_id=turn,
         )[0]
         for turn in range(1, 4)
     ]
-    assert len(set(historical_fallbacks)) == 3
+    assert len(set(historical_fallbacks)) >= 2
     assert all("clarify the most important unresolved" not in row.casefold()
                for row in historical_fallbacks)
+    inclusive_fallback, _ = safe_comparison_player_fallback(
+        evidence_mode="retrospective_claim",
+        pending_questions=[{
+            "speaker_id": "people_partner",
+            "question": "How did you ensure different voices were heard, and what changed as a result?",
+        }],
+        turn_id=3,
+    )
+    assert "least-heard" in inclusive_fallback or "each function" in inclusive_fallback
     live_content, live_intent = safe_comparison_player_fallback(
         evidence_mode="live_operation",
         pending_questions=[{"speaker_id": "finance_lead", "question": "Evidence?"}],
         turn_id=1,
     )
     assert "Finance Lead" in live_content
+    assert "responsible participant" not in live_content.casefold()
     assert live_intent["target_id"] == "finance_lead"
     npc_fallback = contextual_public_fallback(
         SimpleNamespace(
@@ -110,8 +126,21 @@ async def main() -> None:
         ),
         {"subject": "pilot readiness", "transition": "proposed"},
     )
-    assert "pilot readiness remains open" in npc_fallback
+    assert "pilot readiness" in npc_fallback
+    assert "remains open" not in npc_fallback.casefold()
+    assert "responsible owner" not in npc_fallback.casefold()
     assert "highest-priority open issue" not in npc_fallback
+
+    artifact_content, artifact_intent = safe_comparison_player_fallback(
+        evidence_mode="live_operation",
+        pending_questions=[{
+            "speaker_id": "security_lead",
+            "question": "Can you upload the signed validation report?",
+        }],
+        turn_id=2,
+    )
+    assert "post-meeting deliverable" in artifact_content
+    assert artifact_intent["kind"] == "handoff"
 
     partial_evaluation = {
         "dimensions": {

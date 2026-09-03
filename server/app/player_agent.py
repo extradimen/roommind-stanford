@@ -113,11 +113,30 @@ def safe_comparison_player_fallback(
     evidence request. Rotating variants prevent exact-message fallback loops.
     """
     if evidence_mode == "retrospective_claim":
-        variants = (
-            "In a previous role, I handled a comparable challenge by aligning product and engineering on shared evidence, documenting the trade-offs, and testing the chosen approach before rollout. I would next explain the measurable outcome and what I learned.",
-            "I led a comparable cross-functional effort by defining a shared success metric, surfacing the engineering constraints, and running a limited test before committing to rollout. I can now walk through the decision, outcome, and lesson learned.",
-            "One project involved a disagreement over scope and delivery risk. I facilitated a structured review of the evidence, assigned owners for the open questions, and documented the final trade-off before implementation.",
-        )
+        question = " ".join(
+            str((pending_questions[-1] if pending_questions else {}).get("question") or "")
+            .split()
+        ).casefold()
+        if any(token in question for token in ("voices", "heard", "inclusive", "team")):
+            variants = (
+                "I used written input before the meeting, invited the least-heard functions to speak first, and recorded objections alongside the decision. That changed the rollout plan and made ownership clearer across the team.",
+                "I created a structured review in which each function supplied one risk and one proposed adjustment. The final plan incorporated concerns that had not surfaced in the larger meeting and assigned follow-up owners explicitly.",
+            )
+        elif any(token in question for token in ("conflict", "engineering", "disagreement")):
+            variants = (
+                "In a previous role, engineering and product disagreed about scope and delivery risk. I made the constraints explicit, compared options against a shared success measure, and used a limited test to reach a decision without overruling the technical owner.",
+                "I handled a similar disagreement by asking engineering to quantify the risk, asking product to quantify the user impact, and facilitating a phased option that both sides could test before a full commitment.",
+            )
+        elif any(token in question for token in ("evidence", "learn", "result")):
+            variants = (
+                "In that project, I compared the baseline, the test result, and the downstream operating impact. The lesson was to define the decision threshold before the test and revisit the choice when the evidence changed.",
+                "I used the pre-change baseline, a limited rollout, and feedback from the affected teams. What I learned was to separate an attractive early signal from evidence strong enough to scale the decision.",
+            )
+        else:
+            variants = (
+                "In a previous role, I owned a comparable product decision by defining the user problem, comparing options against value, effort, and risk, and testing the preferred approach before rollout. I would judge the outcome against the baseline we agreed in advance.",
+                "I led a similar decision by bringing product, engineering, and customer evidence into one trade-off review, choosing a limited rollout, and measuring the result before expanding the commitment.",
+            )
         return variants[(max(turn_id, 1) - 1) % len(variants)], {
             "kind": "fact",
             "subject": "prior cross-functional experience",
@@ -125,22 +144,53 @@ def safe_comparison_player_fallback(
             "simulation_scope": "retrospective",
         }
 
-    target = "the responsible participant"
+    target = "the participant closest to the issue"
+    question = ""
     if pending_questions:
         target = pending_questions[-1].get("speaker_id") or target
+        question = " ".join(
+            str(pending_questions[-1].get("question") or "").split()
+        ).strip()
     target_label = (
         target.replace("_", " ").title()
-        if target != "the responsible participant"
+        if target != "the participant closest to the issue"
         else target
     )
-    variants = (
-        f"I cannot verify the unresolved point from the current record. {target_label}, please identify the specific evidence or authorized decision required next.",
-        f"Before we close this issue, {target_label} should state the missing evidence and who has authority to confirm it.",
-        f"The current record does not support a final conclusion. {target_label}, please name the concrete blocker and the next verifiable step.",
+    question_topic = question.rstrip(" ?")
+    if len(question_topic) > 180:
+        question_topic = question_topic[-180:].lstrip()
+    if question_topic.casefold().startswith((
+        "what can ", "what should ", "can we ", "could we ", "how should ",
+    )):
+        question_topic = "the decision we can support from the current evidence"
+    asks_for_artifact = any(
+        token in question.casefold()
+        for token in ("upload", "attach", "file", "document", "report", "link", "checksum")
     )
+    if asks_for_artifact:
+        variants = (
+            f"{target_label}, please summarize the relevant evidence here. We'll record the file itself as a follow-up rather than hold the meeting open for an upload.",
+            f"Let's make the decision from evidence we can state now and assign the document as a post-meeting deliverable. {target_label}, what can you verify here?",
+            f"We should not treat an external file as if it appeared in this meeting. {target_label}, please give us the substantive findings and the follow-up owner.",
+        )
+        subject = "external evidence follow-up"
+    elif question_topic:
+        variants = (
+            f"On your question—{question_topic}—I don't have enough public evidence to confirm more. {target_label}, what can you establish from your area?",
+            f"Let's answer the point directly: {question_topic}. {target_label}, please add the evidence within your responsibility so we can decide what follows.",
+            f"For {question_topic}, let's distinguish what is established now from what remains conditional. {target_label}, what can you confirm?",
+        )
+        subject = question_topic
+    else:
+        variants = (
+            "Let's use the evidence already stated to make the narrowest defensible decision and record any external follow-up separately.",
+            "We appear to be repeating the same request. Let's either resolve it with evidence available here or close with a conditional outcome and named follow-up.",
+            "Let's stop recirculating the issue: state what is established, what remains conditional, and who owns the next step after this meeting.",
+        )
+        subject = "conditional resolution of the current issue"
     return variants[(max(turn_id, 1) - 1) % len(variants)], {
-        "kind": "issue",
-        "subject": "current unresolved point",
+        "kind": "handoff" if asks_for_artifact else "issue",
+        "subject": subject,
         "transition": "proposed",
         "target_id": target,
         "simulation_scope": "discussion",
@@ -250,6 +300,11 @@ Treat a promise to provide a document, analysis, test, decision, or action as
 different from actually providing or completing it. Seek material execution,
 not another promise. Open-ended simulations may end through completion,
 conditional resolution, deferral, handoff, or acknowledged failure.
+If an external file cannot be produced inside this text meeting, do not keep
+requesting it. Ask for its substantive findings inline, assign the file as a
+post-meeting deliverable, and proceed to a conditional decision or deferral.
+A question asking whether something happened is not evidence that it happened.
+Never turn a request for confirmation into an affirmative status or metric.
 Evidence mode: {evidence_mode}. In retrospective_claim mode, describe past
 experience as kind=fact, simulation_scope=retrospective, transition=proposed;
 do not turn a historical narrative into a live completed simulation action.
@@ -428,7 +483,12 @@ and keep the message under 120 words. If direct NPC questions are listed,
 answer the most recent specific question before introducing a new issue. Use
 the dialogue language, default English. Do not invent links, attachments,
 measurements, approvals, live-system results, or facts controlled by another
-participant. Ask the responsible participant for missing evidence instead.
+participant. Ask the appropriate participant for missing evidence instead. If
+an external file cannot be produced inside this text meeting, request its
+substantive findings once, assign the file as a post-meeting deliverable, and
+continue to a conditional decision or explicit deferral rather than looping.
+A question asking whether something happened is not evidence that it happened;
+do not convert questions or requests into affirmative findings.
 In retrospective_claim mode, recount past experience as kind=fact,
 simulation_scope=retrospective, transition=proposed. It is not a live action
 completed by this text simulation.
@@ -496,6 +556,15 @@ Return strict JSON only:
             "requested_end": False,
             "public_intent": fallback_intent,
         }
+        emit(
+            "dialogue.safe_fallback.used",
+            component="comparison_player",
+            rejection_reason=rejection or "invalid_json_fields",
+            fallback_kind=(
+                "retrospective_answer" if evidence_mode == "retrospective_claim"
+                else "contextual_task_continuation"
+            ),
+        )
     public_intent = validate_public_intent(
         character={**player, "character_id": "user"},
         intent=parsed.get("public_intent"),

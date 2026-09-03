@@ -90,19 +90,33 @@ def contextual_public_fallback(
     subject = " ".join(str(intent.get("subject") or "the current issue").split())
     if len(subject) > 120:
         subject = subject[:117].rstrip() + "..."
-    role = " ".join(
-        str(character.job_title or character.responsibility or "role").split()
-    )
-    if len(role) > 80:
-        role = role[:77].rstrip() + "..."
+    kind = str(intent.get("kind") or "statement")
+    transition = str(intent.get("transition") or "proposed")
+    field = str(intent.get("field") or "").replace("_", " ").strip()
+    topic = field or subject.replace("_", " ")
+
+    # A rejected renderer must not expose the orchestration vocabulary in the
+    # meeting ("remains open", "responsible owner", field identifiers, etc.).
+    # Recover with ordinary task language and preserve the validated lifecycle.
+    if kind in {"artifact", "verification", "action"}:
+        return (
+            f"For {topic}, let's separate what we can verify in this meeting from "
+            "the material that must follow afterward. I can address the evidence "
+            "within my responsibility now."
+        )
+    if transition == "blocked" or kind == "issue":
+        return (
+            f"The remaining concern is {topic}. Let's state the evidence we have, "
+            "the decision we can make today, and any follow-up that still needs an owner."
+        )
     if character.relationship_to_player in {"ally", "advisor", "teammate"}:
         return (
-            f"From my {role} perspective, the next useful step on {subject} is to "
-            "identify the responsible evidence owner and the specific decision still needed."
+            f"On {topic}, I suggest we use the evidence already stated to make the "
+            "narrowest defensible decision, then record any external follow-up separately."
         )
     return (
-        f"From my {role} perspective, {subject} remains open. I can discuss the "
-        "available evidence now, but I cannot confirm a final outcome without the responsible owner."
+        f"On {topic}, I can explain the evidence within my responsibility. Any final "
+        "approval should follow after the remaining condition is stated clearly."
     )
 
 
@@ -155,6 +169,12 @@ Requirements:
 - Never claim a stronger lifecycle state than the validated public-world intent.
 - If the intent was downgraded, describe only the applied transition (for
   example, a commitment), not the requested completed action.
+- Do not expose field identifiers or orchestration phrases such as "remains open",
+  "responsible owner", or "final outcome". Use ordinary role-appropriate language.
+- Do not promise or request the same external upload again. State the substantive
+  evidence available now and treat an unavailable file as a post-meeting follow-up.
+- A question asking whether something happened is not evidence that it happened.
+  Never convert a question or request for confirmation into an affirmative fact.
 {lang_rule}
 - Output only what you say aloud; no JSON or explanation
 
@@ -240,6 +260,13 @@ Requirements:
         ),
     ):
         fallback = "I cannot confirm a final outcome from the evidence currently on record."
+    emit(
+        "dialogue.safe_fallback.used",
+        component="npc_speech_render",
+        character_id=character.character_id,
+        rejection_reason=rejection or "configured_reply_unavailable",
+        fallback_kind="contextual_public_reply",
+    )
     return fallback, emotion, gesture, False
 
 
