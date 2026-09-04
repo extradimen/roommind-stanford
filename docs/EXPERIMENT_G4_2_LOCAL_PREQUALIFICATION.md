@@ -60,3 +60,14 @@ Use the same four matched scenarios, fixed provider/model, seed policy,
 concurrency and turn limits as G4.1. Dialogue generation is frozen before
 independent six-dimension evaluation. Human review remains separate and is not
 started automatically.
+
+## G4.2.1 engineering rerun
+
+The first frozen G4.2 batch was invalidated after 6/8 dialogues completed:
+two RoomMind runs reached an explicit-confirmation path that called telemetry
+without importing `emit` in the API module. This was a deterministic software
+fault, not an LLM failure; both failed runs reported zero degraded fallbacks.
+G4.2.1 adds the missing import and a module-boundary regression assertion. It
+does not change the G4.2 simulation mechanism. The invalid batch remains
+preserved, and a new batch/source revision is required rather than retrying its
+runs in place.

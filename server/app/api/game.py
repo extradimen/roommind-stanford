@@ -32,6 +32,7 @@ from app.public_ledger import (
     validate_public_intent,
 )
 from app.scenario_side import resolve_player_side_goal
+from app.telemetry import emit
 from app.task_state import (
     TERMINAL_OUTCOMES,
     finalize_no_progress_outcome,

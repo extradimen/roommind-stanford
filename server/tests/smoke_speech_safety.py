@@ -16,6 +16,7 @@ from app.agent.speech_safety import (
 from types import SimpleNamespace
 
 from app.agent.act import configured_public_fallback
+from app.api import game as game_api
 from app.orchestrator.common import orch_support
 from app.task_state import (
     advance_phase,
@@ -44,6 +45,10 @@ from app.public_ledger import (
 
 
 def main() -> None:
+    # The autonomous API confirmation-alignment branch emits telemetry.  Keep
+    # this boundary assertion so an omitted runtime import cannot pass compile
+    # checks and fail only deep into a batch dialogue again.
+    assert callable(game_api.emit)
     assert configured_public_fallback({
         "default": "Ask for the commercial conditions needed to make the proposal workable."
     }) == ""

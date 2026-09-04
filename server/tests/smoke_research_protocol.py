@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G4.2"
+    assert CURRENT_GENERATION_ID == "G4.2.1"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g4.2-grounded-addressee-and-confirmation"
+        "g4.2.1-grounded-addressee-and-confirmation"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -396,7 +396,7 @@ def main() -> None:
 
     g42_bundle = deepcopy(g4_bundle)
     g42_bundle["session"]["run_config"]["research_manifest"] = {
-        "generation_id": "G4.2",
+        "generation_id": "G4.2.1",
         "architecture_version": CURRENT_ARCHITECTURE_VERSION,
     }
     g42_bundle["speaker_directory"]["advisor"] = {
