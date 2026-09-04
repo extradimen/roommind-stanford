@@ -147,6 +147,75 @@ def near_duplicate_public_utterance(
     return False
 
 
+_PLAYER_RESPONSE_REASONING_RE = re.compile(
+    r"\b(?:ask|asking|prompt|prompting|invite|inviting)\b"
+    r"[^.!?]{0,120}\b(?:user|player|candidate|interviewee|participant)\b|"
+    r"\b(?:user|player|candidate|interviewee|participant)\b"
+    r"[^.!?]{0,80}\b(?:to\s+(?:answer|respond|explain|describe|share)|for\s+an?\s+answer)\b",
+    flags=re.IGNORECASE,
+)
+_VISIBLE_RESPONSE_REQUEST_RE = re.compile(
+    r"(?:\?|？)|\b(?:can|could|would|will)\s+you\b|"
+    r"^\s*(?:please\s+)?(?:tell|describe|explain|share|walk|give)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def public_speech_act_mismatch(reasoning: str, content: str) -> bool:
+    """Reject speech that contradicts the decision's intended floor action.
+
+    Private reasoning is not proof of public facts, but it is useful for a
+    narrow structural check: an agent that decided to ask the player a
+    question must not publish a first-person answer on the player's behalf.
+    """
+    if not _PLAYER_RESPONSE_REASONING_RE.search(reasoning or ""):
+        return False
+    return not bool(_VISIBLE_RESPONSE_REQUEST_RE.search(content or ""))
+
+
+def direct_question_to_player(
+    content: str,
+    *,
+    public_intent: dict | None = None,
+    npc_labels: list[str] | tuple[str, ...] = (),
+    player_labels: list[str] | tuple[str, ...] = (),
+) -> bool:
+    """Detect when an NPC has explicitly handed the conversational floor to the player.
+
+    Prefer a validated target id.  The text fallback is intentionally narrow:
+    it requires a visible question/request and rejects utterances that name a
+    different NPC as the addressee.
+    """
+    intent = public_intent or {}
+    text = " ".join((content or "").split()).strip()
+    target_id = str(intent.get("target_id") or "").casefold().strip()
+    if target_id in {"user", "player", "candidate", "interviewee"}:
+        return bool(text and _VISIBLE_RESPONSE_REQUEST_RE.search(text))
+    if target_id:
+        return False
+
+    if not text or not _VISIBLE_RESPONSE_REQUEST_RE.search(text):
+        return False
+    folded = text.casefold()
+    for label in npc_labels:
+        normalized = " ".join(str(label or "").casefold().split()).strip()
+        if len(normalized) >= 2:
+            named_first = re.search(
+                rf"(?:^|[.!?]\s+)\s*{re.escape(normalized)}\s*[,—:-]", folded
+            )
+            named_after_you = re.search(
+                rf"\b(?:can|could|would|will)\s+you\s*,?\s*{re.escape(normalized)}\b",
+                folded,
+            )
+            if named_first or named_after_you:
+                return False
+    for label in player_labels:
+        normalized = " ".join(str(label or "").casefold().split()).strip()
+        if len(normalized) >= 2 and normalized in folded:
+            return True
+    return bool(re.search(r"\b(?:you|your)\b", folded))
+
+
 def normalized_public_propositions(content: str) -> list[dict[str, str]]:
     """Normalize visible completion claims before applying source policy.
 

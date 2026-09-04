@@ -13,6 +13,7 @@ from app.agent.memory_stream import AgentMemoryStore, MemoryNode, active_plan
 from app.agent.speech_safety import (
     PUBLIC_RESPONSE_DRAFT,
     near_duplicate_public_utterance,
+    public_speech_act_mismatch,
     retain_safe_public_clauses,
     speech_rejection_reason,
 )
@@ -175,14 +176,18 @@ async def render_npc_speech(
         flags=re.IGNORECASE,
     ))
     if draft != PUBLIC_RESPONSE_DRAFT and not draft_is_instruction:
-        draft_rejection = speech_rejection_reason(
-            draft,
-            active_plan_text=active_plan_text,
-            public_context=f"{conversation_context}\n{user_input}",
-            validated_intent=validated_intent,
-            protected_secrets=list(
-                (character.private_state or {}).get("protected_secrets") or []
-            ),
+        draft_rejection = (
+            "speech_act_mismatch"
+            if public_speech_act_mismatch(reasoning, draft)
+            else speech_rejection_reason(
+                draft,
+                active_plan_text=active_plan_text,
+                public_context=f"{conversation_context}\n{user_input}",
+                validated_intent=validated_intent,
+                protected_secrets=list(
+                    (character.private_state or {}).get("protected_secrets") or []
+                ),
+            )
         )
         if not draft_rejection:
             emit(
@@ -195,14 +200,18 @@ async def render_npc_speech(
             draft, validated_intent=validated_intent
         )
         if repaired_draft and repaired_draft != draft:
-            repaired_rejection = speech_rejection_reason(
-                repaired_draft,
-                active_plan_text=active_plan_text,
-                public_context=f"{conversation_context}\n{user_input}",
-                validated_intent=validated_intent,
-                protected_secrets=list(
-                    (character.private_state or {}).get("protected_secrets") or []
-                ),
+            repaired_rejection = (
+                "speech_act_mismatch"
+                if public_speech_act_mismatch(reasoning, repaired_draft)
+                else speech_rejection_reason(
+                    repaired_draft,
+                    active_plan_text=active_plan_text,
+                    public_context=f"{conversation_context}\n{user_input}",
+                    validated_intent=validated_intent,
+                    protected_secrets=list(
+                        (character.private_state or {}).get("protected_secrets") or []
+                    ),
+                )
             )
             if not repaired_rejection:
                 emit(
@@ -283,6 +292,16 @@ Requirements:
             )
             continue
         cleaned = content.strip()
+        if public_speech_act_mismatch(reasoning, cleaned):
+            rejection = "speech_act_mismatch"
+            emit(
+                "llm.public_output.rejected",
+                component="npc_speech_render",
+                character_id=character.character_id,
+                rejection_reason=rejection,
+                retrying=attempt == 0,
+            )
+            continue
         if near_duplicate_public_utterance(cleaned, prior_utterances or []):
             rejection = "near_duplicate_same_speaker"
             emit(
@@ -320,6 +339,16 @@ Requirements:
     # Older code exposed that instruction verbatim after two rejected model
     # candidates.  Only an explicitly authored public reply may be spoken.
     fallback = configured_public_fallback(configured)
+    if fallback and near_duplicate_public_utterance(fallback, prior_utterances or []):
+        emit(
+            "dialogue.near_duplicate.suppressed",
+            component="npc_speech_render",
+            character_id=character.character_id,
+            source="configured_public_fallback",
+        )
+        fallback = ""
+    if fallback and public_speech_act_mismatch(reasoning, fallback):
+        fallback = ""
     if fallback and speech_rejection_reason(
         fallback,
         active_plan_text=active_plan_text,

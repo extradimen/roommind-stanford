@@ -358,6 +358,10 @@ Priority:
 14. Evidence source: ordinary speech is public_statement. A promised action outside
     this text meeting is external_followup. Never label an assertion as
     simulated_tool_result unless the simulation supplied a concrete tool event and id.
+15. Floor ownership: if another participant's latest public statement directly asks
+    the player/candidate for an answer, do not answer on that person's behalf. Wait so
+    the addressed participant can respond. A facilitator may redirect a question but
+    must never supply another role's first-person experience or private evidence.
 
 {decision_language_rule(reply_language)}
 

@@ -2,10 +2,12 @@
 
 from app.agent.speech_safety import (
     PUBLIC_RESPONSE_DRAFT,
+    direct_question_to_player,
     near_duplicate_public_utterance,
     player_speech_rejection_reason,
     normalized_public_propositions,
     protected_information_reason,
+    public_speech_act_mismatch,
     retain_safe_public_clauses,
     speech_rejection_reason,
     terminal_current_world_action_reason,
@@ -1541,6 +1543,30 @@ def main() -> None:
         "The staffing plan adds two interim specialists and reduces onboarding to "
         "3,000 users per week.",
         [prior_request],
+    ) is False
+    assert public_speech_act_mismatch(
+        "Prompt the candidate for a concrete example.",
+        "During the checkout revamp, I halted the sprint and reset the scope.",
+    ) is True
+    assert public_speech_act_mismatch(
+        "Prompt the candidate for a concrete example.",
+        "Could you describe a concrete example and the result?",
+    ) is False
+    assert public_speech_act_mismatch(
+        "Answer the user's question with the evidence in my remit.",
+        "The capacity review supports a limited pilot.",
+    ) is False
+    assert direct_question_to_player(
+        "Taylor, could you describe a concrete example?",
+        player_labels=["Taylor"], npc_labels=["Maya", "Noah"],
+    ) is True
+    assert direct_question_to_player(
+        "Noah, could you explain the engineering constraint?",
+        player_labels=["Taylor"], npc_labels=["Maya", "Noah"],
+    ) is False
+    assert direct_question_to_player(
+        "Could you, Noah, explain the engineering constraint?",
+        player_labels=["Taylor"], npc_labels=["Maya", "Noah"],
     ) is False
 
     pending = pending_public_questions([

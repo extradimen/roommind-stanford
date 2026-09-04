@@ -26,6 +26,7 @@ from app.agent.act import (
 from app.agent.loop import run_agent_tick
 from app.agent.memory_stream import AgentMemoryStore
 from app.agent.reflect import ensure_initial_plan, ensure_seed_memories, maybe_reflect
+from app.agent.speech_safety import direct_question_to_player
 from app.models.db import CharacterTemplate, DispatchRule, ScenarioTemplate
 from app.orchestrator.common import NPCReply, OrchestratorResult, npc_replies_payload, orch_support
 from app.orchestrator.defaults import ORCHESTRATION_MODE, agent_config
@@ -34,6 +35,7 @@ from app.world.timeline import WorldTimeline
 from app.i18n.reply_language import processing_message
 from app.player_character import resolve_player_character
 from app.public_ledger import ensure_public_ledger
+from app.telemetry import emit
 
 
 class GenerativeOrchestrator:
@@ -182,6 +184,16 @@ class GenerativeOrchestrator:
         context     = timeline.speech_context(limit=msg_limit)
         replies: list[NPCReply] = []
         speak_quota = max_speakers
+        floor_handed_to_player = False
+        npc_labels = [
+            label
+            for c in characters
+            for label in (c.display_name, c.character_name, c.job_title, *(c.aliases or []))
+            if label
+        ]
+        player_labels = [
+            player.get("display_name"), player.get("character_name"), player.get("job_title")
+        ]
 
         # ----------------------------------------------------------------
         # PERCEIVE → RETRIEVE → REACT → ACT  (per agent, sequential)
@@ -255,6 +267,21 @@ class GenerativeOrchestrator:
                 async for evt in yield_speech_stream(char, action_result):
                     yield evt
 
+                floor_handed_to_player = direct_question_to_player(
+                    action_result.content,
+                    public_intent=(action_result.public_ledger_event or {}).get("validated_intent"),
+                    npc_labels=npc_labels,
+                    player_labels=[str(label) for label in player_labels if label],
+                )
+                if floor_handed_to_player:
+                    emit(
+                        "dialogue.floor_handoff.to_player",
+                        component="generative_orchestrator",
+                        character_id=cid,
+                        turn_id=turn_id,
+                    )
+                    agent_debug[cid]["floor_handoff_to_player"] = True
+
             if loop_result.plan_update:
                 agent_debug[cid]["plan_update"] = loop_result.plan_update
 
@@ -281,6 +308,9 @@ class GenerativeOrchestrator:
             if reflect_text:
                 agent_debug[cid]["reflection"]            = reflect_text
                 agent_debug[cid]["reflection_node_count"] = len(new_reflections)
+
+            if floor_handed_to_player:
+                break
 
         # ----------------------------------------------------------------
         # FALLBACK  (guarantee at least one reply per turn)
@@ -349,6 +379,7 @@ class GenerativeOrchestrator:
             "rule_hits":                rule_hits,
             "agent_order":              [c.character_id for c in agent_order],
             "coordinator_focus":         focus,
+            "floor_handed_to_player":   floor_handed_to_player,
             "agents":                   agent_debug,
             "retrieval_weights":        {"alpha": alpha, "beta": beta, "gamma": gamma},
             "reflect_threshold":        reflect_threshold,

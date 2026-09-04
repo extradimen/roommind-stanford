@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G4.0"
+    assert CURRENT_GENERATION_ID == "G4.1"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g4.0-bounded-agenda-convergence"
+        "g4.1-floor-and-speech-act-ownership"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -339,7 +339,7 @@ def main() -> None:
     g4_bundle = deepcopy(g39_bundle)
     g4_bundle["session"]["run_config"]["research_manifest"] = {
         "generation_id": "G4.0",
-        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+        "architecture_version": "g4.0-bounded-agenda-convergence",
     }
     g4_bundle["task_result"].update({
         "completion_status": "conditional",
@@ -363,6 +363,37 @@ def main() -> None:
     assert g4_probes["checks"]["g4_task_does_not_end_stalled"] is True
     assert g4_probes["checks"]["g4_no_progress_close_is_bounded"] is True
     assert g4_probes["checks"]["g4_same_speaker_near_duplicates_absent"] is True
+
+    g41_bundle = deepcopy(g4_bundle)
+    g41_bundle["session"]["run_config"]["research_manifest"] = {
+        "generation_id": "G4.1",
+        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+    }
+    g41_bundle["speaker_directory"]["advisor"] = {
+        "role": "npc", "display_name": "Advisor", "character_name": "Advisor",
+        "job_title": "Advisor", "authority": {},
+    }
+    g41_bundle["agent_memories"]["advisor"] = []
+    g41_bundle["messages"].extend([
+        {
+            "sequence_no": 5, "turn_id": 3, "speaker_id": "ceo",
+            "speaker_type": "npc", "speaker_source": "ai",
+            "content": "Could you describe the evidence behind your recommendation?",
+            "created_at": "2026-01-01T00:00:05Z",
+        },
+        {
+            "sequence_no": 6, "turn_id": 3, "speaker_id": "advisor",
+            "speaker_type": "npc", "speaker_source": "ai",
+            "content": "I led a similar decision by testing the recommendation first.",
+            "created_at": "2026-01-01T00:00:06Z",
+        },
+    ])
+    violated_floor = run_integrity_probes(g41_bundle)
+    assert violated_floor["checks"]["g41_player_floor_handoff_respected"] is False
+    g41_bundle["messages"].pop()
+    respected_floor = run_integrity_probes(g41_bundle)
+    assert respected_floor["checks"]["g41_player_floor_handoff_respected"] is True
+
     g4_bundle["messages"].append({
         "sequence_no": 5,
         "turn_id": 3,

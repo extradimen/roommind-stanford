@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.agent.speech_safety import (
+    direct_question_to_player,
     near_duplicate_public_utterance,
     terminal_current_world_action_reason,
     unsupported_evidence_reason,
@@ -66,6 +67,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     is_g38_roommind = session_mode == "test" and architecture_version.startswith(("g3.8", "g3.9", "g4"))
     is_g39_roommind = session_mode == "test" and architecture_version.startswith(("g3.9", "g4"))
     is_g4_roommind = session_mode == "test" and architecture_version.startswith("g4")
+    is_g41_roommind = session_mode == "test" and architecture_version.startswith("g4.1")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -231,6 +233,46 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
                 "speaker_id": speaker_id,
             })
         prior.append(content)
+    npc_labels = [
+        label
+        for speaker_id, speaker in directory.items()
+        if speaker_id != "user" and isinstance(speaker, dict)
+        for label in (
+            speaker.get("display_name"), speaker.get("character_name"),
+            speaker.get("job_title"), *((speaker.get("aliases") or [])),
+        )
+        if label
+    ]
+    player_row = directory.get("user") or {}
+    player_labels = [
+        label for label in (
+            player_row.get("display_name"), player_row.get("character_name"),
+            player_row.get("job_title"), *((player_row.get("aliases") or [])),
+        ) if label
+    ]
+    player_floor_violations: list[dict[str, Any]] = []
+    rows_by_turn: dict[int, list[dict[str, Any]]] = {}
+    for row in sorted(messages, key=lambda item: int(item.get("sequence_no") or 0)):
+        rows_by_turn.setdefault(int(row.get("turn_id") or 0), []).append(row)
+    for turn_id, rows in rows_by_turn.items():
+        handoff_sequence = 0
+        for row in rows:
+            if row.get("speaker_type") != "npc":
+                continue
+            if handoff_sequence:
+                player_floor_violations.append({
+                    "turn_id": turn_id,
+                    "question_sequence_no": handoff_sequence,
+                    "following_sequence_no": int(row.get("sequence_no") or 0),
+                    "following_speaker_id": str(row.get("speaker_id") or ""),
+                })
+                continue
+            if direct_question_to_player(
+                str(row.get("content") or ""),
+                npc_labels=[str(label) for label in npc_labels],
+                player_labels=[str(label) for label in player_labels],
+            ):
+                handoff_sequence = int(row.get("sequence_no") or 0)
     capability_boundaries = task_result.get("capability_boundaries") or {}
     capability_focus_issues = [
         str((row.get("focus") or {}).get("issue") or "")
@@ -412,6 +454,9 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "g4_task_does_not_end_stalled": (
             completion_status != "stalled" if is_g4_roommind else None
         ),
+        "g41_player_floor_handoff_respected": (
+            not player_floor_violations if is_g41_roommind else None
+        ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
             and ledger_clock_sequence == sorted(ledger_clock_sequence)
@@ -454,6 +499,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "open_required_work_at_completion": open_required_work,
             "g39_field_projection_mismatches": field_projection_mismatches,
             "g4_same_speaker_near_duplicates": same_speaker_near_duplicates,
+            "g41_player_floor_violations": player_floor_violations,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }

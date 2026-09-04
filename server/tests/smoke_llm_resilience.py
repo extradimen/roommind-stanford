@@ -121,6 +121,18 @@ async def main() -> None:
     assert "Finance Lead" in live_content
     assert "responsible participant" not in live_content.casefold()
     assert live_intent["target_id"] == "finance_lead"
+    duplicate_fallback, duplicate_intent = safe_comparison_player_fallback(
+        evidence_mode="live_operation",
+        pending_questions=[],
+        turn_id=3,
+        prior_utterances=[
+            "Let's agree on what we can decide today, then record the unresolved point and who will follow it up.",
+            "We have enough to choose a bounded next step. I suggest we record the remaining uncertainty, name an owner, and close on that basis.",
+            "I don't think another repetition will resolve this. Let's make the decision we can support now and assign the remaining check to a named owner.",
+        ],
+    )
+    assert duplicate_intent["_requested_end"] is True
+    assert "close here" in duplicate_fallback
     npc_fallback = contextual_public_fallback(
         SimpleNamespace(
             job_title="Operations Director", responsibility="Validate capacity",

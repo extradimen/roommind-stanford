@@ -190,7 +190,11 @@ def retrospective_continuity_anchor(
 
 
 def safe_comparison_player_fallback(
-    *, evidence_mode: str, pending_questions: list[dict[str, str]], turn_id: int,
+    *,
+    evidence_mode: str,
+    pending_questions: list[dict[str, str]],
+    turn_id: int,
+    prior_utterances: list[str] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Keep the shared comparison player moving after unusable model output.
 
@@ -223,12 +227,16 @@ def safe_comparison_player_fallback(
                 "In a previous role, I owned a comparable product decision by defining the user problem, comparing options against value, effort, and risk, and testing the preferred approach before rollout. I would judge the outcome against the baseline we agreed in advance.",
                 "I led a similar decision by bringing product, engineering, and customer evidence into one trade-off review, choosing a limited rollout, and measuring the result before expanding the commitment.",
             )
-        return variants[(max(turn_id, 1) - 1) % len(variants)], {
+        intent = {
             "kind": "fact",
             "subject": "prior cross-functional experience",
             "transition": "proposed",
             "simulation_scope": "retrospective",
         }
+        return _nonduplicate_player_fallback(
+            variants, intent=intent, turn_id=turn_id,
+            prior_utterances=prior_utterances or [],
+        )
 
     target = "the participant closest to the issue"
     question = ""
@@ -274,13 +282,47 @@ def safe_comparison_player_fallback(
             "Let's agree on what we can decide today, then record the unresolved point and who will follow it up.",
         )
         subject = "conditional resolution of the current issue"
-    return variants[(max(turn_id, 1) - 1) % len(variants)], {
+    intent = {
         "kind": "handoff" if asks_for_artifact else "issue",
         "subject": subject,
         "transition": "proposed",
         "target_id": target,
         "simulation_scope": "discussion",
     }
+    return _nonduplicate_player_fallback(
+        variants, intent=intent, turn_id=turn_id,
+        prior_utterances=prior_utterances or [],
+    )
+
+
+def _nonduplicate_player_fallback(
+    variants: tuple[str, ...],
+    *,
+    intent: dict[str, Any],
+    turn_id: int,
+    prior_utterances: list[str],
+) -> tuple[str, dict[str, Any]]:
+    """Apply the normal repetition guard to deterministic recovery speech."""
+    start = (max(turn_id, 1) - 1) % len(variants)
+    for offset in range(len(variants)):
+        candidate = variants[(start + offset) % len(variants)]
+        if not near_duplicate_public_utterance(candidate, prior_utterances):
+            return candidate, intent
+
+    # Repeating a recovery sentence is worse than ending a stalled autonomous
+    # exchange.  This final line is published once and asks the test runner to
+    # stop, preserving the unresolved state instead of fabricating progress.
+    return (
+        "We are not adding new evidence, so I will close here and leave the "
+        "unresolved condition recorded for follow-up.",
+        {
+            "kind": "outcome",
+            "subject": "bounded close without new evidence",
+            "transition": "blocked",
+            "simulation_scope": "discussion",
+            "_requested_end": True,
+        },
+    )
 
 
 async def generate_player_move(
@@ -732,10 +774,12 @@ Return strict JSON only:
             evidence_mode=evidence_mode,
             pending_questions=pending_questions,
             turn_id=turn_id,
+            prior_utterances=recent_player_utterances(messages),
         )
+        fallback_requested_end = bool(fallback_intent.pop("_requested_end", False))
         parsed = {
             "intent": "safe_task_continuation",
-            "requested_end": False,
+            "requested_end": fallback_requested_end,
             "public_intent": fallback_intent,
         }
         emit(

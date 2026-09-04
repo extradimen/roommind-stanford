@@ -165,6 +165,14 @@ def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
         "dialogue_near_duplicate_suppression_count": sum(
             event.get("event") == "dialogue.near_duplicate.suppressed" for event in events
         ),
+        "dialogue_floor_handoff_count": sum(
+            event.get("event") == "dialogue.floor_handoff.to_player" for event in events
+        ),
+        "dialogue_speech_act_mismatch_rejection_count": sum(
+            event.get("event") == "llm.public_output.rejected"
+            and event.get("rejection_reason") == "speech_act_mismatch"
+            for event in events
+        ),
         "quote_confirmation_commit_count": sum(
             event.get("event") == "task_state.quote_confirmation.committed" for event in events
         ),
@@ -463,8 +471,9 @@ async def _execute_run(
                                 "recorded_at": _now().isoformat(),
                                 "llm_events": [
                                     row for row in turn_events
-                                    if str(row.get("event") or "").startswith("llm.")
-                                    or row.get("event") == "dialogue.safe_fallback.used"
+                                    if str(row.get("event") or "").startswith(
+                                        ("llm.", "dialogue.", "task_state.", "public_ledger.")
+                                    )
                                 ],
                             })
                             if step_attempt == 1:
@@ -485,8 +494,9 @@ async def _execute_run(
                             "recorded_at": _now().isoformat(),
                             "llm_events": [
                                 row for row in turn_events
-                                if str(row.get("event") or "").startswith("llm.")
-                                or row.get("event") == "dialogue.safe_fallback.used"
+                                if str(row.get("event") or "").startswith(
+                                    ("llm.", "dialogue.", "task_state.", "public_ledger.")
+                                )
                             ],
                         }
                         performance_trace.append(trace_row)
@@ -803,8 +813,9 @@ async def _evaluate_run(run_id: int) -> None:
                 "stage": "independent_external_evaluation", "duration_ms": monotonic_ms(started),
                 "recorded_at": _now().isoformat(),
                 "llm_events": [row for row in evaluation_events
-                               if str(row.get("event") or "").startswith("llm.")
-                               or row.get("event") == "dialogue.safe_fallback.used"],
+                               if str(row.get("event") or "").startswith(
+                                   ("llm.", "dialogue.", "task_state.", "public_ledger.")
+                               )],
             }]
             prior_evaluation_trace = list(existing.get("evaluation_performance_trace") or [])
             merged = {**existing, **evaluated,
