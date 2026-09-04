@@ -2,6 +2,7 @@
 
 from app.agent.speech_safety import (
     PUBLIC_RESPONSE_DRAFT,
+    near_duplicate_public_utterance,
     player_speech_rejection_reason,
     normalized_public_propositions,
     protected_information_reason,
@@ -17,6 +18,7 @@ from app.task_state import (
     advance_phase,
     apply_evaluator_updates,
     evaluate_conditions,
+    finalize_no_progress_outcome,
     finalize_stalled_task_state,
     initial_task_state,
     normalize_evaluator_payload,
@@ -1500,6 +1502,46 @@ def main() -> None:
     stalled = finalize_stalled_task_state(event_state, turn_id=10)
     assert stalled["completion_status"] == "stalled"
     assert stalled["outcome"]["type"] == "stalled"
+    bounded = finalize_no_progress_outcome(
+        cross_turn_config, closure_state, turn_id=11,
+    )
+    assert bounded["completion_status"] == "deferred"
+    assert bounded["outcome"]["status"] == "governor_bounded_close"
+    partially_met = initial_task_state(cross_turn_config)
+    partially_met["variables"]["outcome"].update(
+        value=True, status="confirmed", confirmations=["owner"]
+    )
+    partially_met["open_issues"] = ["other_required_field"]
+    conditional = finalize_no_progress_outcome(
+        {
+            **cross_turn_config,
+            "completion_conditions": {"all": [
+                {"field": "outcome", "operator": "==", "value": True,
+                 "required_status": "confirmed"},
+                {"field": "other_required_field", "operator": "==", "value": True,
+                 "required_status": "confirmed"},
+            ]},
+        },
+        partially_met,
+        turn_id=12,
+    )
+    assert conditional["completion_status"] == "conditional"
+    assert conditional["outcome"]["met_condition_count"] == 1
+
+    prior_request = (
+        "Please send the revised rollout schedule and interim staffing plan by "
+        "close of business so we can confirm operational readiness."
+    )
+    assert near_duplicate_public_utterance(
+        "Please forward the revised rollout schedule and interim staffing plan by "
+        "close of business so we can confirm operational readiness.",
+        [prior_request],
+    ) is True
+    assert near_duplicate_public_utterance(
+        "The staffing plan adds two interim specialists and reduces onboarding to "
+        "3,000 users per week.",
+        [prior_request],
+    ) is False
 
     pending = pending_public_questions([
         {"speaker_id": "user", "speaker_type": "user", "content": "Please advise."},

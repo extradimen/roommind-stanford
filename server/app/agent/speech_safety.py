@@ -101,6 +101,51 @@ _PROTECTED_STOPWORDS = {
     "the", "their", "to", "we", "with",
 }
 
+_REPETITION_STOPWORDS = {
+    "about", "after", "again", "also", "and", "are", "been", "before",
+    "could", "from", "have", "into", "just", "please", "should", "that",
+    "the", "their", "them", "then", "there", "these", "they", "this",
+    "those", "through", "today", "under", "will", "with", "would", "you",
+    "your",
+}
+
+
+def near_duplicate_public_utterance(
+    content: str, prior_utterances: list[str] | tuple[str, ...]
+) -> bool:
+    """Detect a same-speaker near-repeat without judging topic semantics.
+
+    Only the speaker's own recent public turns should be supplied.  The high
+    overlap threshold deliberately permits another participant to restate or
+    challenge a point, while blocking the promise/request paraphrase loops
+    seen in long autonomous meetings.
+    """
+    normalized = " ".join((content or "").casefold().split()).strip()
+    if not normalized:
+        return False
+
+    def tokens(value: str) -> set[str]:
+        return {
+            token for token in re.findall(r"[a-z0-9]+", value.casefold())
+            if len(token) >= 3 and token not in _REPETITION_STOPWORDS
+        }
+
+    current_tokens = tokens(normalized)
+    for prior in list(prior_utterances or ())[-4:]:
+        previous = " ".join((prior or "").casefold().split()).strip()
+        if not previous:
+            continue
+        if normalized == previous:
+            return True
+        previous_tokens = tokens(previous)
+        minimum = min(len(current_tokens), len(previous_tokens))
+        if minimum < 6:
+            continue
+        overlap = len(current_tokens.intersection(previous_tokens)) / minimum
+        if overlap >= 0.84:
+            return True
+    return False
+
 
 def normalized_public_propositions(content: str) -> list[dict[str, str]]:
     """Normalize visible completion claims before applying source policy.

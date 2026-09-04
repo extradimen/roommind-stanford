@@ -33,6 +33,7 @@ from app.public_ledger import (
 from app.scenario_side import resolve_player_side_goal
 from app.task_state import (
     TERMINAL_OUTCOMES,
+    finalize_no_progress_outcome,
     finalize_stalled_task_state,
     prepare_turn_governance,
     set_progress_metadata,
@@ -163,8 +164,10 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
         task_terminal = True
     elif stagnant_turns >= max_stagnant_turns:
         stop_reason = "no_task_progress"
-        after_task_state = finalize_stalled_task_state(after_task_state, turn_id=completed_turns)
-        completion_status = "stalled"
+        after_task_state = finalize_no_progress_outcome(
+            scenario.task_config or {}, after_task_state, turn_id=completed_turns
+        )
+        completion_status = str(after_task_state.get("completion_status") or "deferred")
         task_terminal = True
     after_task_state = set_progress_metadata(
         after_task_state,

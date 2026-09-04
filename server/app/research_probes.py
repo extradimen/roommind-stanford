@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.agent.speech_safety import (
+    near_duplicate_public_utterance,
     terminal_current_world_action_reason,
     unsupported_evidence_reason,
 )
@@ -56,14 +57,15 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     )
     is_g2_roommind = (
         session_mode == "test"
-        and architecture_version.startswith(("g2-", "g2.", "g3"))
+        and architecture_version.startswith(("g2-", "g2.", "g3", "g4"))
     )
-    is_g22_roommind = session_mode == "test" and architecture_version.startswith(("g2.2", "g2.3", "g3"))
-    is_g23_roommind = session_mode == "test" and architecture_version.startswith(("g2.3", "g3"))
-    is_g3_roommind = session_mode == "test" and architecture_version.startswith("g3")
-    is_g37_roommind = session_mode == "test" and architecture_version.startswith(("g3.7", "g3.8", "g3.9"))
-    is_g38_roommind = session_mode == "test" and architecture_version.startswith(("g3.8", "g3.9"))
-    is_g39_roommind = session_mode == "test" and architecture_version.startswith("g3.9")
+    is_g22_roommind = session_mode == "test" and architecture_version.startswith(("g2.2", "g2.3", "g3", "g4"))
+    is_g23_roommind = session_mode == "test" and architecture_version.startswith(("g2.3", "g3", "g4"))
+    is_g3_roommind = session_mode == "test" and architecture_version.startswith(("g3", "g4"))
+    is_g37_roommind = session_mode == "test" and architecture_version.startswith(("g3.7", "g3.8", "g3.9", "g4"))
+    is_g38_roommind = session_mode == "test" and architecture_version.startswith(("g3.8", "g3.9", "g4"))
+    is_g39_roommind = session_mode == "test" and architecture_version.startswith(("g3.9", "g4"))
+    is_g4_roommind = session_mode == "test" and architecture_version.startswith("g4")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -217,6 +219,18 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         }
     )
     completion_status = str(task_result.get("completion_status") or "")
+    same_speaker_near_duplicates: list[dict[str, Any]] = []
+    prior_by_speaker: dict[str, list[str]] = {}
+    for row in sorted(messages, key=lambda item: int(item.get("sequence_no") or 0)):
+        speaker_id = str(row.get("speaker_id") or "")
+        content = str(row.get("content") or "")
+        prior = prior_by_speaker.setdefault(speaker_id, [])
+        if near_duplicate_public_utterance(content, prior):
+            same_speaker_near_duplicates.append({
+                "sequence_no": int(row.get("sequence_no") or 0),
+                "speaker_id": speaker_id,
+            })
+        prior.append(content)
     capability_boundaries = task_result.get("capability_boundaries") or {}
     capability_focus_issues = [
         str((row.get("focus") or {}).get("issue") or "")
@@ -339,11 +353,11 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         ),
         "g35_completed_actions_require_tool_results": (
             not unsupported_completed_action_sources
-            if is_g3_roommind and generation_id.startswith(("G3.5", "G3.6", "G3.7", "G3.8", "G3.9")) else None
+            if is_g3_roommind and generation_id.startswith(("G3.5", "G3.6", "G3.7", "G3.8", "G3.9", "G4")) else None
         ),
         "g36_visible_current_world_actions_require_tool_results": (
             not unsupported_visible_current_world_actions
-            if is_g3_roommind and generation_id.startswith(("G3.6", "G3.7", "G3.8", "G3.9")) else None
+            if is_g3_roommind and generation_id.startswith(("G3.6", "G3.7", "G3.8", "G3.9", "G4")) else None
         ),
         "g37_capability_boundaries_not_repeated": (
             not repeated_capability_focus_issues if is_g37_roommind else None
@@ -382,6 +396,21 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         ),
         "g39_accepted_fields_project_atomically": (
             not field_projection_mismatches if is_g39_roommind else None
+        ),
+        "g4_same_speaker_near_duplicates_absent": (
+            not same_speaker_near_duplicates if is_g4_roommind else None
+        ),
+        "g4_no_progress_close_is_bounded": (
+            (
+                completion_status in {"conditional", "deferred"}
+                and bool(task_result.get("open_issues") or [])
+                and outcome.get("type") == completion_status
+            )
+            if is_g4_roommind and outcome.get("status") == "governor_bounded_close"
+            else (True if is_g4_roommind else None)
+        ),
+        "g4_task_does_not_end_stalled": (
+            completion_status != "stalled" if is_g4_roommind else None
         ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
@@ -424,6 +453,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "invalid_g3_entity_lifecycle": invalid_entity_lifecycle,
             "open_required_work_at_completion": open_required_work,
             "g39_field_projection_mismatches": field_projection_mismatches,
+            "g4_same_speaker_near_duplicates": same_speaker_near_duplicates,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }

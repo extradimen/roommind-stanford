@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.memory_stream import AgentMemoryStore, MemoryNode, active_plan
 from app.agent.speech_safety import (
     PUBLIC_RESPONSE_DRAFT,
+    near_duplicate_public_utterance,
     retain_safe_public_clauses,
     speech_rejection_reason,
 )
@@ -144,6 +145,7 @@ async def render_npc_speech(
     active_plan_text: str = "",
     reply_language: str = "en",
     validated_intent: dict[str, Any] | None = None,
+    prior_utterances: list[str] | None = None,
 ) -> tuple[str, str, str, bool]:
     """
     Stanford: NPC speech is grounded in the agent's active plan.
@@ -153,6 +155,14 @@ async def render_npc_speech(
     draft = draft.strip()
     if not draft:
         return idle_ack(reply_language), emotion, gesture, False
+    if near_duplicate_public_utterance(draft, prior_utterances or []):
+        emit(
+            "dialogue.near_duplicate.suppressed",
+            component="npc_speech_render",
+            character_id=character.character_id,
+            source="decision_draft",
+        )
+        draft = PUBLIC_RESPONSE_DRAFT
 
     # The decision model already produced public-facing speech together with
     # its structured intent.  If that draft passes the exact same boundary
@@ -273,6 +283,16 @@ Requirements:
             )
             continue
         cleaned = content.strip()
+        if near_duplicate_public_utterance(cleaned, prior_utterances or []):
+            rejection = "near_duplicate_same_speaker"
+            emit(
+                "llm.public_output.rejected",
+                component="npc_speech_render",
+                character_id=character.character_id,
+                rejection_reason=rejection,
+                retrying=attempt == 0,
+            )
+            continue
         rejection = speech_rejection_reason(
             cleaned,
             active_plan_text=active_plan_text,
@@ -381,6 +401,11 @@ async def _apply_speak(
     task_state: dict[str, Any] | None = None,
 ) -> ActionResult:
     plan = active_plan(nodes)
+    prior_utterances = [
+        str((node.meta or {}).get("display_text") or "")
+        for node in nodes
+        if node.node_type == "action" and (node.meta or {}).get("display_text")
+    ][-4:]
     content, emotion, gesture, intent_rendered = await render_npc_speech(
         character=character,
         conversation_context=conversation_context,
@@ -393,6 +418,7 @@ async def _apply_speak(
         active_plan_text=plan.content if plan else "",
         reply_language=reply_language,
         validated_intent=decision.public_intent,
+        prior_utterances=prior_utterances,
     )
     result.spoke = bool(content.strip())
     result.content = content

@@ -968,6 +968,44 @@ def finalize_stalled_task_state(
     return state
 
 
+def finalize_no_progress_outcome(
+    task_config: dict[str, Any], task_state: dict[str, Any], *, turn_id: int
+) -> dict[str, Any]:
+    """Convert conversational exhaustion into an auditable business outcome.
+
+    ``stalled`` is reserved for a technical/safety-limit failure.  When the
+    dialogue is healthy but no structured fact changes for the configured
+    window, a real meeting ends with a bounded conditional decision or a
+    deferral.  This function never marks an unmet field confirmed and retains
+    every open issue for later analysis.
+    """
+    state = deepcopy(task_state)
+    variables = state.get("variables") or {}
+    root = task_config.get("completion_conditions") or {"all": []}
+    results = [
+        *[_condition_result(condition, variables) for condition in root.get("all", [])],
+        *[_condition_result(condition, variables) for condition in root.get("any", [])],
+    ]
+    met_count = sum(bool(row.get("met")) for row in results)
+    outcome_type = "conditional" if met_count else "deferred"
+    open_issues = list(state.get("open_issues") or [])
+    state["outcome"] = {
+        "type": outcome_type,
+        "status": "governor_bounded_close",
+        "reason": (
+            "The meeting reached its no-progress boundary; confirmed work is retained "
+            "and unresolved work is deferred without inventing completion."
+        ),
+        "turn_id": int(turn_id),
+        "open_issues": open_issues,
+        "met_condition_count": met_count,
+        "condition_count": len(results),
+        "evidence": [],
+    }
+    state["completion_status"] = outcome_type
+    return state
+
+
 def _valid_public_evidence(
     evidence: Any, turn_text: dict[str, str]
 ) -> list[dict[str, Any]]:

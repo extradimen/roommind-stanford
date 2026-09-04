@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G3.9"
+    assert CURRENT_GENERATION_ID == "G4.0"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g3.9-natural-joint-confirmation-closure"
+        "g4.0-bounded-agenda-convergence"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -280,7 +280,7 @@ def main() -> None:
     g38_bundle = deepcopy(g37_bundle)
     g38_bundle["session"]["run_config"]["research_manifest"] = {
         "generation_id": "G3.8",
-        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+        "architecture_version": "g3.8-authoritative-state-reducer-closure-lock",
     }
     g38_bundle["task_result"].update({
         "completion_status": "completed",
@@ -299,7 +299,7 @@ def main() -> None:
     g39_bundle = deepcopy(g38_bundle)
     g39_bundle["session"]["run_config"]["research_manifest"] = {
         "generation_id": "G3.9",
-        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+        "architecture_version": "g3.9-natural-joint-confirmation-closure",
     }
     g39_bundle["scenario"]["task_config"] = {
         "state_schema": {"containment_active": {
@@ -335,6 +335,45 @@ def main() -> None:
     failed_g39 = run_integrity_probes(g39_bundle)
     assert failed_g39["checks"]["g39_task_does_not_end_stalled"] is False
     assert failed_g39["checks"]["g39_accepted_fields_project_atomically"] is False
+
+    g4_bundle = deepcopy(g39_bundle)
+    g4_bundle["session"]["run_config"]["research_manifest"] = {
+        "generation_id": "G4.0",
+        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+    }
+    g4_bundle["task_result"].update({
+        "completion_status": "conditional",
+        "open_issues": ["containment_active"],
+        "outcome": {
+            "type": "conditional",
+            "status": "governor_bounded_close",
+        },
+    })
+    g4_bundle["task_result"]["public_ledger"]["entities"] = {}
+    g4_bundle["messages"].append({
+        "sequence_no": 4,
+        "turn_id": 2,
+        "speaker_id": "ceo",
+        "speaker_type": "npc",
+        "speaker_source": "ai",
+        "content": "We need verified containment evidence before final approval.",
+        "created_at": "2026-01-01T00:00:04Z",
+    })
+    g4_probes = run_integrity_probes(g4_bundle)
+    assert g4_probes["checks"]["g4_task_does_not_end_stalled"] is True
+    assert g4_probes["checks"]["g4_no_progress_close_is_bounded"] is True
+    assert g4_probes["checks"]["g4_same_speaker_near_duplicates_absent"] is True
+    g4_bundle["messages"].append({
+        "sequence_no": 5,
+        "turn_id": 3,
+        "speaker_id": "ceo",
+        "speaker_type": "npc",
+        "speaker_source": "ai",
+        "content": "We need the verified containment evidence before we give final approval.",
+        "created_at": "2026-01-01T00:00:05Z",
+    })
+    repeated_g4 = run_integrity_probes(g4_bundle)
+    assert repeated_g4["checks"]["g4_same_speaker_near_duplicates_absent"] is False
 
 
 if __name__ == "__main__":

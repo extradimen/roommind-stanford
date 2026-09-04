@@ -162,6 +162,9 @@ def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
         "dialogue_public_clause_repair_count": sum(
             event.get("event") == "dialogue.public_clause_repair.used" for event in events
         ),
+        "dialogue_near_duplicate_suppression_count": sum(
+            event.get("event") == "dialogue.near_duplicate.suppressed" for event in events
+        ),
         "quote_confirmation_commit_count": sum(
             event.get("event") == "task_state.quote_confirmation.committed" for event in events
         ),
@@ -227,6 +230,9 @@ def _coordination_summary(
         ),
         "capability_boundary_closure": (
             outcome.get("status") == "capability_boundary_reconciled"
+        ),
+        "governor_bounded_close": (
+            outcome.get("status") == "governor_bounded_close"
         ),
         "authoritative_closure_lock": closure_lock.get("status") == "locked",
         "closure_reconciled_work_item_count": sum(

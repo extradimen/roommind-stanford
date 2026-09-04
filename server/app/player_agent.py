@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.memory_stream import AgentMemoryStore, active_plan
 from app.agent.speech_safety import (
+    near_duplicate_public_utterance,
     player_speech_rejection_reason,
     retain_safe_public_clauses,
 )
@@ -87,6 +88,39 @@ def bounded_dialogue(
     if not dialogue:
         return "(The meeting has not started. Make a concise opening statement.)"
     return dialogue[-safe_character_limit:]
+
+
+def public_acceptance_guard(task_config: dict[str, Any] | None) -> str:
+    """Make public decision thresholds salient to the shared player policy."""
+    root = (task_config or {}).get("completion_conditions") or {}
+    rows = []
+    for group in ("all", "any"):
+        for condition in root.get(group) or []:
+            if not isinstance(condition, dict) or not condition.get("field"):
+                continue
+            rows.append({
+                "group": group,
+                "field": condition.get("field"),
+                "operator": condition.get("operator", "=="),
+                "target": condition.get("value"),
+                "required_status": condition.get("required_status", "confirmed"),
+            })
+    if not rows:
+        return "No structured public decision threshold is configured."
+    return (
+        f"Public decision thresholds: {json.dumps(rows, ensure_ascii=False)}. "
+        "Do not call a package final or explicitly accept a field value that fails "
+        "the corresponding threshold. Acknowledge it only as an interim proposal, "
+        "counteroffer, or explicitly bounded exception."
+    )
+
+
+def recent_player_utterances(messages: list[dict[str, Any]]) -> list[str]:
+    return [
+        str(message.get("content") or "")
+        for message in messages
+        if message.get("speaker_type") == "user" or message.get("speaker_id") == "user"
+    ][-4:]
 
 
 def pending_public_questions(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -337,6 +371,7 @@ Description: {scenario.description or ''}
 Current phase: {session.current_phase}
 Task configuration: {json.dumps(scenario.task_config or {}, ensure_ascii=False)}
 Current shared task state: {json.dumps((session.shared_state or {}).get('task_state') or {}, ensure_ascii=False)}
+Acceptance guard: {public_acceptance_guard(scenario.task_config or {})}
 Consecutive turns without structured progress: {stagnant_turns}
 Public participants: {json.dumps(_public_character_context(scenario), ensure_ascii=False)}
 
@@ -445,6 +480,10 @@ Return strict JSON only:
         rejection = player_speech_rejection_reason(
             content, public_context=dialogue, validated_intent=validated_intent
         ) or ""
+        if not rejection and near_duplicate_public_utterance(
+            content, recent_player_utterances(messages)
+        ):
+            rejection = "near_duplicate_same_speaker"
         if rejection and content:
             repaired = retain_safe_public_clauses(
                 content, validated_intent=validated_intent
@@ -452,6 +491,10 @@ Return strict JSON only:
             repaired_rejection = player_speech_rejection_reason(
                 repaired, public_context=dialogue, validated_intent=validated_intent
             ) if repaired else rejection
+            if repaired and not repaired_rejection and near_duplicate_public_utterance(
+                repaired, recent_player_utterances(messages)
+            ):
+                repaired_rejection = "near_duplicate_same_speaker"
             if repaired and not repaired_rejection:
                 emit(
                     "dialogue.public_clause_repair.used",
@@ -564,6 +607,7 @@ Strategy: {config.get('player_strategy', 'balanced')}
 Public scenario title: {scenario.title}
 Public scenario description: {scenario.description or ''}
 Public task specification: {json.dumps(scenario.task_config or {}, ensure_ascii=False)}
+Acceptance guard: {public_acceptance_guard(scenario.task_config or {})}
 Evidence mode: {evidence_mode}
 Public participants: {json.dumps(_public_character_context(scenario), ensure_ascii=False)}
 
@@ -649,6 +693,10 @@ Return strict JSON only:
         rejection = player_speech_rejection_reason(
             content, public_context=dialogue, validated_intent=validated_intent
         ) or ""
+        if not rejection and near_duplicate_public_utterance(
+            content, recent_player_utterances(messages)
+        ):
+            rejection = "near_duplicate_same_speaker"
         if rejection and content:
             repaired = retain_safe_public_clauses(
                 content, validated_intent=validated_intent
@@ -656,6 +704,10 @@ Return strict JSON only:
             repaired_rejection = player_speech_rejection_reason(
                 repaired, public_context=dialogue, validated_intent=validated_intent
             ) if repaired else rejection
+            if repaired and not repaired_rejection and near_duplicate_public_utterance(
+                repaired, recent_player_utterances(messages)
+            ):
+                repaired_rejection = "near_duplicate_same_speaker"
             if repaired and not repaired_rejection:
                 emit(
                     "dialogue.public_clause_repair.used",
