@@ -22,6 +22,7 @@ from app.models.db import CharacterTemplate, ScenarioTemplate
 from app.orchestrator.common import NPCReply
 from app.orchestrator.llm_binding import ResolvedLlm
 from app.public_ledger import (
+    align_explicit_confirmation_intent,
     commit_public_intent,
     ground_public_intent_in_quote,
     validate_public_intent,
@@ -72,6 +73,7 @@ class ActionResult:
     memory_nodes: list[MemoryNode] = field(default_factory=list)
     world_events: list[WorldEvent] = field(default_factory=list)
     public_ledger_event: dict[str, Any] | None = None
+    public_intent: dict[str, Any] | None = None
 
 
 def configured_public_fallback(configured: dict[str, Any] | None) -> str:
@@ -458,6 +460,10 @@ async def _apply_speak(
         decision.public_intent = ground_public_intent_in_quote(
             decision.public_intent, content
         )
+        # Preserve the validated conversational target even when an ordinary
+        # question/statement does not create a public-ledger event.  G4.1 lost
+        # this metadata and had to guess floor ownership from display text.
+        result.public_intent = dict(decision.public_intent)
 
     if (
         task_state is not None
@@ -534,6 +540,19 @@ async def execute_decision(
 ) -> ActionResult:
     """Execute a structured decision: memory writes + optional speech on world line."""
 
+    decision.public_intent = align_explicit_confirmation_intent(
+        character=character,
+        intent=decision.public_intent,
+        public_quote=decision.speak_draft if decision.action.lower() == "speak" else "",
+        state=task_state,
+    )
+    if decision.public_intent.get("alignment") == "explicit_authorized_confirmation":
+        emit(
+            "task_state.confirmation_intent.aligned",
+            character_id=character.character_id,
+            turn_id=turn_id,
+            field=decision.public_intent.get("field"),
+        )
     decision.public_intent = validate_public_intent(
         character=character,
         intent=decision.public_intent,
@@ -856,7 +875,10 @@ def action_to_npc_reply(character: CharacterTemplate, result: ActionResult) -> N
         emotion=result.emotion,
         gesture=result.gesture,
         reasoning=result.reasoning,
-        public_intent=(result.public_ledger_event or {}).get("validated_intent"),
+        public_intent=(
+            result.public_intent
+            or (result.public_ledger_event or {}).get("validated_intent")
+        ),
         public_ledger_event=result.public_ledger_event,
     )
 

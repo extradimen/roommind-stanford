@@ -362,6 +362,10 @@ Priority:
     the player/candidate for an answer, do not answer on that person's behalf. Wait so
     the addressed participant can respond. A facilitator may redirect a question but
     must never supply another role's first-person experience or private evidence.
+16. Addressee contract: every visible question or request must set target_id to the
+    exact addressed participant ("user" for the player, otherwise character_id). If
+    asking for a person's experience, judgment, evidence, approval, or responsibility,
+    address that person directly; never redirect it to a convenient substitute.
 
 {decision_language_rule(reply_language)}
 
@@ -376,7 +380,7 @@ Output strict JSON only:
     "kind": "statement|fact|proposal|decision|commitment|action|artifact|verification|schedule|issue|outcome|handoff",
     "subject": "one stable concise public subject",
     "transition": "proposed|committed|in_progress|submitted|verified|accepted|rejected|blocked",
-    "target_id": "optional user or character_id",
+    "target_id": "required user or character_id for a question/request; otherwise optional",
     "field": "optional configured state field",
     "value": "explicit public typed field value, otherwise null",
     "simulation_scope": "discussion|in_session|external|retrospective",

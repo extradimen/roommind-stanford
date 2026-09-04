@@ -26,6 +26,7 @@ from app.external_evaluator import evaluate_public_transcript
 from app.player_character import resolve_player_character
 from app.player_agent import generate_comparison_player_move, generate_player_move
 from app.public_ledger import (
+    align_explicit_confirmation_intent,
     commit_public_intent,
     ground_public_intent_in_quote,
     validate_public_intent,
@@ -105,8 +106,22 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
         # RoomMind treatment validates its already-generated intent against the
         # authoritative current state only at the commit boundary; it does not
         # regenerate or rewrite the player's public words.
+        player_character = resolve_player_character(scenario)
+        move.public_intent = align_explicit_confirmation_intent(
+            character=player_character,
+            intent=move.public_intent,
+            public_quote=move.content,
+            state=before_task_state,
+        )
+        if move.public_intent.get("alignment") == "explicit_authorized_confirmation":
+            emit(
+                "task_state.confirmation_intent.aligned",
+                actor_id="user",
+                turn_id=completed_turns,
+                field=move.public_intent.get("field"),
+            )
         move.public_intent = validate_public_intent(
-            character=resolve_player_character(scenario),
+            character=player_character,
             intent=move.public_intent,
             turn_id=completed_turns,
             state=before_task_state,

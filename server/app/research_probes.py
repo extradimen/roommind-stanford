@@ -10,8 +10,8 @@ from __future__ import annotations
 from typing import Any
 
 from app.agent.speech_safety import (
-    direct_question_to_player,
     near_duplicate_public_utterance,
+    resolve_direct_question_target,
     terminal_current_world_action_reason,
     unsupported_evidence_reason,
 )
@@ -67,7 +67,8 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     is_g38_roommind = session_mode == "test" and architecture_version.startswith(("g3.8", "g3.9", "g4"))
     is_g39_roommind = session_mode == "test" and architecture_version.startswith(("g3.9", "g4"))
     is_g4_roommind = session_mode == "test" and architecture_version.startswith("g4")
-    is_g41_roommind = session_mode == "test" and architecture_version.startswith("g4.1")
+    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2"))
+    is_g42_roommind = session_mode == "test" and architecture_version.startswith("g4.2")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -250,7 +251,18 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             player_row.get("job_title"), *((player_row.get("aliases") or [])),
         ) if label
     ]
+    participant_aliases = {
+        str(speaker_id): [
+            str(label) for label in (
+                speaker.get("display_name"), speaker.get("character_name"),
+                speaker.get("job_title"), *((speaker.get("aliases") or [])),
+            ) if label
+        ]
+        for speaker_id, speaker in directory.items()
+        if isinstance(speaker, dict)
+    }
     player_floor_violations: list[dict[str, Any]] = []
+    question_target_mismatches: list[dict[str, Any]] = []
     rows_by_turn: dict[int, list[dict[str, Any]]] = {}
     for row in sorted(messages, key=lambda item: int(item.get("sequence_no") or 0)):
         rows_by_turn.setdefault(int(row.get("turn_id") or 0), []).append(row)
@@ -267,11 +279,27 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
                     "following_speaker_id": str(row.get("speaker_id") or ""),
                 })
                 continue
-            if direct_question_to_player(
+            intent = ((row.get("meta") or {}).get("public_intent") or {})
+            resolved_target = resolve_direct_question_target(
                 str(row.get("content") or ""),
+                public_intent=intent,
                 npc_labels=[str(label) for label in npc_labels],
                 player_labels=[str(label) for label in player_labels],
+                participant_aliases=participant_aliases,
+            )
+            structured_target = str(intent.get("target_id") or "")
+            if (
+                structured_target
+                and resolved_target
+                and structured_target not in {resolved_target, "player" if resolved_target == "user" else resolved_target}
             ):
+                question_target_mismatches.append({
+                    "turn_id": turn_id,
+                    "sequence_no": int(row.get("sequence_no") or 0),
+                    "structured_target_id": structured_target,
+                    "resolved_target_id": resolved_target,
+                })
+            if resolved_target == "user":
                 handoff_sequence = int(row.get("sequence_no") or 0)
     capability_boundaries = task_result.get("capability_boundaries") or {}
     capability_focus_issues = [
@@ -457,6 +485,9 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "g41_player_floor_handoff_respected": (
             not player_floor_violations if is_g41_roommind else None
         ),
+        "g42_structured_question_targets_match_public_speech": (
+            not question_target_mismatches if is_g42_roommind else None
+        ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
             and ledger_clock_sequence == sorted(ledger_clock_sequence)
@@ -500,6 +531,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "g39_field_projection_mismatches": field_projection_mismatches,
             "g4_same_speaker_near_duplicates": same_speaker_near_duplicates,
             "g41_player_floor_violations": player_floor_violations,
+            "g42_question_target_mismatches": question_target_mismatches,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }

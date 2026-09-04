@@ -3,6 +3,7 @@
 from app.agent.speech_safety import (
     PUBLIC_RESPONSE_DRAFT,
     direct_question_to_player,
+    resolve_direct_question_target,
     near_duplicate_public_utterance,
     player_speech_rejection_reason,
     normalized_public_propositions,
@@ -37,7 +38,8 @@ from app.player_agent import (
     retrospective_continuity_anchor,
 )
 from app.public_ledger import (
-    commit_public_intent, record_simulated_tool_result, validate_public_intent,
+    align_explicit_confirmation_intent, commit_public_intent,
+    record_simulated_tool_result, validate_public_intent,
 )
 
 
@@ -1568,6 +1570,77 @@ def main() -> None:
         "Could you, Noah, explain the engineering constraint?",
         player_labels=["Taylor"], npc_labels=["Maya", "Noah"],
     ) is False
+
+    # G4.2 resolves the named addressee from the public quote.  This takes
+    # precedence over stale model metadata and recognises given names stored
+    # inside full participant labels.
+    participant_aliases = {
+        "user": ["Taylor Morgan", "Candidate"],
+        "product_vp": ["Avery Chen", "Product VP"],
+        "people_partner": ["Maya Patel", "People Partner"],
+        "sre_lead": ["Priya Shah", "SRE Lead"],
+    }
+    assert resolve_direct_question_target(
+        "Avery, could you explain how product leadership would judge that trade-off?",
+        public_intent={"kind": "statement", "target_id": "user"},
+        participant_aliases=participant_aliases,
+    ) == "product_vp"
+    assert resolve_direct_question_target(
+        "Sofia has summarized the risk. Priya, could you state the rollback evidence?",
+        public_intent={"kind": "statement"},
+        participant_aliases=participant_aliases,
+    ) == "sre_lead"
+    assert resolve_direct_question_target(
+        "Taylor, what decision would you make with that evidence?",
+        public_intent={"kind": "statement"},
+        participant_aliases=participant_aliases,
+    ) == "user"
+    assert resolve_direct_question_target(
+        "Could you explain the operating constraint?",
+        public_intent={"kind": "statement", "target_id": "Avery Chen"},
+        participant_aliases=participant_aliases,
+    ) == "product_vp"
+
+    # A model may describe an explicit confirmation as a generic statement.
+    # The adapter may align it only to an already-known field in the speaker's
+    # authority, and must leave conditional language untouched.
+    confirmation_state = initial_task_state({
+        "state_schema": {
+            "launch_decision": {"type": "string"},
+            "candidate_questions_complete": {"type": "boolean"},
+        },
+        "phases": [{"phase_id": "closing"}],
+        "completion_conditions": {"all": []},
+    })
+    confirmation_state["variables"]["launch_decision"].update(
+        value="phased_launch", status="proposed"
+    )
+    approver = SimpleNamespace(
+        character_id="cfo",
+        authority={"can_confirm": ["launch_decision"]},
+    )
+    aligned = align_explicit_confirmation_intent(
+        character=approver,
+        intent={
+            "kind": "statement", "subject": "launch decision",
+            "transition": "committed",
+        },
+        public_quote="I formally approve the phased launch decision today.",
+        state=confirmation_state,
+    )
+    assert aligned["field"] == "launch_decision"
+    assert aligned["value"] == "phased_launch"
+    assert aligned["transition"] == "accepted"
+    conditional_alignment = align_explicit_confirmation_intent(
+        character=approver,
+        intent={
+            "kind": "statement", "subject": "launch decision",
+            "transition": "committed",
+        },
+        public_quote="I can approve the launch decision once finance verifies the budget.",
+        state=confirmation_state,
+    )
+    assert conditional_alignment.get("alignment") is None
 
     pending = pending_public_questions([
         {"speaker_id": "user", "speaker_type": "user", "content": "Please advise."},

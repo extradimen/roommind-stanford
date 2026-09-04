@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G4.1"
+    assert CURRENT_GENERATION_ID == "G4.2"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g4.1-floor-and-speech-act-ownership"
+        "g4.2-grounded-addressee-and-confirmation"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -367,7 +367,7 @@ def main() -> None:
     g41_bundle = deepcopy(g4_bundle)
     g41_bundle["session"]["run_config"]["research_manifest"] = {
         "generation_id": "G4.1",
-        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+        "architecture_version": "g4.1-floor-and-speech-act-ownership",
     }
     g41_bundle["speaker_directory"]["advisor"] = {
         "role": "npc", "display_name": "Advisor", "character_name": "Advisor",
@@ -393,6 +393,41 @@ def main() -> None:
     g41_bundle["messages"].pop()
     respected_floor = run_integrity_probes(g41_bundle)
     assert respected_floor["checks"]["g41_player_floor_handoff_respected"] is True
+
+    g42_bundle = deepcopy(g4_bundle)
+    g42_bundle["session"]["run_config"]["research_manifest"] = {
+        "generation_id": "G4.2",
+        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+    }
+    g42_bundle["speaker_directory"]["advisor"] = {
+        "role": "npc", "display_name": "Avery Chen",
+        "character_name": "Avery Chen", "job_title": "Advisor",
+        "authority": {},
+    }
+    g42_bundle["agent_memories"]["advisor"] = []
+    g42_bundle["messages"].extend([
+        {
+            "sequence_no": 5, "turn_id": 3, "speaker_id": "ceo",
+            "speaker_type": "npc", "speaker_source": "ai",
+            "content": "Avery, could you explain the operating constraint?",
+            "meta": {"public_intent": {
+                "kind": "statement", "target_id": "advisor",
+            }},
+            "created_at": "2026-01-01T00:00:05Z",
+        },
+        {
+            "sequence_no": 6, "turn_id": 3, "speaker_id": "advisor",
+            "speaker_type": "npc", "speaker_source": "ai",
+            "content": "The constraint is the limited review window.",
+            "created_at": "2026-01-01T00:00:06Z",
+        },
+    ])
+    grounded_target = run_integrity_probes(g42_bundle)
+    assert grounded_target["checks"]["g41_player_floor_handoff_respected"] is True
+    assert grounded_target["checks"]["g42_structured_question_targets_match_public_speech"] is True
+    g42_bundle["messages"][-2]["meta"]["public_intent"]["target_id"] = "user"
+    mismatched_target = run_integrity_probes(g42_bundle)
+    assert mismatched_target["checks"]["g42_structured_question_targets_match_public_speech"] is False
 
     g4_bundle["messages"].append({
         "sequence_no": 5,

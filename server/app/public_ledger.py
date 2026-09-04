@@ -422,6 +422,103 @@ def validate_public_intent(
     }
 
 
+_EXPLICIT_FIRST_PERSON_CONFIRMATION_RE = re.compile(
+    r"\b(?:i|we)\s+(?:(?:can|hereby|now|fully|explicitly|formally)\s+)*"
+    r"(?:confirm|accept|approve|agree(?:\s+to)?|endorse|sign\s+off(?:\s+on)?)\b|"
+    r"\b(?:i|we)\s+consider\b[^.!?;]{0,120}\bcomplete\b",
+    flags=re.IGNORECASE,
+)
+_CONDITIONAL_CONFIRMATION_RE = re.compile(
+    r"\b(?:conditionally|subject\s+to|provided\s+that|assuming|pending|awaiting|"
+    r"if|unless|once|when|before\s+(?:i|we)\s+(?:can|will))\b",
+    flags=re.IGNORECASE,
+)
+
+
+def align_explicit_confirmation_intent(
+    *, character: Any, intent: dict[str, Any] | None, public_quote: str,
+    state: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Align an explicit authorized confirmation with its structured intent.
+
+    Structured-output models occasionally label a plainly spoken confirmation
+    as a generic ``statement/committed`` event.  The speech boundary then
+    correctly rejects the stronger public words, silencing the role that was
+    supposed to close the field.  This deterministic adapter upgrades only an
+    unconditional first-person confirmation of an already-known field value,
+    and only when the speaker has configured confirmation authority.  It never
+    invents a value or infers agreement from a question, promise, or condition.
+    """
+    raw = dict(intent or {})
+    variables = (state or {}).get("variables") or {}
+    if not variables:
+        return raw
+    authority = (
+        character.get("authority") if isinstance(character, dict)
+        else getattr(character, "authority", None)
+    ) or {}
+    confirmable = {str(value) for value in (authority.get("can_confirm") or [])}
+    if not confirmable:
+        return raw
+
+    clauses = [
+        clause.strip()
+        for clause in re.split(r"(?<=[.!?])\s+|;\s*", " ".join((public_quote or "").split()))
+        if clause.strip() and not clause.strip().endswith("?")
+    ]
+    requested_field = str(raw.get("field") or "").strip()
+    subject = str(raw.get("subject") or "").casefold().replace("_", " ")
+    candidates = [
+        field for field in variables
+        if field in confirmable
+        and (
+            field == requested_field
+            or field.casefold().replace("_", " ") in subject
+            or subject in field.casefold().replace("_", " ")
+        )
+    ]
+    if not candidates and requested_field in variables and requested_field in confirmable:
+        candidates = [requested_field]
+    if len(candidates) != 1:
+        return raw
+    field = candidates[0]
+    field_tokens = {
+        token for token in re.findall(r"[a-z0-9]+", field.casefold().replace("_", " "))
+        if len(token) >= 3 and token not in {"the", "and", "complete", "completed"}
+    }
+    confirming_clause = next((
+        clause for clause in clauses
+        if _EXPLICIT_FIRST_PERSON_CONFIRMATION_RE.search(clause)
+        and not _CONDITIONAL_CONFIRMATION_RE.search(clause)
+        and (
+            field.casefold().replace("_", " ") in clause.casefold().replace("_", " ")
+            or (
+                field_tokens
+                and len({
+                    token for token in field_tokens
+                    if re.search(rf"\b{re.escape(token)}\b", clause, flags=re.IGNORECASE)
+                }) >= min(2, len(field_tokens))
+            )
+        )
+    ), "")
+    if not confirming_clause:
+        return raw
+    current = variables.get(field) or {}
+    value = current.get("value")
+    if value is None:
+        return raw
+    return {
+        **raw,
+        "kind": "decision",
+        "field": field,
+        "value": value,
+        "transition": "accepted",
+        "simulation_scope": "discussion",
+        "evidence_source": "public_statement",
+        "alignment": "explicit_authorized_confirmation",
+    }
+
+
 def ground_public_intent_in_quote(
     intent: dict[str, Any] | None, public_quote: str,
     *, actor_aliases: list[str] | None = None,

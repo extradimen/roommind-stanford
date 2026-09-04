@@ -168,6 +168,9 @@ def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
         "dialogue_floor_handoff_count": sum(
             event.get("event") == "dialogue.floor_handoff.to_player" for event in events
         ),
+        "dialogue_addressee_reconciliation_count": sum(
+            event.get("event") == "dialogue.addressee.reconciled" for event in events
+        ),
         "dialogue_speech_act_mismatch_rejection_count": sum(
             event.get("event") == "llm.public_output.rejected"
             and event.get("rejection_reason") == "speech_act_mismatch"
@@ -175,6 +178,9 @@ def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "quote_confirmation_commit_count": sum(
             event.get("event") == "task_state.quote_confirmation.committed" for event in events
+        ),
+        "confirmation_intent_alignment_count": sum(
+            event.get("event") == "task_state.confirmation_intent.aligned" for event in events
         ),
         "public_grounding_rejection_count": sum(
             event.get("event") == "llm.public_output.rejected"

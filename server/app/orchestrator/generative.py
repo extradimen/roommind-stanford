@@ -26,7 +26,7 @@ from app.agent.act import (
 from app.agent.loop import run_agent_tick
 from app.agent.memory_stream import AgentMemoryStore
 from app.agent.reflect import ensure_initial_plan, ensure_seed_memories, maybe_reflect
-from app.agent.speech_safety import direct_question_to_player
+from app.agent.speech_safety import resolve_direct_question_target
 from app.models.db import CharacterTemplate, DispatchRule, ScenarioTemplate
 from app.orchestrator.common import NPCReply, OrchestratorResult, npc_replies_payload, orch_support
 from app.orchestrator.defaults import ORCHESTRATION_MODE, agent_config
@@ -194,6 +194,20 @@ class GenerativeOrchestrator:
         player_labels = [
             player.get("display_name"), player.get("character_name"), player.get("job_title")
         ]
+        participant_aliases = {
+            "user": [str(label) for label in player_labels if label],
+            **{
+                char.character_id: [
+                    str(label) for label in (
+                        char.display_name,
+                        char.character_name,
+                        char.job_title,
+                        *(char.aliases or []),
+                    ) if label
+                ]
+                for char in characters
+            },
+        }
 
         # ----------------------------------------------------------------
         # PERCEIVE → RETRIEVE → REACT → ACT  (per agent, sequential)
@@ -261,18 +275,35 @@ class GenerativeOrchestrator:
 
             if loop_result.spoke and speak_quota > 0 and action_result:
                 speak_quota -= 1
+                question_target_id = resolve_direct_question_target(
+                    action_result.content,
+                    public_intent=action_result.public_intent,
+                    npc_labels=npc_labels,
+                    player_labels=[str(label) for label in player_labels if label],
+                    participant_aliases=participant_aliases,
+                )
+                floor_handed_to_player = question_target_id == "user"
+                if action_result.public_intent is not None:
+                    structured_target = str(action_result.public_intent.get("target_id") or "")
+                    if question_target_id and structured_target != question_target_id:
+                        action_result.public_intent["target_id"] = question_target_id
+                        emit(
+                            "dialogue.addressee.reconciled",
+                            component="generative_orchestrator",
+                            character_id=cid,
+                            turn_id=turn_id,
+                            structured_target_id=structured_target,
+                            resolved_target_id=question_target_id,
+                        )
+                # Freeze the reconciled intent into the reply persisted by the
+                # API/export layer.  Previously the reply was constructed
+                # first, which made this depend on incidental dict aliasing.
                 replies.append(action_to_npc_reply(char, action_result))
                 context += f"\n[{char.display_name}]: {loop_result.content}"
 
                 async for evt in yield_speech_stream(char, action_result):
                     yield evt
 
-                floor_handed_to_player = direct_question_to_player(
-                    action_result.content,
-                    public_intent=(action_result.public_ledger_event or {}).get("validated_intent"),
-                    npc_labels=npc_labels,
-                    player_labels=[str(label) for label in player_labels if label],
-                )
                 if floor_handed_to_player:
                     emit(
                         "dialogue.floor_handoff.to_player",
@@ -281,6 +312,7 @@ class GenerativeOrchestrator:
                         turn_id=turn_id,
                     )
                     agent_debug[cid]["floor_handoff_to_player"] = True
+                    agent_debug[cid]["question_target_id"] = question_target_id
 
             if loop_result.plan_update:
                 agent_debug[cid]["plan_update"] = loop_result.plan_update

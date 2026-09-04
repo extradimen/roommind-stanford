@@ -179,6 +179,7 @@ def direct_question_to_player(
     public_intent: dict | None = None,
     npc_labels: list[str] | tuple[str, ...] = (),
     player_labels: list[str] | tuple[str, ...] = (),
+    participant_aliases: dict[str, list[str] | tuple[str, ...]] | None = None,
 ) -> bool:
     """Detect when an NPC has explicitly handed the conversational floor to the player.
 
@@ -186,34 +187,103 @@ def direct_question_to_player(
     it requires a visible question/request and rejects utterances that name a
     different NPC as the addressee.
     """
+    return resolve_direct_question_target(
+        content,
+        public_intent=public_intent,
+        npc_labels=npc_labels,
+        player_labels=player_labels,
+        participant_aliases=participant_aliases,
+    ) == "user"
+
+
+def _direct_address_aliases(labels: list[str] | tuple[str, ...]) -> list[str]:
+    aliases: list[str] = []
+    for raw in labels:
+        normalized = " ".join(str(raw or "").casefold().split()).strip()
+        if len(normalized) < 2:
+            continue
+        aliases.append(normalized)
+        # Real dialogue usually addresses a person by given name even when the
+        # directory stores a full display name and title.
+        bare = re.split(r"\s*[（(]", normalized, maxsplit=1)[0].strip()
+        parts = re.findall(r"[\w'-]+", bare)
+        if len(parts) >= 2 and len(parts[0]) >= 2:
+            aliases.append(parts[0])
+    return sorted(set(aliases), key=len, reverse=True)
+
+
+def resolve_direct_question_target(
+    content: str,
+    *,
+    public_intent: dict | None = None,
+    npc_labels: list[str] | tuple[str, ...] = (),
+    player_labels: list[str] | tuple[str, ...] = (),
+    participant_aliases: dict[str, list[str] | tuple[str, ...]] | None = None,
+) -> str:
+    """Resolve the addressee of a visible direct question.
+
+    Quote-level address wins over model-authored metadata.  When the quote does
+    not name anyone, a validated registered ``target_id`` wins; only then does
+    the conservative second-person fallback infer the player.  This makes the
+    runtime rule and frozen forensic probe use the same deterministic contract.
+    """
     intent = public_intent or {}
     text = " ".join((content or "").split()).strip()
-    target_id = str(intent.get("target_id") or "").casefold().strip()
-    if target_id in {"user", "player", "candidate", "interviewee"}:
-        return bool(text and _VISIBLE_RESPONSE_REQUEST_RE.search(text))
-    if target_id:
-        return False
-
     if not text or not _VISIBLE_RESPONSE_REQUEST_RE.search(text):
-        return False
+        return ""
     folded = text.casefold()
-    for label in npc_labels:
-        normalized = " ".join(str(label or "").casefold().split()).strip()
-        if len(normalized) >= 2:
-            named_first = re.search(
-                rf"(?:^|[.!?]\s+)\s*{re.escape(normalized)}\s*[,—:-]", folded
+    aliases_by_id: dict[str, list[str]] = {
+        str(actor_id): _direct_address_aliases(list(labels or []))
+        for actor_id, labels in (participant_aliases or {}).items()
+    }
+    if not aliases_by_id:
+        aliases_by_id = {
+            "user": _direct_address_aliases(list(player_labels or [])),
+            **{
+                f"npc:{index}": _direct_address_aliases([label])
+                for index, label in enumerate(npc_labels or ())
+            },
+        }
+
+    named_matches: list[tuple[int, int, str]] = []
+    for actor_id, aliases in aliases_by_id.items():
+        for alias in aliases:
+            patterns = (
+                rf"(?:^|[.!?]\s+)\s*{re.escape(alias)}\s*[,—:-]",
+                rf"\b(?:can|could|would|will)\s+you\s*,?\s*{re.escape(alias)}\b",
             )
-            named_after_you = re.search(
-                rf"\b(?:can|could|would|will)\s+you\s*,?\s*{re.escape(normalized)}\b",
-                folded,
-            )
-            if named_first or named_after_you:
-                return False
-    for label in player_labels:
-        normalized = " ".join(str(label or "").casefold().split()).strip()
-        if len(normalized) >= 2 and normalized in folded:
-            return True
-    return bool(re.search(r"\b(?:you|your)\b", folded))
+            positions = [
+                match.start()
+                for pattern in patterns
+                for match in [re.search(pattern, folded)]
+                if match
+            ]
+            if positions:
+                named_matches.append((min(positions), -len(alias), actor_id))
+    if named_matches:
+        return min(named_matches)[2]
+
+    target_id = str(intent.get("target_id") or "").casefold().strip()
+    if target_id in {"player", "candidate", "interviewee"}:
+        target_id = "user"
+    if target_id and (not aliases_by_id or target_id in aliases_by_id):
+        return target_id
+    if target_id:
+        # Some providers return the requested participant's display name even
+        # though the schema asks for an id.  Resolve it only against the frozen
+        # directory; never accept an unregistered free-form actor.
+        normalized_target = " ".join(target_id.split())
+        matching_actors = [
+            actor_id for actor_id, aliases in aliases_by_id.items()
+            if normalized_target in aliases
+        ]
+        if len(matching_actors) == 1:
+            return matching_actors[0]
+
+    for label in _direct_address_aliases(list(player_labels or [])):
+        if re.search(rf"\b{re.escape(label)}\b", folded):
+            return "user"
+    return "user" if re.search(r"\b(?:you|your)\b", folded) else ""
 
 
 def normalized_public_propositions(content: str) -> list[dict[str, str]]:
