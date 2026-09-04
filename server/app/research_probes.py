@@ -11,6 +11,7 @@ from typing import Any
 
 from app.agent.speech_safety import (
     near_duplicate_public_utterance,
+    npc_directed_question_handoff_reason,
     resolve_direct_question_target,
     terminal_current_world_action_reason,
     unsupported_evidence_reason,
@@ -67,8 +68,9 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     is_g38_roommind = session_mode == "test" and architecture_version.startswith(("g3.8", "g3.9", "g4"))
     is_g39_roommind = session_mode == "test" and architecture_version.startswith(("g3.9", "g4"))
     is_g4_roommind = session_mode == "test" and architecture_version.startswith("g4")
-    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2"))
-    is_g42_roommind = session_mode == "test" and architecture_version.startswith("g4.2")
+    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3"))
+    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3"))
+    is_g43_roommind = session_mode == "test" and architecture_version.startswith("g4.3")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -263,6 +265,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     }
     player_floor_violations: list[dict[str, Any]] = []
     question_target_mismatches: list[dict[str, Any]] = []
+    cross_role_question_violations: list[dict[str, Any]] = []
     rows_by_turn: dict[int, list[dict[str, Any]]] = {}
     for row in sorted(messages, key=lambda item: int(item.get("sequence_no") or 0)):
         rows_by_turn.setdefault(int(row.get("turn_id") or 0), []).append(row)
@@ -301,6 +304,43 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
                 })
             if resolved_target == "user":
                 handoff_sequence = int(row.get("sequence_no") or 0)
+    ordered_messages = sorted(messages, key=lambda item: int(item.get("sequence_no") or 0))
+    for index, row in enumerate(ordered_messages):
+        if row.get("speaker_type") != "npc":
+            continue
+        source_id = str(row.get("speaker_id") or "")
+        intent = ((row.get("meta") or {}).get("public_intent") or {})
+        target_id = resolve_direct_question_target(
+            str(row.get("content") or ""),
+            public_intent=intent,
+            npc_labels=[str(label) for label in npc_labels],
+            player_labels=[str(label) for label in player_labels],
+            participant_aliases=participant_aliases,
+        )
+        if not target_id or target_id in {"user", source_id}:
+            continue
+        for following in ordered_messages[index + 1:]:
+            following_id = str(following.get("speaker_id") or "")
+            if following_id == target_id:
+                break
+            if following.get("speaker_type") != "user":
+                continue
+            following_intent = ((following.get("meta") or {}).get("public_intent") or {})
+            reason = npc_directed_question_handoff_reason(
+                str(following.get("content") or ""),
+                target_id=target_id,
+                public_intent=following_intent,
+                participant_aliases=participant_aliases,
+            )
+            if reason:
+                cross_role_question_violations.append({
+                    "question_sequence_no": int(row.get("sequence_no") or 0),
+                    "question_speaker_id": source_id,
+                    "target_id": target_id,
+                    "player_sequence_no": int(following.get("sequence_no") or 0),
+                    "reason": reason,
+                })
+            break
     capability_boundaries = task_result.get("capability_boundaries") or {}
     capability_focus_issues = [
         str((row.get("focus") or {}).get("issue") or "")
@@ -488,6 +528,9 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "g42_structured_question_targets_match_public_speech": (
             not question_target_mismatches if is_g42_roommind else None
         ),
+        "g43_cross_role_question_ownership_preserved": (
+            not cross_role_question_violations if is_g43_roommind else None
+        ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
             and ledger_clock_sequence == sorted(ledger_clock_sequence)
@@ -532,6 +575,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "g4_same_speaker_near_duplicates": same_speaker_near_duplicates,
             "g41_player_floor_violations": player_floor_violations,
             "g42_question_target_mismatches": question_target_mismatches,
+            "g43_cross_role_question_violations": cross_role_question_violations,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }

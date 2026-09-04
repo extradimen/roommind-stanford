@@ -185,6 +185,7 @@ class GenerativeOrchestrator:
         replies: list[NPCReply] = []
         speak_quota = max_speakers
         floor_handed_to_player = False
+        directed_pending: list[str] = []
         npc_labels = [
             label
             for c in characters
@@ -274,6 +275,9 @@ class GenerativeOrchestrator:
             accumulators[cid] = acc
 
             if loop_result.spoke and speak_quota > 0 and action_result:
+                # A role answering an earlier NPC-to-NPC question clears that
+                # obligation before any new question in its reply is recorded.
+                directed_pending = [target for target in directed_pending if target != cid]
                 speak_quota -= 1
                 question_target_id = resolve_direct_question_target(
                     action_result.content,
@@ -283,6 +287,13 @@ class GenerativeOrchestrator:
                     participant_aliases=participant_aliases,
                 )
                 floor_handed_to_player = question_target_id == "user"
+                if (
+                    question_target_id
+                    and question_target_id != "user"
+                    and question_target_id != cid
+                    and question_target_id not in directed_pending
+                ):
+                    directed_pending.append(question_target_id)
                 if action_result.public_intent is not None:
                     structured_target = str(action_result.public_intent.get("target_id") or "")
                     if question_target_id and structured_target != question_target_id:
@@ -402,7 +413,10 @@ class GenerativeOrchestrator:
         # ----------------------------------------------------------------
         updated_state[WorldTimeline.KEY] = timeline.to_list()
         spoken_ids = {reply.character_id for reply in replies}
-        updated_state["_pending_responses"] = [cid for cid in priority_mentions if cid not in spoken_ids]
+        updated_state["_pending_responses"] = list(dict.fromkeys([
+            *(cid for cid in priority_mentions if cid not in spoken_ids),
+            *directed_pending,
+        ]))
         updated_state["_importance_accumulators"] = accumulators
         updated_state["_last_debug"] = {
             "turn_id":                  turn_id,

@@ -59,12 +59,12 @@ _CURRENT_WORLD_OBJECT_RE = re.compile(
     flags=re.IGNORECASE,
 )
 _CURRENT_WORLD_TERMINAL_RE = re.compile(
-    r"\b(?:is|are|was|were|has\s+been|have\s+been)\s+"
+    r"\b(?:is|are|was|were|remains?|has\s+been|have\s+been)\s+"
     r"(?:already\s+|now\s+|fully\s+|successfully\s+)?(?:active|activated|inactive|deactivated|"
     r"complete|completed|finished|deployed|published|uploaded|attached|sent|delivered|"
     r"blocked|isolated|disabled|enabled|redirected|shifted|"
     r"archived|captured|stored|restored|rolled\s+back|verified|validated|"
-    r"healthy|stable|green)\b|"
+    r"healthy|stable|green|applied|terminated)\b|"
     r"\b(?:has|have)\s+(?:already\s+|now\s+|fully\s+|all\s+)?"
     r"(?:completed|finished|deployed|published|uploaded|attached|sent|archived|"
     r"captured|stored|restored|rolled\s+back|verified|validated|executed|"
@@ -72,7 +72,7 @@ _CURRENT_WORLD_TERMINAL_RE = re.compile(
     r"\b(?:i|we)\s+(?:have\s+|['’]ve\s+)?(?:activated|deactivated|completed|"
     r"finished|deployed|published|uploaded|attached|sent|archived|captured|"
     r"stored|restored|rolled\s+back|verified|validated|executed|blocked|isolated|"
-    r"disabled|enabled|redirected|shifted|delivered)\b",
+    r"disabled|enabled|redirected|shifted|delivered|applied|terminated)\b",
     flags=re.IGNORECASE,
 )
 
@@ -156,7 +156,10 @@ _PLAYER_RESPONSE_REASONING_RE = re.compile(
 )
 _VISIBLE_RESPONSE_REQUEST_RE = re.compile(
     r"(?:\?|？)|\b(?:can|could|would|will)\s+you\b|"
-    r"^\s*(?:please\s+)?(?:tell|describe|explain|share|walk|give)\b",
+    r"(?:^|[.!?]\s+)\s*(?:please\s+)?"
+    r"(?:tell|describe|explain|share|walk|give|answer|respond|address)\b|"
+    r"(?:^|[.!?]\s+)\s*[\w .'-]{2,60}[,—:-]\s*please\s+"
+    r"(?:tell|describe|explain|share|walk|give|answer|respond|address)\b",
     flags=re.IGNORECASE,
 )
 
@@ -284,6 +287,46 @@ def resolve_direct_question_target(
         if re.search(rf"\b{re.escape(label)}\b", folded):
             return "user"
     return "user" if re.search(r"\b(?:you|your)\b", folded) else ""
+
+
+_CROSS_ROLE_SUBSTITUTION_RE = re.compile(
+    r"\b(?:i|we)\s+(?:(?:can|do|will|would|must|should)\s+)?"
+    r"(?:confirm|certify|verify|validate|report|provide|supply|share|commit|"
+    r"promise|guarantee|approve|accept|reject|measure|calculate|conclude|"
+    r"found|observed|tested|inspected|reviewed|completed|executed)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def npc_directed_question_handoff_reason(
+    content: str,
+    *,
+    target_id: str,
+    public_intent: dict | None = None,
+    participant_aliases: dict[str, list[str] | tuple[str, ...]] | None = None,
+) -> str | None:
+    """Require the player to yield an NPC-directed question without answering it."""
+    target = str(target_id or "").strip()
+    if not target or target == "user":
+        return None
+    text = " ".join((content or "").split()).strip()
+    if resolve_direct_question_target(
+        text,
+        public_intent=public_intent,
+        participant_aliases=participant_aliases,
+    ) != target:
+        return "player_did_not_yield_npc_directed_question"
+    if len(text.split()) > 45:
+        return "player_expanded_npc_handoff"
+    substitution_text = re.sub(
+        r"\b(?:i|we)\s+(?:will|would|can|could|should|do)\s+not\b",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if _CROSS_ROLE_SUBSTITUTION_RE.search(substitution_text):
+        return "player_answered_for_npc"
+    return None
 
 
 def normalized_public_propositions(content: str) -> list[dict[str, str]]:
@@ -616,6 +659,45 @@ def _contains_live_artifact_presentation(text: str) -> bool:
     return any(re.search(pattern, lowered) for pattern in patterns)
 
 
+_LIVE_EVIDENTIARY_ARTIFACT_RE = re.compile(
+    r"\b(?:performance|inspection|forensic|audit|test|survey|incident|financial|"
+    r"capacity|compliance|quality|status)\s+(?:report|certificate|dashboard|log)|"
+    r"\b(?:signed\s+contract|acceptance\s+certificate|invoice|bank\s+details|"
+    r"memory\s+dump|snapshot|measurement(?:s)?|test\s+result(?:s)?)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def unsupported_live_evidentiary_artifact_reason(
+    content: str, *, validated_intent: dict | None = None,
+) -> str | None:
+    """Require engine evidence for a purported live evidentiary artifact.
+
+    A participant may compose a proposal, checklist or draft inline. A report,
+    certificate, invoice, log or measurement presented as already available is
+    evidence about the simulated world and therefore needs a registered tool
+    result rather than model-authored prose alone.
+    """
+    text = " ".join((content or "").split()).strip()
+    if not text or not _LIVE_EVIDENTIARY_ARTIFACT_RE.search(text):
+        return None
+    if not re.search(
+        r"\b(?:here\s+(?:is|are)|please\s+find\s+below|"
+        r"i(?:'ve| have)\s+(?:located|provided)|"
+        r"we(?:'ve| have)\s+(?:located|provided)|the\s+following)\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return None
+    intent = validated_intent or {}
+    tool_grounded = (
+        str(intent.get("evidence_source") or "") == "simulated_tool_result"
+        and bool(str(intent.get("tool_result_id") or "").strip())
+        and str(intent.get("validation") or "") == "accepted"
+    )
+    return None if tool_grounded else "live_evidentiary_artifact_requires_simulated_tool_result"
+
+
 def unsupported_evidence_reason(
     content: str, *, public_context: str = "",
     allow_retrospective_artifact_claims: bool = False,
@@ -736,6 +818,11 @@ def speech_rejection_reason(
         return protected_reason
 
     intent = validated_intent or {}
+    live_artifact_reason = unsupported_live_evidentiary_artifact_reason(
+        text, validated_intent=intent
+    )
+    if live_artifact_reason:
+        return live_artifact_reason
     retrospective_grounded = retrospective_claim_grounded(text)
     unsupported = unsupported_evidence_reason(
         text,

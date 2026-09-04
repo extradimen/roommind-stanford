@@ -16,7 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.memory_stream import AgentMemoryStore, active_plan
 from app.agent.speech_safety import (
     near_duplicate_public_utterance,
+    npc_directed_question_handoff_reason,
     player_speech_rejection_reason,
+    resolve_direct_question_target,
     retain_safe_public_clauses,
 )
 from app.llm.client import LLMEmptyContentError, llm_client
@@ -72,6 +74,35 @@ def _public_character_context(scenario: ScenarioTemplate) -> list[dict[str, str]
     ]
 
 
+def _public_participant_aliases(
+    scenario: ScenarioTemplate,
+) -> tuple[dict[str, list[str]], dict[str, str]]:
+    """Build a public-only participant directory shared by both conditions."""
+    player = resolve_player_character(scenario)
+    aliases: dict[str, list[str]] = {
+        "user": [
+            str(value) for value in (
+                player.get("display_name"), player.get("character_name"),
+                player.get("job_title"),
+            ) if value
+        ],
+    }
+    labels = {
+        "user": str(player.get("character_name") or player.get("display_name") or "Player")
+    }
+    for character in scenario.characters:
+        aliases[character.character_id] = [
+            str(value) for value in (
+                character.display_name, character.character_name,
+                character.job_title, *(character.aliases or []),
+            ) if value
+        ]
+        labels[character.character_id] = str(
+            character.character_name or character.display_name or character.character_id
+        )
+    return aliases, labels
+
+
 def bounded_dialogue(
     messages: list[dict[str, Any]],
     *,
@@ -123,7 +154,12 @@ def recent_player_utterances(messages: list[dict[str, Any]]) -> list[str]:
     ][-4:]
 
 
-def pending_public_questions(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+def pending_public_questions(
+    messages: list[dict[str, Any]],
+    *,
+    participant_aliases: dict[str, list[str]] | None = None,
+    participant_labels: dict[str, str] | None = None,
+) -> list[dict[str, str]]:
     """Return direct NPC questions since the player's most recent message."""
     tail: list[dict[str, Any]] = []
     for message in reversed(messages):
@@ -132,22 +168,53 @@ def pending_public_questions(messages: list[dict[str, Any]]) -> list[dict[str, s
         tail.append(message)
     questions: list[dict[str, str]] = []
     for message in reversed(tail):
+        speaker_id = str(message.get("speaker_id") or "unknown")
+        # A later utterance by the addressed NPC satisfies that floor
+        # obligation.  Do not make the player hand the same question back
+        # after the responsible role has already answered it.
+        questions = [
+            row for row in questions
+            if row.get("target_id") in {"", "user"}
+            or row.get("target_id") != speaker_id
+        ]
         content = str(message.get("content") or "").strip()
-        if "?" in content:
+        public_intent = ((message.get("meta") or {}).get("public_intent") or {})
+        if "?" in content or resolve_direct_question_target(
+            content,
+            public_intent=public_intent,
+            participant_aliases=participant_aliases,
+        ):
             # Keep complete question sentences.  Taking the last N characters
             # of a long message used to start mid-word and leaked malformed
             # fragments into the next autonomous player turn.
             parts = re.split(r"(?<=[.!?])\s+|[\r\n]+", content)
-            complete = [" ".join(part.split()) for part in parts if "?" in part]
+            complete = [
+                " ".join(part.split()) for part in parts
+                if "?" in part or resolve_direct_question_target(
+                    part,
+                    public_intent=public_intent,
+                    participant_aliases=participant_aliases,
+                )
+            ]
             question = complete[-1] if complete else ""
             question = re.sub(r"[`{}\[\]]", "", question).strip()
             if len(question) > 360:
-                question = question[:360].rsplit(" ", 1)[0].rstrip(" ,;:") + "?"
-            if not question or not question.rstrip().endswith("?"):
+                suffix = "?" if question.rstrip().endswith("?") else "."
+                question = question[:360].rsplit(" ", 1)[0].rstrip(" ,;:?.") + suffix
+            if not question:
                 continue
+            target_id = resolve_direct_question_target(
+                question,
+                public_intent=public_intent,
+                participant_aliases=participant_aliases,
+            )
             questions.append({
-                "speaker_id": str(message.get("speaker_id") or "unknown"),
+                "speaker_id": speaker_id,
                 "question": question,
+                "target_id": target_id,
+                "target_display_name": str(
+                    (participant_labels or {}).get(target_id) or target_id
+                ),
             })
     return questions[-4:]
 
@@ -235,6 +302,31 @@ def safe_comparison_player_fallback(
         }
         return _nonduplicate_player_fallback(
             variants, intent=intent, turn_id=turn_id,
+            prior_utterances=prior_utterances or [],
+        )
+
+    directed_target = str(
+        (pending_questions[-1] if pending_questions else {}).get("target_id") or ""
+    )
+    if directed_target and directed_target != "user":
+        target_label = str(
+            pending_questions[-1].get("target_display_name") or directed_target
+        )
+        variants = (
+            f"{target_label}, could you answer that question directly before we move on?",
+            f"Let's keep ownership clear. {target_label}, could you respond with the evidence within your responsibility?",
+            f"I won't answer on another role's behalf. {target_label}, could you address the question and identify any remaining uncertainty?",
+        )
+        return _nonduplicate_player_fallback(
+            variants,
+            intent={
+                "kind": "handoff",
+                "subject": "directed question ownership",
+                "transition": "proposed",
+                "target_id": directed_target,
+                "simulation_scope": "discussion",
+            },
+            turn_id=turn_id,
             prior_utterances=prior_utterances or [],
         )
 
@@ -381,7 +473,12 @@ async def generate_player_move(
         messages,
         message_limit=int(config.get("working_message_limit", 30)),
     )
-    pending_questions = pending_public_questions(messages)
+    participant_aliases, participant_labels = _public_participant_aliases(scenario)
+    pending_questions = pending_public_questions(
+        messages,
+        participant_aliases=participant_aliases,
+        participant_labels=participant_labels,
+    )
     continuity_anchor = retrospective_continuity_anchor(
         messages,
         pending_questions=pending_questions,
@@ -433,6 +530,9 @@ Avoid repeating the previous move. Keep the spoken content under 120
 words and use the same language as the dialogue, defaulting to English.
 Prioritize open issues, preserve confirmed items, and move toward the next configured phase.
 If direct NPC questions are listed above, answer the most recent specific question first.
+If its target_id is another registered participant rather than "user", do not
+answer, confirm, promise, or supply evidence on that participant's behalf.
+Briefly yield the floor to target_display_name instead.
 Treat a follow-up question as referring to the most recent public example unless
 the speaker explicitly asks for a different example. Reuse previously stated
 names, dates, quantities, and results; do not silently replace them or invent a
@@ -522,6 +622,16 @@ Return strict JSON only:
         rejection = player_speech_rejection_reason(
             content, public_context=dialogue, validated_intent=validated_intent
         ) or ""
+        latest_target = str(
+            (pending_questions[-1] if pending_questions else {}).get("target_id") or ""
+        )
+        if not rejection and latest_target and latest_target != "user":
+            rejection = npc_directed_question_handoff_reason(
+                content,
+                target_id=latest_target,
+                public_intent=validated_intent,
+                participant_aliases=participant_aliases,
+            ) or ""
         if not rejection and near_duplicate_public_utterance(
             content, recent_player_utterances(messages)
         ):
@@ -632,7 +742,12 @@ async def generate_comparison_player_move(
         messages,
         message_limit=int(config.get("working_message_limit", 30)),
     )
-    pending_questions = pending_public_questions(messages)
+    participant_aliases, participant_labels = _public_participant_aliases(scenario)
+    pending_questions = pending_public_questions(
+        messages,
+        participant_aliases=participant_aliases,
+        participant_labels=participant_labels,
+    )
     continuity_anchor = retrospective_continuity_anchor(
         messages,
         pending_questions=pending_questions,
@@ -666,7 +781,10 @@ Choose one realistic next player message. Do not infer or mention hidden state,
 private memories, agent architecture, internal phase, or system completion.
 Advance an unresolved issue, preserve explicit agreements, avoid repetition,
 and keep the message under 120 words. If direct NPC questions are listed,
-answer the most recent specific question before introducing a new issue. Use
+answer the most recent specific question before introducing a new issue. If
+the latest question's target_id is another registered participant rather than
+"user", do not answer, confirm, promise, or supply evidence on that
+participant's behalf. Briefly yield the floor to target_display_name instead. Use
 the dialogue language, default English. Do not invent links, attachments,
 measurements, approvals, live-system results, or facts controlled by another
 participant. Ask the appropriate participant for missing evidence instead. If
@@ -735,6 +853,16 @@ Return strict JSON only:
         rejection = player_speech_rejection_reason(
             content, public_context=dialogue, validated_intent=validated_intent
         ) or ""
+        latest_target = str(
+            (pending_questions[-1] if pending_questions else {}).get("target_id") or ""
+        )
+        if not rejection and latest_target and latest_target != "user":
+            rejection = npc_directed_question_handoff_reason(
+                content,
+                target_id=latest_target,
+                public_intent=validated_intent,
+                participant_aliases=participant_aliases,
+            ) or ""
         if not rejection and near_duplicate_public_utterance(
             content, recent_player_utterances(messages)
         ):

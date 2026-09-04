@@ -3,6 +3,7 @@
 from app.agent.speech_safety import (
     PUBLIC_RESPONSE_DRAFT,
     direct_question_to_player,
+    npc_directed_question_handoff_reason,
     resolve_direct_question_target,
     near_duplicate_public_utterance,
     player_speech_rejection_reason,
@@ -12,6 +13,7 @@ from app.agent.speech_safety import (
     retain_safe_public_clauses,
     speech_rejection_reason,
     terminal_current_world_action_reason,
+    unsupported_live_evidentiary_artifact_reason,
 )
 from types import SimpleNamespace
 
@@ -37,6 +39,7 @@ from app.player_agent import (
     normalize_player_content,
     pending_public_questions,
     retrospective_continuity_anchor,
+    safe_comparison_player_fallback,
 )
 from app.public_ledger import (
     align_explicit_confirmation_intent, commit_public_intent,
@@ -1663,7 +1666,100 @@ def main() -> None:
     assert long_pending == [{
         "speaker_id": "lead",
         "question": "Can you confirm the bounded decision now?",
+        "target_id": "user",
+        "target_display_name": "user",
     }]
+    directed_pending = pending_public_questions(
+        [
+            {"speaker_id": "user", "speaker_type": "user", "content": "Please advise."},
+            {
+                "speaker_id": "quality",
+                "speaker_type": "npc",
+                "content": "Morgan, could you confirm the production capacity?",
+            },
+        ],
+        participant_aliases={
+            "user": ["Alex Chen"],
+            "supplier": ["Morgan Lee", "Morgan"],
+            "quality": ["Emma Liu", "Emma"],
+        },
+        participant_labels={"supplier": "Morgan Lee"},
+    )
+    assert directed_pending[-1]["target_id"] == "supplier"
+    directed_request = pending_public_questions(
+        [
+            {"speaker_id": "user", "speaker_type": "user", "content": "Please advise."},
+            {
+                "speaker_id": "quality", "speaker_type": "npc",
+                "content": "Morgan, please explain the production constraint.",
+                "meta": {"public_intent": {"kind": "issue", "target_id": "supplier"}},
+            },
+        ],
+        participant_aliases={"supplier": ["Morgan Lee", "Morgan"]},
+        participant_labels={"supplier": "Morgan Lee"},
+    )
+    assert directed_request[-1]["target_id"] == "supplier"
+    resolved_directed_pending = pending_public_questions(
+        [
+            {"speaker_id": "user", "speaker_type": "user", "content": "Please advise."},
+            {
+                "speaker_id": "quality", "speaker_type": "npc",
+                "content": "Morgan, could you confirm the production capacity?",
+            },
+            {
+                "speaker_id": "supplier", "speaker_type": "npc",
+                "content": "The available capacity is still under review.",
+            },
+        ],
+        participant_aliases={
+            "user": ["Alex Chen"],
+            "supplier": ["Morgan Lee", "Morgan"],
+            "quality": ["Emma Liu", "Emma"],
+        },
+        participant_labels={"supplier": "Morgan Lee"},
+    )
+    assert resolved_directed_pending == []
+    handoff, handoff_intent = safe_comparison_player_fallback(
+        evidence_mode="live_operation",
+        pending_questions=directed_pending,
+        turn_id=3,
+    )
+    assert "Morgan Lee" in handoff
+    assert handoff_intent["kind"] == "handoff"
+    assert handoff_intent["target_id"] == "supplier"
+    assert npc_directed_question_handoff_reason(
+        handoff,
+        target_id="supplier",
+        public_intent=handoff_intent,
+        participant_aliases={"supplier": ["Morgan Lee", "Morgan"]},
+    ) is None
+    assert npc_directed_question_handoff_reason(
+        "I confirm capacity is 5,000 units. Morgan, could you provide the details?",
+        target_id="supplier",
+        public_intent={"kind": "handoff", "target_id": "supplier"},
+        participant_aliases={"supplier": ["Morgan Lee", "Morgan"]},
+    ) == "player_answered_for_npc"
+    assert npc_directed_question_handoff_reason(
+        "The capacity is sufficient for launch.",
+        target_id="supplier",
+        public_intent={"kind": "statement"},
+        participant_aliases={"supplier": ["Morgan Lee", "Morgan"]},
+    ) == "player_did_not_yield_npc_directed_question"
+
+    assert unsupported_live_evidentiary_artifact_reason(
+        "Here is the post-launch performance report with the measured results.",
+        validated_intent={"evidence_source": "public_statement", "validation": "accepted"},
+    ) == "live_evidentiary_artifact_requires_simulated_tool_result"
+    assert unsupported_live_evidentiary_artifact_reason(
+        "Here is a draft agenda for our next review.",
+        validated_intent={"evidence_source": "public_statement", "validation": "accepted"},
+    ) is None
+    assert terminal_current_world_action_reason(
+        "Containment remains active.", validated_intent={}
+    ) == "current_world_completion_requires_simulated_tool_result"
+    assert terminal_current_world_action_reason(
+        "The firewall rule was applied at 14:07 UTC.", validated_intent={}
+    ) == "current_world_completion_requires_simulated_tool_result"
 
     chars = [
         SimpleNamespace(character_id="first", display_name="First", character_name="First", job_title="Lead", aliases=[], sort_order=0),

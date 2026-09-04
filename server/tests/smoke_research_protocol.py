@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G4.2.1"
+    assert CURRENT_GENERATION_ID == "G4.3"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g4.2.1-grounded-addressee-and-confirmation"
+        "g4.3-cross-role-floor-and-evidence-boundary"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -396,7 +396,7 @@ def main() -> None:
 
     g42_bundle = deepcopy(g4_bundle)
     g42_bundle["session"]["run_config"]["research_manifest"] = {
-        "generation_id": "G4.2.1",
+        "generation_id": "G4.3",
         "architecture_version": CURRENT_ARCHITECTURE_VERSION,
     }
     g42_bundle["speaker_directory"]["advisor"] = {
@@ -428,6 +428,26 @@ def main() -> None:
     g42_bundle["messages"][-2]["meta"]["public_intent"]["target_id"] = "user"
     mismatched_target = run_integrity_probes(g42_bundle)
     assert mismatched_target["checks"]["g42_structured_question_targets_match_public_speech"] is False
+
+    g43_bundle = deepcopy(g42_bundle)
+    g43_bundle["messages"][-2]["meta"]["public_intent"]["target_id"] = "advisor"
+    g43_bundle["messages"].insert(-1, {
+        "sequence_no": 6, "turn_id": 4, "speaker_id": "user",
+        "speaker_type": "user", "speaker_source": "ai",
+        "content": (
+            "I confirm the operating constraint is the limited review window. "
+            "Avery, could you add the details?"
+        ),
+        "meta": {"public_intent": {"kind": "handoff", "target_id": "advisor"}},
+        "created_at": "2026-01-01T00:00:06Z",
+    })
+    g43_bundle["messages"][-1]["sequence_no"] = 7
+    g43_bundle["messages"][-1]["turn_id"] = 4
+    substituted_role = run_integrity_probes(g43_bundle)
+    assert substituted_role["checks"]["g43_cross_role_question_ownership_preserved"] is False
+    g43_bundle["messages"][-2]["content"] = "Avery, could you answer that question directly?"
+    preserved_role = run_integrity_probes(g43_bundle)
+    assert preserved_role["checks"]["g43_cross_role_question_ownership_preserved"] is True
 
     g4_bundle["messages"].append({
         "sequence_no": 5,
