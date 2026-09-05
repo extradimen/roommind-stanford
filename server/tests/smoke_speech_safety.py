@@ -4,6 +4,7 @@ from app.agent.speech_safety import (
     PUBLIC_RESPONSE_DRAFT,
     direct_question_to_player,
     npc_directed_question_handoff_reason,
+    near_duplicate_obligation_utterance,
     resolve_direct_question_target,
     near_duplicate_public_utterance,
     player_speech_rejection_reason,
@@ -1029,6 +1030,63 @@ def main() -> None:
     assert cross_state["phase"] == "done"
     assert task_progress_signature(cross_state) != before_signature
     assert public_task_result(cross_state)["variables"]["outcome"]["value"] is True
+    obligation = next(iter(cross_state["obligation_graph"]["obligations"].values()))
+    assert obligation["status"] == "satisfied"
+    assert obligation["missing_confirmer_ids"] == []
+    assert cross_state["obligation_graph"]["all_required_satisfied"] is True
+
+    # An any-only completion contract remains complete when its satisfied
+    # branch makes every alternative non-required; an empty active set must
+    # not be mistaken for an incomplete graph.
+    any_config = {
+        "state_schema": {
+            "path_a": {"type": "boolean", "confirm_permissions": ["owner"]},
+            "path_b": {"type": "boolean", "confirm_permissions": ["owner"]},
+        },
+        "completion_conditions": {"any": [
+            {"field": "path_a", "operator": "==", "value": True,
+             "required_status": "confirmed"},
+            {"field": "path_b", "operator": "==", "value": True,
+             "required_status": "confirmed"},
+        ]},
+    }
+    any_state = initial_task_state(any_config)
+    any_state["variables"]["path_b"].update(
+        value=True, status="confirmed", confirmations=["owner"],
+    )
+    evaluate_conditions(any_config, any_state)
+    assert any_state["completion_status"] == "completed"
+    assert any_state["obligation_graph"]["open_obligation_ids"] == []
+    assert any_state["obligation_graph"]["all_required_satisfied"] is True
+
+    player_joint_config = {
+        "state_schema": {
+            "joint_decision": {
+                "type": "boolean",
+                "confirmation_policy": "player_and_responsible_participant",
+                "confirm_permissions": ["player", "owner"],
+            }
+        },
+        "completion_conditions": {"all": [{
+            "field": "joint_decision", "operator": "==", "value": True,
+            "required_status": "confirmed",
+        }]},
+    }
+    player_joint_state = initial_task_state(player_joint_config)
+    player_joint_state["variables"]["joint_decision"].update(
+        value=True, status="proposed", confirmations=["owner"],
+    )
+    evaluate_conditions(player_joint_config, player_joint_state)
+    player_obligation = next(iter(
+        player_joint_state["obligation_graph"]["obligations"].values()
+    ))
+    assert player_obligation["missing_confirmer_ids"] == ["user"]
+    player_floor = prepare_turn_governance(
+        player_joint_state, task_config=player_joint_config,
+        characters=[owner], turn_id=2, safety_max_turns=10,
+        max_stagnant_turns=6,
+    )
+    assert not (player_floor.get("progress") or {}).get("focus")
 
     # A later proposal cannot silently reopen a confirmed item.
     apply_evaluator_updates(
@@ -1047,6 +1105,20 @@ def main() -> None:
     assert cross_state["variables"]["outcome"]["value"] is True
     assert cross_state["variables"]["outcome"]["status"] == "confirmed"
     assert cross_state["variables"]["outcome"]["superseded_proposals"][-1]["value"] is False
+
+    # An authorized contradiction reopens the completion obligation and the
+    # coordinator routes it to the still-required confirmer.
+    cross_state["variables"]["outcome"].update(value=False, status="disputed")
+    evaluate_conditions(cross_turn_config, cross_state)
+    reopened = next(iter(cross_state["obligation_graph"]["obligations"].values()))
+    assert reopened["status"] == "reopened"
+    assert cross_state["obligation_graph"]["all_required_satisfied"] is False
+    coordinated_reopen = prepare_turn_governance(
+        cross_state, task_config=cross_turn_config, characters=[owner], turn_id=4,
+        safety_max_turns=10, max_stagnant_turns=6,
+    )
+    assert coordinated_reopen["progress"]["focus"]["obligation_id"] == reopened["obligation_id"]
+    assert coordinated_reopen["progress"]["focus"]["owner_ids"] == ["owner"]
 
     # Evidence remains valid across harmless whitespace changes, and an omitted
     # proposer can be recovered from the verified public speaker.
@@ -1803,6 +1875,44 @@ def main() -> None:
         participant_aliases=participant_aliases,
         validated_intent={"simulation_scope": "discussion"},
     ) == "unregistered_participant_assignment"
+
+    focus = {
+        "kind": "state_variable", "obligation_id": "all:0:readiness",
+        "issue": "readiness",
+    }
+    repeated_request = "Could you confirm the readiness evidence and approval before we close?"
+    assert near_duplicate_obligation_utterance(
+        repeated_request,
+        [{"speaker_id": "first", "content": repeated_request}],
+        speaker_id="second", focus=focus,
+        public_intent={"transition": "proposed"},
+    ) is True
+    assert near_duplicate_obligation_utterance(
+        repeated_request,
+        [{"speaker_id": "first", "content": repeated_request}],
+        speaker_id="second", focus=focus,
+        public_intent={"transition": "accepted"},
+    ) is False
+    # A lifecycle label alone is not progress.  If validation rejected the
+    # attempted repeat, it remains eligible for suppression even when the
+    # model called it an acceptance.
+    assert near_duplicate_obligation_utterance(
+        repeated_request,
+        [{"speaker_id": "first", "content": repeated_request}],
+        speaker_id="second", focus=focus,
+        public_intent={"transition": "accepted", "commit_allowed": False},
+    ) is True
+
+    governed_state = initial_task_state(cross_turn_config)
+    incapable_target = validate_public_intent(
+        character=owner, state=governed_state, turn_id=1,
+        intent={
+            "kind": "handoff", "field": "outcome", "target_id": "advisor",
+            "subject": "outcome confirmation", "transition": "committed",
+        },
+    )
+    assert incapable_target["commit_allowed"] is False
+    assert "target_lacks_obligation_authority" in incapable_target["validation_reason"]
 
     chars = [
         SimpleNamespace(character_id="first", display_name="First", character_name="First", job_title="Lead", aliases=[], sort_order=0),

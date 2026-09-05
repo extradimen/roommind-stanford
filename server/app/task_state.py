@@ -305,6 +305,7 @@ def public_task_result(task_state: dict[str, Any] | None) -> dict[str, Any]:
         "work_items": deepcopy(state.get("work_items") or {}),
         "capability_boundaries": deepcopy(state.get("capability_boundaries") or {}),
         "closure_lock": deepcopy(state.get("closure_lock") or {}),
+        "obligation_graph": deepcopy(state.get("obligation_graph") or {}),
         "recent_events": deepcopy((state.get("event_ledger") or [])[-30:]),
         "outcome": deepcopy(state.get("outcome") or {}),
         "progress": deepcopy(state.get("progress") or {}),
@@ -428,8 +429,8 @@ def initial_task_state(task_config: dict[str, Any]) -> dict[str, Any]:
             "confirmations": [],
             "evidence": [],
         }
-    return {
-        "schema_version": 7,
+    state = {
+        "schema_version": 8,
         "phase": first,
         "completion_status": "in_progress",
         "variables": variables,
@@ -443,6 +444,8 @@ def initial_task_state(task_config: dict[str, Any]) -> dict[str, Any]:
         "progress": {"stagnant_turns": 0, "last_progress_turn": 0},
         "public_ledger": ensure_public_ledger({}),
     }
+    _sync_obligation_graph(task_config, state, turn_id=0)
+    return state
 
 
 def _compare(actual: Any, operator: str, expected: Any) -> bool:
@@ -481,6 +484,147 @@ def _completion_field_results(
         row["met"] for row in all_results
     ) and (not any_results or any(row["met"] for row in any_results))
     return all_results, any_results, complete
+
+
+def _confirmation_requirements(
+    spec: dict[str, Any], confirmations: list[str],
+) -> tuple[list[str], list[str]]:
+    """Return configured confirmers and the still-missing policy requirements.
+
+    The result is deliberately expressed as requirements rather than pretending
+    that every authorized participant must confirm.  Most policies require one
+    responsible counterpart, while joint policies additionally require the
+    player.  This distinction lets the coordinator route the exact missing
+    obligation without changing the scenario's confirmation semantics.
+    """
+    configured = [
+        "user" if str(value) == "player" else str(value)
+        for value in (spec.get("confirm_permissions") or [])
+        if str(value)
+    ]
+    configured = list(dict.fromkeys(configured))
+    accepted = {"user" if str(value) == "player" else str(value) for value in confirmations}
+    counterparts = [value for value in configured if value != "user"]
+    policy = str(spec.get("confirmation_policy") or "responsible_participant")
+    missing: list[str] = []
+    if policy in {
+        "player", "player_and_authorized_counterpart",
+        "player_and_responsible_participant", "player_and_assignee",
+    } and "user" not in accepted:
+        missing.append("user")
+    if policy in {
+        "responsible_participant", "player_and_authorized_counterpart",
+        "player_and_responsible_participant", "player_and_assignee",
+    } and not accepted.intersection(counterparts):
+        missing.extend(counterparts)
+    return configured, list(dict.fromkeys(missing))
+
+
+def _sync_obligation_graph(
+    task_config: dict[str, Any], task_state: dict[str, Any], *, turn_id: int,
+) -> dict[str, Any]:
+    """Materialize configured completion conditions as an auditable graph.
+
+    The graph is a deterministic projection of the scenario schema and public
+    task state.  It never introduces domain facts.  It records exactly which
+    confirmation remains, and records reopening when later authorized public
+    evidence invalidates an earlier satisfied condition.
+    """
+    schema = task_config.get("state_schema") or {}
+    variables = task_state.get("variables") or {}
+    root = task_config.get("completion_conditions") or {"all": []}
+    previous = (task_state.get("obligation_graph") or {}).get("obligations") or {}
+    obligations: dict[str, dict[str, Any]] = {}
+    transitions = list((task_state.get("obligation_graph") or {}).get("transitions") or [])
+    group_met = {
+        "all": all(
+            _condition_result(condition, variables)["met"]
+            for condition in (root.get("all") or [])
+        ),
+        "any": any(
+            _condition_result(condition, variables)["met"]
+            for condition in (root.get("any") or [])
+        ),
+    }
+    if not (root.get("all") or []):
+        group_met["all"] = True
+
+    for group in ("all", "any"):
+        for index, condition in enumerate(root.get(group) or []):
+            field = str(condition.get("field") or "")
+            if not field or field not in schema:
+                continue
+            obligation_id = f"{group}:{index}:{field}"
+            result = _condition_result(condition, variables)
+            variable = variables.get(field) or {}
+            confirmers, missing = _confirmation_requirements(
+                schema[field], list(variable.get("confirmations") or []),
+            )
+            required_now = group == "all" or not group_met["any"]
+            prior = previous.get(obligation_id) or {}
+            if result["met"]:
+                status = "satisfied"
+            elif str((task_state.get("outcome") or {}).get("type") or "") in {
+                "conditional", "deferred", "failed",
+            }:
+                status = "conditionally_closed"
+            elif prior.get("status") in {"satisfied", "reopened"}:
+                status = "reopened"
+            else:
+                status = "pending"
+            row = {
+                "obligation_id": obligation_id,
+                "group": group,
+                "field": field,
+                "description": str(schema[field].get("description") or field.replace("_", " ")),
+                "condition": deepcopy(condition),
+                "status": status,
+                "required_now": required_now,
+                "authorized_confirmer_ids": confirmers,
+                "missing_confirmer_ids": missing if not result["met"] else [],
+                "observed_value": result.get("actual"),
+                "observed_status": result.get("status"),
+                "capability_boundary": deepcopy(
+                    (task_state.get("capability_boundaries") or {}).get(field) or {}
+                ),
+                "last_transition_turn": int(
+                    turn_id if prior.get("status") != status else prior.get("last_transition_turn") or 0
+                ),
+            }
+            if prior and prior.get("status") != status:
+                transition = {
+                    "obligation_id": obligation_id,
+                    "field": field,
+                    "from": str(prior.get("status") or "pending"),
+                    "to": status,
+                    "turn_id": int(turn_id),
+                }
+                transitions.append(transition)
+                emit(
+                    f"task_state.obligation.{status}", field=field,
+                    obligation_id=obligation_id, turn_id=int(turn_id),
+                )
+            obligations[obligation_id] = row
+
+    active = [row for row in obligations.values() if row.get("required_now")]
+    has_conditions = bool((root.get("all") or []) or (root.get("any") or []))
+    all_required_satisfied = bool(
+        has_conditions
+        and group_met["all"]
+        and (not (root.get("any") or []) or group_met["any"])
+    )
+    task_state["obligation_graph"] = {
+        "schema": "roommind-meeting-obligation-graph-v1",
+        "obligations": obligations,
+        "transitions": transitions[-100:],
+        "all_required_satisfied": all_required_satisfied,
+        "open_obligation_ids": [
+            row["obligation_id"] for row in active
+            if row.get("status") != "satisfied"
+        ],
+        "last_reconciled_turn": int(turn_id),
+    }
+    return task_state
 
 
 def _reconcile_required_work_with_authoritative_fields(
@@ -630,6 +774,13 @@ def evaluate_conditions(task_config: dict[str, Any], task_state: dict[str, Any])
     ]
     task_state["open_issues"] = list(dict.fromkeys([*variable_issues, *work_issues]))
     advance_phase(task_config, task_state)
+    _sync_obligation_graph(
+        task_config, task_state,
+        turn_id=int(
+            ((ensure_public_ledger(task_state).get("simulation_clock") or {}).get("turn"))
+            or 0
+        ),
+    )
     return task_state
 
 
@@ -649,6 +800,7 @@ def set_progress_metadata(
 def prepare_turn_governance(
     task_state: dict[str, Any],
     *,
+    task_config: dict[str, Any] | None = None,
     characters: list[CharacterTemplate],
     turn_id: int,
     safety_max_turns: int,
@@ -664,6 +816,8 @@ def prepare_turn_governance(
     """
     state = deepcopy(task_state)
     _project_public_ledger(state)
+    if task_config is not None:
+        _sync_obligation_graph(task_config, state, turn_id=turn_id)
     progress = dict(state.get("progress") or {})
     stagnant_turns = max(0, int(progress.get("stagnant_turns") or 0))
     remaining_turns = max(0, int(safety_max_turns) - int(turn_id) + 1)
@@ -735,14 +889,47 @@ def prepare_turn_governance(
         if isinstance(result, dict) and str(result.get("field") or "")
     }
     capability_boundaries = state.setdefault("capability_boundaries", {})
-    for field_index, field in enumerate(state.get("open_issues") or []):
-        if str(field).startswith("work:") or field not in variables:
-            continue
-        owners = [
-            character.character_id
-            for character in characters
-            if field in ((character.authority or {}).get("can_confirm") or [])
+    obligation_rows = [
+        row for row in ((state.get("obligation_graph") or {}).get("obligations") or {}).values()
+        if isinstance(row, dict) and row.get("required_now") is True
+        and row.get("status") != "satisfied"
+    ]
+    if not obligation_rows and not (
+        (state.get("obligation_graph") or {}).get("obligations")
+    ):
+        # Backward compatibility for pre-G4.5 sessions and small unit fixtures.
+        obligation_rows = [
+            {
+                "obligation_id": f"legacy:{field}", "field": field,
+                "description": field, "required_now": True,
+                "status": (variables.get(field) or {}).get("status", "unknown"),
+                "missing_confirmer_ids": [],
+            }
+            for field in (state.get("open_issues") or [])
+            if not str(field).startswith("work:") and field in variables
         ]
+    for field_index, obligation in enumerate(obligation_rows):
+        field = str(obligation.get("field") or "")
+        if not field or field not in variables:
+            continue
+        missing_confirmers = {
+            str(value) for value in (obligation.get("missing_confirmer_ids") or [])
+        }
+        owners = [
+            character.character_id for character in characters
+            if character.character_id in missing_confirmers
+        ]
+        if missing_confirmers == {"user"}:
+            # The autonomous comparison player sees the same public graph and
+            # must contribute its own half of a joint confirmation. An NPC
+            # cannot substitute for that missing player obligation.
+            continue
+        if not owners:
+            owners = [
+                character.character_id
+                for character in characters
+                if field in ((character.authority or {}).get("can_confirm") or [])
+            ]
         item = variables.get(field) or {}
         tool_result_required = field in executable_fields
         tool_result_available = field in tool_result_fields
@@ -773,8 +960,10 @@ def prepare_turn_governance(
                 else "state_variable"
             ),
             "status": str(item.get("status") or "unknown"),
-            "subject": str(field),
+            "subject": str(obligation.get("description") or field),
             "owner_ids": owners,
+            "obligation_id": str(obligation.get("obligation_id") or ""),
+            "missing_confirmer_ids": list(obligation.get("missing_confirmer_ids") or []),
             "age_turns": 0,
             "due_now": closeout_required or (tool_result_required and not tool_result_available),
             "blocked_cooldown": False,
@@ -824,7 +1013,7 @@ def prepare_turn_governance(
             trailing_focus_streak + 1 if focus["issue"] == last_issue else 1
         )
         if focus.get("kind") == "capability_boundary":
-            field = str(focus.get("subject") or focus.get("issue") or "")
+            field = str(focus.get("issue") or "")
             existing = capability_boundaries.get(field) or {}
             capability_boundaries[field] = {
                 **existing,

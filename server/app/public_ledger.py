@@ -246,6 +246,7 @@ def validate_public_intent(
     rejection = initial_rejection
     commit_allowed = True
     field = str(raw.get("field") or "")[:96]
+    target_id = _normalize_actor(raw.get("target_id"))
     evidence_source = str(raw.get("evidence_source") or "").lower()
     if not evidence_source:
         evidence_source = (
@@ -304,6 +305,25 @@ def validate_public_intent(
         ]
         if len(matching) == 1:
             field = matching[0]
+
+    if state is not None and field and target_id and kind == "handoff":
+        matching_obligations = [
+            row for row in (
+                ((state.get("obligation_graph") or {}).get("obligations") or {}).values()
+            )
+            if isinstance(row, dict)
+            and str(row.get("field") or "") == field
+            and row.get("required_now") is True
+        ]
+        capable_targets = {
+            str(value)
+            for row in matching_obligations
+            for value in (row.get("authorized_confirmer_ids") or [])
+        }
+        if capable_targets and target_id not in capable_targets:
+            rejection = rejection or "target_lacks_obligation_authority"
+            transition = "proposed"
+            commit_allowed = False
 
     if simulation_scope == "retrospective":
         # Historical experience is a public claim, not a live world action.
@@ -406,7 +426,7 @@ def validate_public_intent(
         "subject": subject,
         "transition": transition,
         "actor_id": actor_id,
-        "target_id": _normalize_actor(raw.get("target_id")),
+        "target_id": target_id,
         "field": field,
         "value": value,
         "inline_content": inline_content,

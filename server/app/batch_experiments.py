@@ -165,6 +165,17 @@ def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
         "dialogue_near_duplicate_suppression_count": sum(
             event.get("event") == "dialogue.near_duplicate.suppressed" for event in events
         ),
+        "dialogue_obligation_duplicate_suppression_count": sum(
+            event.get("event") == "dialogue.obligation_duplicate.suppressed"
+            for event in events
+        ),
+        "obligation_transition_count": sum(
+            str(event.get("event") or "").startswith("task_state.obligation.")
+            for event in events
+        ),
+        "obligation_reopened_count": sum(
+            event.get("event") == "task_state.obligation.reopened" for event in events
+        ),
         "dialogue_floor_handoff_count": sum(
             event.get("event") == "dialogue.floor_handoff.to_player" for event in events
         ),

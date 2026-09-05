@@ -207,6 +207,56 @@ def near_duplicate_public_utterance(
     return False
 
 
+def near_duplicate_obligation_utterance(
+    content: str,
+    prior_utterances: list[dict[str, str]] | tuple[dict[str, str], ...],
+    *,
+    speaker_id: str,
+    focus: dict[str, object] | None,
+    public_intent: dict[str, object] | None = None,
+) -> bool:
+    """Detect cross-role paraphrase loops around one coordinator obligation.
+
+    A distinct authorized confirmation is material progress and is never
+    suppressed.  Otherwise, a participant should not repeat another role's
+    near-identical question or status statement about the same active focus.
+    This operates only on recent public speech and does not share private agent
+    memory.
+    """
+    if not focus or str(focus.get("kind") or "") == "outcome_resolution":
+        return False
+    intent = public_intent or {}
+    if intent.get("commit_allowed", True) and str(intent.get("transition") or "") in {
+        "accepted", "verified", "submitted", "rejected", "blocked",
+    }:
+        return False
+    normalized = " ".join((content or "").casefold().split()).strip()
+    if not normalized:
+        return False
+    is_question = normalized.endswith(("?", "？")) or bool(
+        re.search(r"\b(?:can|could|would|will)\s+you\b", normalized)
+    )
+    comparable = [
+        str(row.get("content") or "")
+        for row in list(prior_utterances or ())[-8:]
+        if str(row.get("speaker_id") or "") not in {"", speaker_id}
+        and (
+            not str(row.get("obligation_id") or "")
+            or not str(focus.get("obligation_id") or "")
+            or str(row.get("obligation_id") or "")
+            == str(focus.get("obligation_id") or "")
+        )
+        and (
+            str(row.get("content") or "").strip().endswith(("?", "？"))
+            or bool(re.search(
+                r"\b(?:can|could|would|will)\s+you\b",
+                str(row.get("content") or ""), flags=re.IGNORECASE,
+            ))
+        ) == is_question
+    ]
+    return near_duplicate_public_utterance(normalized, comparable)
+
+
 _PLAYER_RESPONSE_REASONING_RE = re.compile(
     r"\b(?:ask|asking|prompt|prompting|invite|inviting)\b"
     r"[^.!?]{0,120}\b(?:user|player|candidate|interviewee|participant)\b|"

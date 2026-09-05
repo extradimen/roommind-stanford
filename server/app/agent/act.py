@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.memory_stream import AgentMemoryStore, MemoryNode, active_plan
 from app.agent.speech_safety import (
     PUBLIC_RESPONSE_DRAFT,
+    near_duplicate_obligation_utterance,
     near_duplicate_public_utterance,
     public_speech_act_mismatch,
     retain_safe_public_clauses,
@@ -173,6 +174,8 @@ async def render_npc_speech(
     reply_language: str = "en",
     validated_intent: dict[str, Any] | None = None,
     prior_utterances: list[str] | None = None,
+    prior_public_utterances: list[dict[str, str]] | None = None,
+    coordinator_focus: dict[str, Any] | None = None,
     participant_aliases: dict[str, list[str]] | None = None,
 ) -> tuple[str, str, str, bool]:
     """
@@ -188,6 +191,20 @@ async def render_npc_speech(
             "dialogue.near_duplicate.suppressed",
             component="npc_speech_render",
             character_id=character.character_id,
+            source="decision_draft",
+        )
+        draft = PUBLIC_RESPONSE_DRAFT
+    if near_duplicate_obligation_utterance(
+        draft, prior_public_utterances or [],
+        speaker_id=character.character_id,
+        focus=coordinator_focus,
+        public_intent=validated_intent,
+    ):
+        emit(
+            "dialogue.obligation_duplicate.suppressed",
+            component="npc_speech_render",
+            character_id=character.character_id,
+            obligation_id=(coordinator_focus or {}).get("obligation_id"),
             source="decision_draft",
         )
         draft = PUBLIC_RESPONSE_DRAFT
@@ -341,6 +358,21 @@ Requirements:
                 retrying=attempt == 0,
             )
             continue
+        if near_duplicate_obligation_utterance(
+            cleaned, prior_public_utterances or [],
+            speaker_id=character.character_id,
+            focus=coordinator_focus,
+            public_intent=validated_intent,
+        ):
+            rejection = "near_duplicate_cross_role_obligation"
+            emit(
+                "dialogue.obligation_duplicate.suppressed",
+                component="npc_speech_render",
+                character_id=character.character_id,
+                obligation_id=(coordinator_focus or {}).get("obligation_id"),
+                source="rendered_candidate",
+            )
+            continue
         rejection = speech_rejection_reason(
             cleaned,
             active_plan_text=active_plan_text,
@@ -467,6 +499,18 @@ async def _apply_speak(
         for node in nodes
         if node.node_type == "action" and (node.meta or {}).get("display_text")
     ][-4:]
+    prior_public_utterances = [
+        {
+            "speaker_id": event.actor_id,
+            "content": event.content,
+            "obligation_id": str((event.meta or {}).get("obligation_id") or ""),
+        }
+        for event in ((timeline.events if timeline is not None else [])[-12:])
+        if event.event_type in {"user_speech", "npc_speech"}
+    ]
+    coordinator_focus = (
+        ((task_state or {}).get("progress") or {}).get("focus") or {}
+    )
     content, emotion, gesture, intent_rendered = await render_npc_speech(
         character=character,
         conversation_context=conversation_context,
@@ -480,6 +524,8 @@ async def _apply_speak(
         reply_language=reply_language,
         validated_intent=decision.public_intent,
         prior_utterances=prior_utterances,
+        prior_public_utterances=prior_public_utterances,
+        coordinator_focus=coordinator_focus,
         participant_aliases=participant_aliases,
     )
     result.spoke = bool(content.strip())
@@ -523,6 +569,7 @@ async def _apply_speak(
                 "emotion": emotion,
                 "gesture": gesture,
                 "action": result.action,
+                "obligation_id": str((coordinator_focus or {}).get("obligation_id") or ""),
             },
         )
         result.world_events.append(evt)

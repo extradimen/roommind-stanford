@@ -549,6 +549,12 @@ state the player's own acceptance explicitly (for example, "I confirm ...")
 before requesting documents or follow-up work. Never ask an already-confirmed
 participant to repeat the same acceptance merely because the player has not
 yet voiced its own half of the confirmation policy.
+The meeting obligation graph is the public closure contract. If an open
+obligation lists "user" among missing_confirmer_ids, provide the player's own
+explicit acceptance only when the public evidence supports it. If a previously
+satisfied obligation is marked reopened, resolve the new contradiction before
+attempting closure. Never answer or confirm on behalf of another missing
+confirmer.
 If an external file cannot be produced inside this text meeting, do not keep
 requesting it. Ask for its substantive findings inline, assign the file as a
 post-meeting deliverable, and proceed to a conditional decision or deferral.

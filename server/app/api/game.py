@@ -83,6 +83,7 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
     max_stagnant_turns = max(4, min(int((session.run_config or {}).get("max_stagnant_turns", 10)), 25))
     before_task_state = prepare_turn_governance(
         ((session.shared_state or {}).get("task_state") or {}),
+        task_config=scenario.task_config or {},
         characters=list(scenario.characters or []),
         turn_id=completed_turns,
         safety_max_turns=safety_max_turns,

@@ -118,6 +118,19 @@ def _bounded_governance_view(task_state: dict[str, Any] | None) -> dict[str, Any
         "recent_events": list(public.get("recent_events") or [])[-10:],
         "outcome": public.get("outcome") or {},
         "progress": public.get("progress") or {},
+        "obligation_graph": {
+            "schema": (public.get("obligation_graph") or {}).get("schema"),
+            "open_obligation_ids": list(
+                (public.get("obligation_graph") or {}).get("open_obligation_ids") or []
+            )[-12:],
+            "obligations": {
+                key: value
+                for key, value in list(
+                    ((public.get("obligation_graph") or {}).get("obligations") or {}).items()
+                )[-12:]
+                if isinstance(value, dict) and value.get("required_now") is True
+            },
+        },
         "public_ledger": {
             "schema": ledger.get("schema"),
             "simulation_clock": ledger.get("simulation_clock") or {},
@@ -254,8 +267,14 @@ async def run_agent_tick(
     focus_owner_ids = set((focus or {}).get("owner_ids") or [])
     owns_focus = character.character_id in focus_owner_ids
     if focus:
+        missing_confirmation = list(focus.get("missing_confirmer_ids") or [])
         focus_guidance = (
             f"Coordinator focus: {focus.get('issue')} ({focus.get('status')}). "
+            + (
+                f"Outstanding explicit confirmer(s): {missing_confirmation}. "
+                if missing_confirmation else ""
+            )
+            +
             f"{focus.get('instruction')} "
             + (
                 "You are the responsible role. Do not defer with another future promise; "
@@ -371,6 +390,11 @@ Priority:
     exact addressed participant ("user" for the player, otherwise character_id). If
     asking for a person's experience, judgment, evidence, approval, or responsibility,
     address that person directly; never redirect it to a convenient substitute.
+17. Obligation discipline: use the obligation graph as the closure contract. Only a
+    listed outstanding confirmer may close that obligation. If a satisfied obligation
+    was reopened by a later authorized contradiction or retraction, address the reopened
+    value before attempting closure. Do not assign task-critical confirmation work to a
+    participant outside the listed authorized confirmer set.
 
 {decision_language_rule(reply_language)}
 

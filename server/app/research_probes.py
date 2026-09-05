@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.agent.speech_safety import (
+    near_duplicate_obligation_utterance,
     near_duplicate_public_utterance,
     npc_directed_question_handoff_reason,
     resolve_direct_question_target,
@@ -69,10 +70,11 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     is_g38_roommind = session_mode == "test" and architecture_version.startswith(("g3.8", "g3.9", "g4"))
     is_g39_roommind = session_mode == "test" and architecture_version.startswith(("g3.9", "g4"))
     is_g4_roommind = session_mode == "test" and architecture_version.startswith("g4")
-    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4"))
-    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4"))
-    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4"))
-    is_g44_roommind = session_mode == "test" and architecture_version.startswith("g4.4")
+    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4", "g4.5"))
+    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5"))
+    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5"))
+    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5"))
+    is_g45_roommind = session_mode == "test" and architecture_version.startswith("g4.5")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -238,6 +240,31 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
                 "speaker_id": speaker_id,
             })
         prior.append(content)
+    focus_by_turn = {
+        int(row.get("turn_id") or 0): (row.get("focus") or {})
+        for row in coordination_history if isinstance(row, dict)
+    }
+    cross_role_obligation_duplicates: list[dict[str, Any]] = []
+    prior_public_rows: list[dict[str, str]] = []
+    for row in sorted(messages, key=lambda item: int(item.get("sequence_no") or 0)):
+        if str(row.get("speaker_type") or "") not in {"npc", "user"}:
+            continue
+        speaker_id = str(row.get("speaker_id") or "")
+        content = str(row.get("content") or "")
+        focus = focus_by_turn.get(int(row.get("turn_id") or 0)) or {}
+        if row.get("speaker_type") == "npc" and near_duplicate_obligation_utterance(
+            content, prior_public_rows, speaker_id=speaker_id, focus=focus,
+            public_intent=((row.get("meta") or {}).get("public_intent") or {}),
+        ):
+            cross_role_obligation_duplicates.append({
+                "sequence_no": int(row.get("sequence_no") or 0),
+                "speaker_id": speaker_id,
+                "obligation_id": str(focus.get("obligation_id") or ""),
+            })
+        prior_public_rows.append({
+            "speaker_id": speaker_id, "content": content,
+            "obligation_id": str(focus.get("obligation_id") or ""),
+        })
     npc_labels = [
         label
         for speaker_id, speaker in directory.items()
@@ -431,6 +458,41 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             or not accepted_by.issubset(projected_confirmations)
         ):
             field_projection_mismatches.append(str(field))
+    obligation_graph = task_result.get("obligation_graph") or {}
+    obligations = obligation_graph.get("obligations") or {}
+    expected_open_obligations = sorted(
+        str(row.get("obligation_id") or key)
+        for key, row in obligations.items()
+        if isinstance(row, dict) and row.get("required_now") is True
+        and row.get("status") != "satisfied"
+    )
+    recorded_open_obligations = sorted(
+        str(value) for value in (obligation_graph.get("open_obligation_ids") or [])
+    )
+    incapable_obligation_targets: list[dict[str, Any]] = []
+    for event in ledger_events:
+        if not isinstance(event, dict):
+            continue
+        if str(event.get("entity_kind") or "") != "handoff":
+            continue
+        field = str(event.get("field") or "")
+        target_id = "user" if str(event.get("target_id") or "") == "player" else str(event.get("target_id") or "")
+        if not field or not target_id:
+            continue
+        matching = [
+            row for row in obligations.values()
+            if isinstance(row, dict) and str(row.get("field") or "") == field
+        ]
+        capable = {
+            "user" if str(value) == "player" else str(value)
+            for obligation in matching
+            for value in (obligation.get("authorized_confirmer_ids") or [])
+        }
+        if capable and target_id not in capable:
+            incapable_obligation_targets.append({
+                "event_id": str(event.get("event_id") or ""),
+                "field": field, "target_id": target_id,
+            })
     checks = {
         "public_transcript_nonempty": bool(messages),
         "sequence_numbers_unique": len(sequence) == len(set(sequence)),
@@ -550,6 +612,25 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "g44_in_session_owners_are_registered": (
             not unregistered_public_assignments if is_g44_roommind else None
         ),
+        "g45_obligation_graph_present": (
+            obligation_graph.get("schema") == "roommind-meeting-obligation-graph-v1"
+            and bool(obligations) if is_g45_roommind else None
+        ),
+        "g45_open_obligations_reconcile": (
+            expected_open_obligations == recorded_open_obligations
+            if is_g45_roommind else None
+        ),
+        "g45_completed_requires_satisfied_obligations": (
+            bool(obligation_graph.get("all_required_satisfied"))
+            if is_g45_roommind and completion_status == "completed"
+            else (True if is_g45_roommind else None)
+        ),
+        "g45_obligation_targets_authorized": (
+            not incapable_obligation_targets if is_g45_roommind else None
+        ),
+        "g45_cross_role_obligation_repetition_absent": (
+            not cross_role_obligation_duplicates if is_g45_roommind else None
+        ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
             and ledger_clock_sequence == sorted(ledger_clock_sequence)
@@ -596,6 +677,10 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "g42_question_target_mismatches": question_target_mismatches,
             "g43_cross_role_question_violations": cross_role_question_violations,
             "g44_unregistered_public_assignments": unregistered_public_assignments,
+            "g45_cross_role_obligation_duplicates": cross_role_obligation_duplicates,
+            "g45_incapable_obligation_targets": incapable_obligation_targets,
+            "g45_expected_open_obligations": expected_open_obligations,
+            "g45_recorded_open_obligations": recorded_open_obligations,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }

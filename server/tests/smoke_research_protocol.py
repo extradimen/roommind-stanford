@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G4.4"
+    assert CURRENT_GENERATION_ID == "G4.5"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g4.4-deterministic-floor-owner-and-timebox-closure"
+        "g4.5-obligation-graph-governed-agents"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -452,7 +452,7 @@ def main() -> None:
     g44_bundle = deepcopy(g43_bundle)
     g44_bundle["session"]["run_config"]["research_manifest"] = {
         "generation_id": "G4.4",
-        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+        "architecture_version": "g4.4-deterministic-floor-owner-and-timebox-closure",
     }
     g44_bundle["messages"].append({
         "sequence_no": 8, "turn_id": 5, "speaker_id": "ceo",
@@ -479,6 +479,48 @@ def main() -> None:
     }
     external_owner = run_integrity_probes(g44_bundle)
     assert external_owner["checks"]["g44_in_session_owners_are_registered"] is True
+
+    g45_bundle = deepcopy(g44_bundle)
+    g45_bundle["session"]["run_config"]["research_manifest"] = {
+        "generation_id": "G4.5",
+        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+    }
+    g45_bundle["scenario"]["task_config"] = {
+        "state_schema": {
+            "decision": {
+                "type": "boolean", "confirm_permissions": ["player", "ceo"],
+                "confirmation_policy": "player_and_responsible_participant",
+            }
+        },
+        "completion_conditions": {"all": [{
+            "field": "decision", "operator": "==", "value": True,
+            "required_status": "confirmed",
+        }]},
+    }
+    g45_bundle["task_result"].update({
+        "completion_status": "in_progress",
+        "obligation_graph": {
+            "schema": "roommind-meeting-obligation-graph-v1",
+            "all_required_satisfied": False,
+            "open_obligation_ids": ["all:0:decision"],
+            "obligations": {
+                "all:0:decision": {
+                    "obligation_id": "all:0:decision", "field": "decision",
+                    "status": "pending", "required_now": True,
+                    "authorized_confirmer_ids": ["user", "ceo"],
+                    "missing_confirmer_ids": ["user", "ceo"],
+                }
+            },
+        },
+    })
+    g45_bundle["task_result"]["public_ledger"]["recent_events"] = []
+    g45 = run_integrity_probes(g45_bundle)
+    assert g45["checks"]["g45_obligation_graph_present"] is True
+    assert g45["checks"]["g45_open_obligations_reconcile"] is True
+    assert g45["checks"]["g45_obligation_targets_authorized"] is True
+    g45_bundle["task_result"]["obligation_graph"]["open_obligation_ids"] = []
+    bad_open_graph = run_integrity_probes(g45_bundle)
+    assert bad_open_graph["checks"]["g45_open_obligations_reconcile"] is False
 
     g4_bundle["messages"].append({
         "sequence_no": 5,
