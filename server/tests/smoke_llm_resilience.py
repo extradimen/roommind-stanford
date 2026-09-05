@@ -96,9 +96,22 @@ async def main() -> None:
     performance = _performance_summary([{"llm_events": [
         {"event": "dialogue.safe_fallback.used"},
         {"event": "llm.degraded_fallback"},
+        {"event": "dialogue.cross_role_handoff.enforced"},
+        {
+            "event": "llm.public_output.rejected",
+            "rejection_reason": "unregistered_participant_assignment",
+        },
+        {
+            "event": "llm.public_output.rejected",
+            "rejection_reason": "current_world_completion_requires_simulated_tool_result",
+        },
     ]}])
     assert performance["dialogue_safe_fallback_count"] == 1
     assert performance["llm_degraded_fallback_count"] == 1
+    assert performance["dialogue_cross_role_handoff_enforced_count"] == 1
+    assert performance["unregistered_owner_rejection_count"] == 1
+    assert performance["current_world_grounding_rejection_count"] == 1
+    assert performance["public_grounding_rejection_count"] == 1
     historical_fallbacks = [
         safe_comparison_player_fallback(
             evidence_mode="retrospective_claim", pending_questions=[], turn_id=turn,

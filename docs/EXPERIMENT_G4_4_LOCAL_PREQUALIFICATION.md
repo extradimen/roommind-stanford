@@ -40,6 +40,10 @@ The frozen G4.3 experiment exposed four domain-neutral failures:
    reserved for a state the reducer cannot reconcile.
 5. **Independent G4.4 probe.** Frozen exports report whether any public turn
    assigned in-session responsibility to an unregistered participant.
+6. **Mechanism telemetry.** Batch performance summaries separately count
+   deterministic cross-role handoffs, unregistered-owner rejections and
+   current-world grounding rejections, while the existing governor summary
+   records the timebox stop reason.
 
 The independent memories, perception/retrieval/planning/reflection/action
 loops, task coordinator, scenarios and six-dimension evaluator are unchanged.
@@ -87,4 +91,3 @@ Qualification requires:
 External human review must not start automatically. Even a full engineering
 pass remains exploratory evidence until the paired transcript review supports
 promotion.
-

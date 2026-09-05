@@ -168,6 +168,10 @@ def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
         "dialogue_floor_handoff_count": sum(
             event.get("event") == "dialogue.floor_handoff.to_player" for event in events
         ),
+        "dialogue_cross_role_handoff_enforced_count": sum(
+            event.get("event") == "dialogue.cross_role_handoff.enforced"
+            for event in events
+        ),
         "dialogue_addressee_reconciliation_count": sum(
             event.get("event") == "dialogue.addressee.reconciled" for event in events
         ),
@@ -189,6 +193,17 @@ def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
                 or str(event.get("rejection_reason") or "")
                 == "current_world_completion_requires_simulated_tool_result"
             )
+            for event in events
+        ),
+        "unregistered_owner_rejection_count": sum(
+            event.get("event") == "llm.public_output.rejected"
+            and event.get("rejection_reason") == "unregistered_participant_assignment"
+            for event in events
+        ),
+        "current_world_grounding_rejection_count": sum(
+            event.get("event") == "llm.public_output.rejected"
+            and event.get("rejection_reason")
+            == "current_world_completion_requires_simulated_tool_result"
             for event in events
         ),
         "llm_total_duration_ms": sum(int(event.get("duration_ms") or 0) for event in successes),
