@@ -132,6 +132,14 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
         move.public_intent = ground_public_intent_in_quote(
             move.public_intent, move.content
         )
+        if move.public_intent.get("quote_grounding") == "material_clause":
+            emit(
+                "public_ledger.intent.clause_grounded",
+                actor_id="user",
+                turn_id=completed_turns,
+                field=move.public_intent.get("field"),
+                transition=move.public_intent.get("transition"),
+            )
     if move.public_intent and move.public_intent.get("commit_allowed", True):
         commit_public_intent(
             before_task_state,

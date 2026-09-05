@@ -37,6 +37,11 @@ _UNSUPPORTED_ARTIFACT_PATTERNS = (
     r"\b(?:download|open|access)\s+(?:it|the\s+(?:file|document|report))\s+(?:at|here)\b",
     r"\b(?:checksum|hash)(?:es)?\s+(?:has|have)?\s*(?:been\s+)?(?:verified|validated|matched|confirmed)\b",
     r"\b(?:checksum|hash)(?:es)?\s+match(?:es|ed)?\b",
+    r"\b(?:hash|checksum)\s+signatures?\s+match(?:es|ed)?\b",
+    r"\b(?:i(?:['’]ve| have)|we(?:['’]ve| have))\s+(?:placed|put)\b"
+    r"[^.!?]{0,160}\b(?:bucket|store|repository|channel)\b",
+    r"\b(?:i(?:['’]ve| have)|we(?:['’]ve| have))\s+(?:received|got)\b"
+    r"[^.!?]{0,120}\b(?:log|logs|hash|hashes|checksum|checksums|snapshot|snapshots)\b",
 )
 _URL_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:https?|ftp|s3|repo|file)://[^\s<>\]\[\)\(]+",
@@ -76,6 +81,16 @@ _CURRENT_WORLD_TERMINAL_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
+# Live quantitative telemetry is evidence too. It must not bypass the
+# simulated-tool boundary merely because the sentence says a metric "dropped"
+# instead of using a terminal verb such as "verified" or "completed".
+_CURRENT_WORLD_METRIC_ASSERTION_RE = re.compile(
+    r"\b(?:error|success|failure|latency|availability|throughput)\s*(?:rate)?\b"
+    r"[^.!?;]{0,80}\b(?:dropped|fallen|decreased|increased|improved|remains?|is|are)\b"
+    r"[^.!?;]{0,50}(?:\d+(?:\.\d+)?\s*%|\d+(?:\.\d+)?\s*(?:ms|seconds?))",
+    flags=re.IGNORECASE,
+)
+
 _UNREGISTERED_OWNER_PATTERNS = (
     re.compile(
         r"\b(?:assign(?:ing)?|designate|appoint)\s+"
@@ -88,6 +103,14 @@ _UNREGISTERED_OWNER_PATTERNS = (
         r"(?:is|stays|will\s+be|can\s+be)\s+(?:the\s+)?"
         r"(?:primary\s+)?(?:[A-Za-z][A-Za-z-]*\s+){0,3}"
         r"(?:owner|lead|reviewer|assignee)\b"
+    ),
+    re.compile(
+        r"\b(?:assign(?:ing)?|hand(?:ing)?|transfer(?:ring)?)\b[^.!?;]{1,120}\bto\s+"
+        r"(?P<name>[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+)+)\b"
+    ),
+    re.compile(
+        r"\b(?P<name>[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+)+)\s+"
+        r"(?:will|shall)\s+(?:handle|own|verify|confirm|deliver|provide|complete|follow\s+up)\b"
     ),
 )
 _EXTERNAL_FOLLOWUP_QUOTE_RE = re.compile(
@@ -859,6 +882,8 @@ def terminal_current_world_action_reason(
     )
     if tool_grounded:
         return None
+    if _CURRENT_WORLD_METRIC_ASSERTION_RE.search(content or ""):
+        return "current_world_completion_requires_simulated_tool_result"
     if any(
         row["modality"] == "asserted_current"
         for row in normalized_public_propositions(content)

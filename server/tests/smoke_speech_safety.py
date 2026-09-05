@@ -1841,6 +1841,18 @@ def main() -> None:
         "I have reviewed the verification hashes and they matched.",
         validated_intent={"transition": "proposed"},
     ) == "current_world_completion_requires_simulated_tool_result"
+    assert speech_rejection_reason(
+        "I’ve placed the immutable logs in the shared evidence bucket.",
+        validated_intent={"transition": "proposed"},
+    ) == "unsupported_artifact_claim"
+    assert speech_rejection_reason(
+        "The SHA-256 hash signatures match the recorded values.",
+        validated_intent={"transition": "proposed"},
+    ) == "unsupported_artifact_claim"
+    assert terminal_current_world_action_reason(
+        "The error rate has dropped from 15% to 2% across the affected endpoints.",
+        validated_intent={"transition": "proposed"},
+    ) == "current_world_completion_requires_simulated_tool_result"
 
     participant_aliases = {
         "user": ["Alex Chen"],
@@ -1848,6 +1860,14 @@ def main() -> None:
     }
     assert unregistered_participant_assignment_reason(
         "I'm assigning Alex Patel as the evidence owner.",
+        participant_aliases=participant_aliases,
+    ) == "unregistered_participant_assignment"
+    assert unregistered_participant_assignment_reason(
+        "We'll assign the remaining verification step to Jordan Patel.",
+        participant_aliases=participant_aliases,
+    ) == "unregistered_participant_assignment"
+    assert unregistered_participant_assignment_reason(
+        "Jordan Patel will handle the final verification.",
         participant_aliases=participant_aliases,
     ) == "unregistered_participant_assignment"
     assert unregistered_participant_assignment_reason(
@@ -1875,6 +1895,17 @@ def main() -> None:
         participant_aliases=participant_aliases,
         validated_intent={"simulation_scope": "discussion"},
     ) == "unregistered_participant_assignment"
+
+    first_recovery, _ = safe_comparison_player_fallback(
+        evidence_mode="live_operation", pending_questions=[], turn_id=1,
+        prior_utterances=[],
+    )
+    second_recovery, second_intent = safe_comparison_player_fallback(
+        evidence_mode="live_operation", pending_questions=[], turn_id=2,
+        prior_utterances=[first_recovery],
+    )
+    assert second_intent["_requested_end"] is True
+    assert "not adding new evidence" in second_recovery
 
     focus = {
         "kind": "state_variable", "obligation_id": "all:0:readiness",

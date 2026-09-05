@@ -15,9 +15,9 @@ RoomMind's descriptive six-dimension mean exceeded Baseline by 0.250 and manual
 reading favored RoomMind in three scenarios. The candidate is not promoted to
 external human review because one RoomMind incident dialogue still loops and
 ends with contradictory evidence state, one legacy near-duplicate probe fails,
-and the new cross-role-obligation probe produces one false positive because the
-export omits the accepted public-intent metadata needed to distinguish a valid
-confirmation from a restatement. These are development findings, not
+and the new cross-role-obligation probe produces one false positive because
+quote grounding treats a mixed confirmation-plus-question as if the whole
+utterance were only a request. These are development findings, not
 confirmatory evidence of a treatment advantage.
 
 ## Frozen protocol
@@ -92,8 +92,9 @@ authorized confirmations of price, delivery and inspection protocol instead of
 Baseline's long post-agreement loop and fabricated emails, spreadsheets and
 SOP artifacts. The flagged sequence 11 is not a substantive duplicate: the
 Supplier CEO confirms the 84 RMB price and then routes the protocol question to
-Emma. The offline probe lacks the accepted-intent marker that caused runtime to
-preserve this material confirmation. Remaining weaknesses are an incorrect
+Emma. The clause-wide grounding check rejects its accepted intent merely
+because the later clause is a question, so the probe sees no material
+transition. Remaining weaknesses are an incorrect
 reference to the 83 RMB market benchmark as capacity utilization and an ally
 offering to circulate documents beyond a procurement analyst's natural role.
 This pair favors RoomMind.
@@ -142,7 +143,7 @@ better, while conversational realism remains inadequate.
 | Completed runs require satisfied obligations | Pass | negotiation, launch and interview close with zero open obligations |
 | Authorized obligation targets | Pass | no incapable obligation target |
 | Truthful bounded close | Pass | incident retains two open obligations as conditional |
-| Cross-role obligation repetition | **Measurement fail** | sequence 11 is a valid accepted confirmation, but export lacks intent metadata |
+| Cross-role obligation repetition | **Measurement fail** | sequence 11 is a valid accepted confirmation, but clause-wide grounding rejects the mixed turn |
 | Legacy same-speaker repetition | **Fail** | incident sequence 16 repeats containment status |
 | Consistent paired realism progression | **Fail** | one AI pair regresses and one ties; manual incident pair remains inadequate |
 | Manual role, evidence and temporal realism | **Fail** | incident contains contradictory and unsupported current-world claims |

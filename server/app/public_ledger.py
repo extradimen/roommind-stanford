@@ -555,17 +555,6 @@ def ground_public_intent_in_quote(
         return grounded
     transition = str(grounded.get("transition") or "proposed")
     quote = " ".join(str(public_quote or "").casefold().split())
-    if transition != "proposed" and (
-        quote.rstrip().endswith("?")
-        or re.search(r"\b(?:please|could\s+you|can\s+you|would\s+you)\b", quote)
-    ):
-        prior_reason = str(grounded.get("validation_reason") or "")
-        grounded["commit_allowed"] = False
-        grounded["validation"] = "rejected"
-        grounded["validation_reason"] = ";".join(filter(None, [
-            prior_reason, "public_quote_is_request_not_transition",
-        ]))
-        return grounded
     subject = str(grounded.get("subject") or "").strip()
     field = str(grounded.get("field") or "").strip()
     expected_tokens = _identity_tokens(f"{subject} {field}") if (subject or field) else set()
@@ -640,13 +629,33 @@ def ground_public_intent_in_quote(
         "blocked": r"\b(?:i|we)\s+(?:cannot|can't|am unable|are unable)\b|\b(?:is|are|remains?)\s+blocked\b",
     }
     pattern = patterns.get(transition)
-    if pattern and not re.search(pattern, quote, flags=re.IGNORECASE):
+    transition_match = (
+        re.search(pattern, quote, flags=re.IGNORECASE) if pattern else None
+    )
+    if pattern and not transition_match:
         prior_reason = str(grounded.get("validation_reason") or "")
+        request_only = (
+            quote.rstrip().endswith("?")
+            or bool(re.search(
+                r"\b(?:please|could\s+you|can\s+you|would\s+you)\b", quote
+            ))
+        )
         grounded["commit_allowed"] = False
         grounded["validation"] = "rejected"
         grounded["validation_reason"] = ";".join(filter(None, [
-            prior_reason, "public_quote_does_not_support_transition",
+            prior_reason,
+            (
+                "public_quote_is_request_not_transition"
+                if request_only
+                else "public_quote_does_not_support_transition"
+            ),
         ]))
+    elif transition_match and re.search(
+        r"\b(?:please|could\s+you|can\s+you|would\s+you)\b|[?？]", quote
+    ):
+        # Preserve the audit fact that a material declarative clause was
+        # grounded even though a different clause asks a follow-up question.
+        grounded["quote_grounding"] = "material_clause"
     return grounded
 
 

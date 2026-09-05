@@ -176,6 +176,10 @@ def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
         "obligation_reopened_count": sum(
             event.get("event") == "task_state.obligation.reopened" for event in events
         ),
+        "clause_local_grounding_count": sum(
+            event.get("event") == "public_ledger.intent.clause_grounded"
+            for event in events
+        ),
         "dialogue_floor_handoff_count": sum(
             event.get("event") == "dialogue.floor_handoff.to_player" for event in events
         ),

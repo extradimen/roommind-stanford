@@ -30,6 +30,16 @@ def main() -> None:
         "We have provided the pricing structure in full below.",
     )
     assert grounded_submission["commit_allowed"] is True
+    mixed_confirmation = ground_public_intent_in_quote(
+        {
+            "kind": "decision", "subject": "unit price", "field": "unit_price",
+            "value": 84, "transition": "accepted", "commit_allowed": True,
+            "validation": "accepted", "validation_reason": "",
+        },
+        "I confirm the unit price at 84 RMB. Emma, could you confirm the quality protocol?",
+    )
+    assert mixed_confirmation["commit_allowed"] is True
+    assert mixed_confirmation["quote_grounding"] == "material_clause"
     unrelated_proposal = ground_public_intent_in_quote(
         {"kind": "issue", "subject": "quality protocol", "transition": "proposed", "commit_allowed": True},
         "Could you provide the annual volume forecast?",

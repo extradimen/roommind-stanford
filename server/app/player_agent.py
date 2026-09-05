@@ -368,10 +368,13 @@ def safe_comparison_player_fallback(
         )
         subject = question_topic
     else:
+        # One deterministic recovery turn is enough. Rotating several semantic
+        # paraphrases created a visible loop even though the lexical duplicate
+        # detector correctly treated them as different strings.
         variants = (
-            "We have enough to choose a bounded next step. I suggest we record the remaining uncertainty, name an owner, and close on that basis.",
-            "I don't think another repetition will resolve this. Let's make the decision we can support now and assign the remaining check to a named owner.",
-            "Let's agree on what we can decide today, then record the unresolved point and who will follow it up.",
+            "We have enough to choose a bounded next step. Let's record the "
+            "remaining uncertainty with a present, responsible participant "
+            "and close on that basis.",
         )
         subject = "conditional resolution of the current issue"
     intent = {

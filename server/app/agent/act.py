@@ -259,6 +259,17 @@ async def render_npc_speech(
                     participant_aliases=participant_aliases,
                 )
             )
+            if not repaired_rejection and near_duplicate_public_utterance(
+                repaired_draft, prior_utterances or []
+            ):
+                repaired_rejection = "near_duplicate_same_speaker"
+            if not repaired_rejection and near_duplicate_obligation_utterance(
+                repaired_draft, prior_public_utterances or [],
+                speaker_id=character.character_id,
+                focus=coordinator_focus,
+                public_intent=validated_intent,
+            ):
+                repaired_rejection = "near_duplicate_cross_role_obligation"
             if not repaired_rejection:
                 emit(
                     "dialogue.public_clause_repair.used",
@@ -409,6 +420,20 @@ Requirements:
             source="configured_public_fallback",
         )
         fallback = ""
+    if fallback and near_duplicate_obligation_utterance(
+        fallback, prior_public_utterances or [],
+        speaker_id=character.character_id,
+        focus=coordinator_focus,
+        public_intent=validated_intent,
+    ):
+        emit(
+            "dialogue.obligation_duplicate.suppressed",
+            component="npc_speech_render",
+            character_id=character.character_id,
+            obligation_id=(coordinator_focus or {}).get("obligation_id"),
+            source="configured_public_fallback",
+        )
+        fallback = ""
     if fallback and public_speech_act_mismatch(reasoning, fallback):
         fallback = ""
     if fallback and speech_rejection_reason(
@@ -537,6 +562,14 @@ async def _apply_speak(
         decision.public_intent = ground_public_intent_in_quote(
             decision.public_intent, content
         )
+        if decision.public_intent.get("quote_grounding") == "material_clause":
+            emit(
+                "public_ledger.intent.clause_grounded",
+                character_id=character.character_id,
+                turn_id=turn_id,
+                field=decision.public_intent.get("field"),
+                transition=decision.public_intent.get("transition"),
+            )
         # Preserve the validated conversational target even when an ordinary
         # question/statement does not create a public-ledger event.  G4.1 lost
         # this metadata and had to guess floor ownership from display text.
