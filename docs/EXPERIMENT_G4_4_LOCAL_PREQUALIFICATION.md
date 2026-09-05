@@ -63,9 +63,9 @@ player behavior is a controlled input, not the treatment.
 - Frozen G4.3 replay detects Emily Chen and Alex Patel as unregistered public
   owners, two unsupported current-world evidence claims in incident command,
   and retains the two earlier negotiation cross-role violations.
-- The database-dependent `smoke_modes.py` could not run locally because no
-  PostgreSQL service is listening on `127.0.0.1:5432`; it remains a required
-  staging gate before any qualification run.
+- A dedicated local PostgreSQL 16 database was initialized and the
+  database-dependent `smoke_modes.py` dual-mode session regression passed.
+  This database is local-only and does not share state with staging.
 
 ## Required qualification design
 

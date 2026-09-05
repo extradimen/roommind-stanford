@@ -938,6 +938,7 @@ Alex Patel等未注册姓名变成会内阻塞责任人并持续等待。G4.3的
 
 **本地证据：** 四组无数据库smoke、compileall和diff检查通过；模拟测试证明跨角色问题
 无需调用LLM即可让渡。冻结G4.3事故对话重放准确找出Emily Chen与Alex Patel两次未注册
-责任人指派和两次无工具依据的现场证据声明，同时保留谈判的两次跨角色违规。数据库模式
-测试因本机PostgreSQL未运行而未执行，故G4.4目前只是本地预资格候选，尚未推送、部署或
-生成新对话。完整方案见`docs/EXPERIMENT_G4_4_LOCAL_PREQUALIFICATION.md`。
+责任人指派和两次无工具依据的现场证据声明，同时保留谈判的两次跨角色违规。随后建立独立
+本地PostgreSQL 16测试库，数据库支持的双模式`smoke_modes.py`也通过。G4.4因此通过本地
+工程预资格，但仍只是候选：尚未推送、部署或生成新的固定模型配对对话。完整方案见
+`docs/EXPERIMENT_G4_4_LOCAL_PREQUALIFICATION.md`。
