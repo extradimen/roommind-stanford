@@ -12,7 +12,11 @@ import httpx
 
 from app.llm.client import LLMClient, LLMEmptyContentError, llm_provider_failover_enabled
 from app.agent.act import contextual_public_fallback, render_npc_speech
-from app.player_agent import bounded_dialogue, safe_comparison_player_fallback
+from app.player_agent import (
+    bounded_dialogue,
+    generate_comparison_player_move,
+    safe_comparison_player_fallback,
+)
 from app.external_evaluator import (
     REALISM_DIMENSIONS as EVALUATOR_DIMENSIONS,
     _dispatch_metrics,
@@ -171,6 +175,62 @@ async def main() -> None:
         {"kind": "outcome", "subject": "the launch decision", "transition": "blocked"},
     )
     assert "defer the final decision" in outcome_fallback
+
+    # A cross-role question is routed deterministically before another model
+    # call. The shared player policy therefore cannot answer for the addressed
+    # NPC in either controlled-comparison condition.
+    handoff_scenario = SimpleNamespace(
+        title="Floor ownership fixture",
+        description="A multi-party decision meeting.",
+        task_config={"evidence_mode": "live_operation"},
+        orchestration_config={},
+        scene_config={"player_character": {
+            "character_name": "Alex Chen", "job_title": "Decision Lead",
+        }},
+        player_side_goal="Reach a grounded decision",
+        business_goal="Reach a grounded decision",
+        characters=[SimpleNamespace(
+            character_id="advisor", display_name="Avery Chen (Advisor)",
+            character_name="Avery Chen", job_title="Advisor", aliases=["Avery"],
+            side="ally", team_id="player", relationship_to_player="advisor",
+            interaction_role="advisor", responsibility="Explain operating constraints",
+            sort_order=0,
+        )],
+    )
+    handoff_session = SimpleNamespace(
+        run_config={"comparison_lock_model": True}, current_phase="opening",
+    )
+    resolved_player = SimpleNamespace(
+        provider="ollama", model="fixture", temperature=0.2, max_tokens=600,
+        label=lambda: "ollama/fixture",
+    )
+    dialogue_model = AsyncMock(side_effect=AssertionError(
+        "deterministic cross-role handoff must not call the LLM"
+    ))
+    with (
+        patch("app.player_agent.orch_support.get_llm_config", AsyncMock(return_value={})),
+        patch("app.player_agent.resolve_llm", return_value=resolved_player),
+        patch("app.player_agent.llm_client.chat_completion", dialogue_model),
+    ):
+        enforced_handoff = await generate_comparison_player_move(
+            None,
+            handoff_session,
+            handoff_scenario,
+            [
+                {"speaker_id": "user", "speaker_type": "user", "content": "Please continue."},
+                {
+                    "speaker_id": "advisor", "speaker_type": "npc",
+                    "content": "Avery, could you explain the operating constraint?",
+                    "meta": {"public_intent": {
+                        "kind": "issue", "target_id": "advisor",
+                    }},
+                },
+            ],
+        )
+    dialogue_model.assert_not_awaited()
+    assert enforced_handoff.intent == "enforced_cross_role_handoff"
+    assert enforced_handoff.public_intent["target_id"] == "advisor"
+    assert enforced_handoff.content.startswith("Avery Chen")
 
     artifact_content, artifact_intent = safe_comparison_player_fallback(
         evidence_mode="live_operation",

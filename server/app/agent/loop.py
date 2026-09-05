@@ -18,7 +18,12 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.act import ActionResult, decision_from_llm, execute_decision
+from app.agent.act import (
+    ActionResult,
+    decision_from_llm,
+    execute_decision,
+    public_participant_aliases,
+)
 from app.agent.memory_stream import (
     AgentMemoryStore,
     MemoryNode,
@@ -446,6 +451,7 @@ Output strict JSON only:
         reply_language=reply_language,
         task_state=task_state,
         allow_retrospective=evidence_mode == "retrospective_claim",
+        participant_aliases=public_participant_aliases(scenario),
     )
 
     return _loop_result_from_action(

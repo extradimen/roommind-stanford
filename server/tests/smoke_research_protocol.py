@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G4.3"
+    assert CURRENT_GENERATION_ID == "G4.4"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g4.3-cross-role-floor-and-evidence-boundary"
+        "g4.4-deterministic-floor-owner-and-timebox-closure"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -397,7 +397,7 @@ def main() -> None:
     g42_bundle = deepcopy(g4_bundle)
     g42_bundle["session"]["run_config"]["research_manifest"] = {
         "generation_id": "G4.3",
-        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+        "architecture_version": "g4.3-cross-role-floor-and-evidence-boundary",
     }
     g42_bundle["speaker_directory"]["advisor"] = {
         "role": "npc", "display_name": "Avery Chen",
@@ -448,6 +448,37 @@ def main() -> None:
     g43_bundle["messages"][-2]["content"] = "Avery, could you answer that question directly?"
     preserved_role = run_integrity_probes(g43_bundle)
     assert preserved_role["checks"]["g43_cross_role_question_ownership_preserved"] is True
+
+    g44_bundle = deepcopy(g43_bundle)
+    g44_bundle["session"]["run_config"]["research_manifest"] = {
+        "generation_id": "G4.4",
+        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+    }
+    g44_bundle["messages"].append({
+        "sequence_no": 8, "turn_id": 5, "speaker_id": "ceo",
+        "speaker_type": "npc", "speaker_source": "ai",
+        "content": "I'm assigning Alex Patel as the evidence owner.",
+        "meta": {"public_intent": {"simulation_scope": "discussion"}},
+        "created_at": "2026-01-01T00:00:08Z",
+    })
+    unregistered_owner = run_integrity_probes(g44_bundle)
+    assert unregistered_owner["checks"]["g44_in_session_owners_are_registered"] is False
+    g44_bundle["messages"][-1] = {
+        **g44_bundle["messages"][-1],
+        "content": "Avery Chen will be the evidence owner.",
+    }
+    registered_owner = run_integrity_probes(g44_bundle)
+    assert registered_owner["checks"]["g44_in_session_owners_are_registered"] is True
+    g44_bundle["messages"][-1] = {
+        **g44_bundle["messages"][-1],
+        "content": "Alex Patel will be the post-meeting evidence owner.",
+        "meta": {"public_intent": {
+            "simulation_scope": "external",
+            "evidence_source": "external_followup",
+        }},
+    }
+    external_owner = run_integrity_probes(g44_bundle)
+    assert external_owner["checks"]["g44_in_session_owners_are_registered"] is True
 
     g4_bundle["messages"].append({
         "sequence_no": 5,

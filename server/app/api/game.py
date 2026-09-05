@@ -170,13 +170,28 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
             else f"terminal_outcome_{completion_status}"
         )
     elif completed_turns >= safety_max_turns:
-        stop_reason = "safety_limit_reached"
-        after_task_state = finalize_stalled_task_state(
-            after_task_state,
-            turn_id=completed_turns,
-            reason="The autonomous simulation reached its configured safety turn limit before a terminal outcome.",
+        # A text-only meeting reaching its timebox is not evidence that the
+        # simulated organization failed. Preserve unmet conditions and close
+        # truthfully as conditional/deferred when the existing reducer can do
+        # so; reserve ``stalled`` for a state that cannot be reconciled at all.
+        stop_reason = "safety_timebox_close"
+        after_task_state = finalize_no_progress_outcome(
+            scenario.task_config or {}, after_task_state, turn_id=completed_turns
         )
-        completion_status = "stalled"
+        completion_status = str(
+            after_task_state.get("completion_status") or "in_progress"
+        )
+        if completion_status not in TERMINAL_OUTCOMES:
+            stop_reason = "safety_limit_reached"
+            after_task_state = finalize_stalled_task_state(
+                after_task_state,
+                turn_id=completed_turns,
+                reason=(
+                    "The autonomous simulation reached its configured safety turn "
+                    "limit before a terminal outcome."
+                ),
+            )
+            completion_status = "stalled"
         task_terminal = True
     elif stagnant_turns >= max_stagnant_turns:
         stop_reason = "no_task_progress"

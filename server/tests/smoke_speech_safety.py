@@ -13,6 +13,7 @@ from app.agent.speech_safety import (
     retain_safe_public_clauses,
     speech_rejection_reason,
     terminal_current_world_action_reason,
+    unregistered_participant_assignment_reason,
     unsupported_live_evidentiary_artifact_reason,
 )
 from types import SimpleNamespace
@@ -1760,6 +1761,48 @@ def main() -> None:
     assert terminal_current_world_action_reason(
         "The firewall rule was applied at 14:07 UTC.", validated_intent={}
     ) == "current_world_completion_requires_simulated_tool_result"
+    assert terminal_current_world_action_reason(
+        "The SHA-256 verification hashes have just been posted to the evidence channel.",
+        validated_intent={"transition": "proposed"},
+    ) == "current_world_completion_requires_simulated_tool_result"
+    assert terminal_current_world_action_reason(
+        "I have reviewed the verification hashes and they matched.",
+        validated_intent={"transition": "proposed"},
+    ) == "current_world_completion_requires_simulated_tool_result"
+
+    participant_aliases = {
+        "user": ["Alex Chen"],
+        "owner": ["Priya Shah", "Priya"],
+    }
+    assert unregistered_participant_assignment_reason(
+        "I'm assigning Alex Patel as the evidence owner.",
+        participant_aliases=participant_aliases,
+    ) == "unregistered_participant_assignment"
+    assert unregistered_participant_assignment_reason(
+        "Priya Shah will be the evidence owner.",
+        participant_aliases=participant_aliases,
+    ) is None
+    assert unregistered_participant_assignment_reason(
+        "Alex Patel will be the post-meeting evidence owner.",
+        participant_aliases=participant_aliases,
+        validated_intent={
+            "simulation_scope": "external",
+            "evidence_source": "external_followup",
+        },
+    ) is None
+    assert unregistered_participant_assignment_reason(
+        "Alex Patel will be the evidence owner for this meeting.",
+        participant_aliases=participant_aliases,
+        validated_intent={
+            "simulation_scope": "external",
+            "evidence_source": "external_followup",
+        },
+    ) == "unregistered_participant_assignment"
+    assert speech_rejection_reason(
+        "I'm assigning Alex Patel as the evidence owner.",
+        participant_aliases=participant_aliases,
+        validated_intent={"simulation_scope": "discussion"},
+    ) == "unregistered_participant_assignment"
 
     chars = [
         SimpleNamespace(character_id="first", display_name="First", character_name="First", job_title="Lead", aliases=[], sort_order=0),

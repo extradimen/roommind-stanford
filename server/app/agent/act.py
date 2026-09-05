@@ -21,6 +21,7 @@ from app.llm.client import LLMEmptyContentError, llm_client
 from app.models.db import CharacterTemplate, ScenarioTemplate
 from app.orchestrator.common import NPCReply
 from app.orchestrator.llm_binding import ResolvedLlm
+from app.player_character import resolve_player_character
 from app.public_ledger import (
     align_explicit_confirmation_intent,
     commit_public_intent,
@@ -74,6 +75,29 @@ class ActionResult:
     world_events: list[WorldEvent] = field(default_factory=list)
     public_ledger_event: dict[str, Any] | None = None
     public_intent: dict[str, Any] | None = None
+
+
+def public_participant_aliases(scenario: ScenarioTemplate) -> dict[str, list[str]]:
+    """Return the registered public names that may own in-session work."""
+    player = resolve_player_character(scenario)
+    aliases = {
+        "user": [
+            str(value) for value in (
+                player.get("display_name"), player.get("character_name"),
+                player.get("job_title"),
+            ) if value
+        ]
+    }
+    aliases.update({
+        character.character_id: [
+            str(value) for value in (
+                character.display_name, character.character_name,
+                character.job_title, *(character.aliases or []),
+            ) if value
+        ]
+        for character in scenario.characters
+    })
+    return aliases
 
 
 def configured_public_fallback(configured: dict[str, Any] | None) -> str:
@@ -149,6 +173,7 @@ async def render_npc_speech(
     reply_language: str = "en",
     validated_intent: dict[str, Any] | None = None,
     prior_utterances: list[str] | None = None,
+    participant_aliases: dict[str, list[str]] | None = None,
 ) -> tuple[str, str, str, bool]:
     """
     Stanford: NPC speech is grounded in the agent's active plan.
@@ -189,6 +214,7 @@ async def render_npc_speech(
                 protected_secrets=list(
                     (character.private_state or {}).get("protected_secrets") or []
                 ),
+                participant_aliases=participant_aliases,
             )
         )
         if not draft_rejection:
@@ -213,6 +239,7 @@ async def render_npc_speech(
                     protected_secrets=list(
                         (character.private_state or {}).get("protected_secrets") or []
                     ),
+                    participant_aliases=participant_aliases,
                 )
             )
             if not repaired_rejection:
@@ -323,6 +350,7 @@ Requirements:
             protected_secrets=list(
                 (character.private_state or {}).get("protected_secrets") or []
             ),
+            participant_aliases=participant_aliases,
         ) or ""
         if rejection:
             emit(
@@ -360,6 +388,7 @@ Requirements:
         protected_secrets=list(
             (character.private_state or {}).get("protected_secrets") or []
         ),
+        participant_aliases=participant_aliases,
     ):
         fallback = ""
     if not fallback:
@@ -430,6 +459,7 @@ async def _apply_speak(
     timeline: WorldTimeline | None,
     reply_language: str = "en",
     task_state: dict[str, Any] | None = None,
+    participant_aliases: dict[str, list[str]] | None = None,
 ) -> ActionResult:
     plan = active_plan(nodes)
     prior_utterances = [
@@ -450,6 +480,7 @@ async def _apply_speak(
         reply_language=reply_language,
         validated_intent=decision.public_intent,
         prior_utterances=prior_utterances,
+        participant_aliases=participant_aliases,
     )
     result.spoke = bool(content.strip())
     result.content = content
@@ -537,6 +568,7 @@ async def execute_decision(
     reply_language: str = "en",
     task_state: dict[str, Any] | None = None,
     allow_retrospective: bool = False,
+    participant_aliases: dict[str, list[str]] | None = None,
 ) -> ActionResult:
     """Execute a structured decision: memory writes + optional speech on world line."""
 
@@ -637,6 +669,7 @@ async def execute_decision(
                 timeline=timeline,
                 reply_language=reply_language,
                 task_state=task_state,
+                participant_aliases=participant_aliases,
             )
 
         if plan_text:
@@ -688,6 +721,7 @@ async def execute_decision(
                 timeline=timeline,
                 reply_language=reply_language,
                 task_state=task_state,
+                participant_aliases=participant_aliases,
             )
         if note:
             await _record_action_memory(
@@ -723,6 +757,7 @@ async def execute_decision(
             timeline=timeline,
             reply_language=reply_language,
             task_state=task_state,
+            participant_aliases=participant_aliases,
         )
 
     if action == "wait" and speak_quota_remaining > 0 and mentioned:
@@ -746,6 +781,7 @@ async def execute_decision(
             timeline=timeline,
             reply_language=reply_language,
             task_state=task_state,
+            participant_aliases=participant_aliases,
         )
 
     if action == "wait" and timeline is not None:
@@ -848,6 +884,7 @@ async def execute_plan_fallback_speak(
         timeline=timeline,
         reply_language=reply_language,
         task_state=task_state,
+        participant_aliases=public_participant_aliases(scenario),
     )
 
 

@@ -14,6 +14,7 @@ from app.agent.speech_safety import (
     npc_directed_question_handoff_reason,
     resolve_direct_question_target,
     terminal_current_world_action_reason,
+    unregistered_participant_assignment_reason,
     unsupported_evidence_reason,
 )
 from app.research_protocol import transcript_provenance
@@ -68,9 +69,10 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     is_g38_roommind = session_mode == "test" and architecture_version.startswith(("g3.8", "g3.9", "g4"))
     is_g39_roommind = session_mode == "test" and architecture_version.startswith(("g3.9", "g4"))
     is_g4_roommind = session_mode == "test" and architecture_version.startswith("g4")
-    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3"))
-    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3"))
-    is_g43_roommind = session_mode == "test" and architecture_version.startswith("g4.3")
+    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4"))
+    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4"))
+    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4"))
+    is_g44_roommind = session_mode == "test" and architecture_version.startswith("g4.4")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -263,6 +265,20 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         for speaker_id, speaker in directory.items()
         if isinstance(speaker, dict)
     }
+    unregistered_public_assignments = [
+        {
+            "sequence_no": int(row.get("sequence_no") or 0),
+            "speaker_id": str(row.get("speaker_id") or ""),
+            "reason": reason,
+        }
+        for row in messages
+        for reason in [unregistered_participant_assignment_reason(
+            str(row.get("content") or ""),
+            participant_aliases=participant_aliases,
+            validated_intent=((row.get("meta") or {}).get("public_intent") or {}),
+        )]
+        if reason
+    ]
     player_floor_violations: list[dict[str, Any]] = []
     question_target_mismatches: list[dict[str, Any]] = []
     cross_role_question_violations: list[dict[str, Any]] = []
@@ -531,6 +547,9 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "g43_cross_role_question_ownership_preserved": (
             not cross_role_question_violations if is_g43_roommind else None
         ),
+        "g44_in_session_owners_are_registered": (
+            not unregistered_public_assignments if is_g44_roommind else None
+        ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
             and ledger_clock_sequence == sorted(ledger_clock_sequence)
@@ -576,6 +595,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "g41_player_floor_violations": player_floor_violations,
             "g42_question_target_mismatches": question_target_mismatches,
             "g43_cross_role_question_violations": cross_role_question_violations,
+            "g44_unregistered_public_assignments": unregistered_public_assignments,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }

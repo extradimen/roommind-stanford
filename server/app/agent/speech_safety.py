@@ -54,27 +54,87 @@ _CURRENT_WORLD_OBJECT_RE = re.compile(
     r"\b(?:containment|isolation|firewall|traffic(?:\s+shift)?|rollback|rollout|"
     r"deployment|release|service|system|server|cluster|pod|node|snapshot|"
     r"memory\s+dump|health\s+check|status(?:[- ]page)?|public\s+update|"
-    r"archive|upload|attachment|email|file|document|report|hash|checksum|log(?:s)?|"
+    r"archive|upload|attachment|email|file|document|report|hash(?:es)?|checksum(?:s)?|log(?:s)?|"
     r"transaction(?:s)?|monitoring|metrics|telemetry)\b",
     flags=re.IGNORECASE,
 )
 _CURRENT_WORLD_TERMINAL_RE = re.compile(
-    r"\b(?:is|are|was|were|remains?|has\s+been|have\s+been)\s+"
+    r"\b(?:is|are|was|were|remains?|has\s+(?:just\s+)?been|have\s+(?:just\s+)?been)\s+"
     r"(?:already\s+|now\s+|fully\s+|successfully\s+)?(?:active|activated|inactive|deactivated|"
-    r"complete|completed|finished|deployed|published|uploaded|attached|sent|delivered|"
+    r"complete|completed|finished|deployed|published|posted|shared|uploaded|attached|sent|delivered|"
     r"blocked|isolated|disabled|enabled|redirected|shifted|"
-    r"archived|captured|stored|restored|rolled\s+back|verified|validated|"
-    r"healthy|stable|green|applied|terminated)\b|"
+    r"archived|captured|stored|restored|rolled\s+back|verified|validated|reviewed|"
+    r"matched|secured|immutable|healthy|stable|green|applied|terminated)\b|"
     r"\b(?:has|have)\s+(?:already\s+|now\s+|fully\s+|all\s+)?"
-    r"(?:completed|finished|deployed|published|uploaded|attached|sent|archived|"
-    r"captured|stored|restored|rolled\s+back|verified|validated|executed|"
+    r"(?:completed|finished|deployed|published|posted|shared|uploaded|attached|sent|archived|"
+    r"captured|stored|restored|rolled\s+back|verified|validated|reviewed|matched|secured|executed|"
     r"blocked|isolated|disabled|enabled|redirected|shifted|delivered)\b|"
     r"\b(?:i|we)\s+(?:have\s+|['’]ve\s+)?(?:activated|deactivated|completed|"
-    r"finished|deployed|published|uploaded|attached|sent|archived|captured|"
-    r"stored|restored|rolled\s+back|verified|validated|executed|blocked|isolated|"
+    r"finished|deployed|published|posted|shared|uploaded|attached|sent|archived|captured|"
+    r"stored|restored|rolled\s+back|verified|validated|reviewed|matched|secured|executed|blocked|isolated|"
     r"disabled|enabled|redirected|shifted|delivered|applied|terminated)\b",
     flags=re.IGNORECASE,
 )
+
+_UNREGISTERED_OWNER_PATTERNS = (
+    re.compile(
+        r"\b(?:assign(?:ing)?|designate|appoint)\s+"
+        r"(?P<name>[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+)+)\s+"
+        r"(?:\([^)]{1,80}\)\s+)?"
+        r"(?:as|to)\b"
+    ),
+    re.compile(
+        r"\b(?P<name>[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+)+)\s+"
+        r"(?:is|stays|will\s+be|can\s+be)\s+(?:the\s+)?"
+        r"(?:primary\s+)?(?:[A-Za-z][A-Za-z-]*\s+){0,3}"
+        r"(?:owner|lead|reviewer|assignee)\b"
+    ),
+)
+_EXTERNAL_FOLLOWUP_QUOTE_RE = re.compile(
+    r"\b(?:after\s+(?:this|the)\s+meeting|post[- ]meeting|offline|outside\s+"
+    r"(?:this|the)\s+(?:meeting|session)|external\s+follow[- ]?up|follow[- ]?up\s+"
+    r"(?:after|outside)|by\s+(?:end\s+of\s+day|tomorrow|next\s+(?:week|meeting)))\b",
+    flags=re.IGNORECASE,
+)
+
+
+def unregistered_participant_assignment_reason(
+    content: str,
+    *,
+    participant_aliases: dict[str, list[str] | tuple[str, ...]] | None = None,
+    validated_intent: dict | None = None,
+) -> str | None:
+    """Reject assigning in-session responsibility to a participant who cannot act.
+
+    External people may be discussed, but an autonomous meeting must not hand a
+    blocking task to an invented name and then wait for that nonexistent agent.
+    The deliberately narrow detector only covers explicit two-part personal-name
+    ownership clauses.
+    """
+    intent = validated_intent or {}
+    external_intent = (
+        str(intent.get("simulation_scope") or "") == "external"
+        or str(intent.get("evidence_source") or "") == "external_followup"
+    )
+    if external_intent and _EXTERNAL_FOLLOWUP_QUOTE_RE.search(content or ""):
+        return None
+    aliases = {
+        " ".join(str(alias or "").casefold().split())
+        for values in (participant_aliases or {}).values()
+        for alias in (values or [])
+        if str(alias or "").strip()
+    }
+    if not aliases:
+        return None
+    for sentence in re.split(r"(?<=[.!?])\s+|[;]\s*", content or ""):
+        for pattern in _UNREGISTERED_OWNER_PATTERNS:
+            match = pattern.search(sentence)
+            if not match:
+                continue
+            name = " ".join(match.group("name").casefold().split())
+            if name not in aliases:
+                return "unregistered_participant_assignment"
+    return None
 
 _TERSE_TERMINAL_RE = re.compile(
     r"^(?:the\s+)?(?:sample\s+)?(?:log(?:\s+entries|s)?|attachment|email|file|"
@@ -351,9 +411,9 @@ def normalized_public_propositions(content: str) -> list[dict[str, str]]:
         modality = "conditional" if _FUTURE_OR_CONDITIONAL_RE.search(prefix) else "asserted_current"
         predicate_tokens = re.findall(
             r"\b(?:active|activated|complete|completed|finished|deployed|published|"
-            r"uploaded|attached|sent|delivered|archived|captured|stored|restored|"
+            r"uploaded|attached|sent|posted|shared|delivered|archived|captured|stored|restored|"
             r"blocked|isolated|disabled|enabled|redirected|shifted|verified|"
-            r"validated|executed|healthy|stable|green)\b",
+            r"validated|reviewed|matched|secured|immutable|executed|healthy|stable|green)\b",
             terminal.group(0),
             flags=re.IGNORECASE,
         )
@@ -791,6 +851,7 @@ def speech_rejection_reason(
     validated_intent: dict | None = None,
     protected_secrets: list[str] | None = None,
     public_draft_text: str = "",
+    participant_aliases: dict[str, list[str] | tuple[str, ...]] | None = None,
 ) -> str | None:
     """Reject obvious internal-plan echoes and visibly truncated public speech."""
     text = " ".join((content or "").split()).strip()
@@ -818,6 +879,14 @@ def speech_rejection_reason(
         return protected_reason
 
     intent = validated_intent or {}
+    assignment_reason = unregistered_participant_assignment_reason(
+        text,
+        participant_aliases=participant_aliases,
+        validated_intent=intent,
+    )
+    if assignment_reason:
+        return assignment_reason
+
     live_artifact_reason = unsupported_live_evidentiary_artifact_reason(
         text, validated_intent=intent
     )
@@ -867,7 +936,8 @@ def speech_rejection_reason(
 
 
 def player_speech_rejection_reason(
-    content: str, *, public_context: str = "", validated_intent: dict | None = None
+    content: str, *, public_context: str = "", validated_intent: dict | None = None,
+    participant_aliases: dict[str, list[str] | tuple[str, ...]] | None = None,
 ) -> str | None:
     """Reject malformed structured output accidentally exposed as player dialogue."""
     text = (content or "").strip()
@@ -877,5 +947,6 @@ def player_speech_rejection_reason(
     if '"content"' in lowered and '"intent"' in lowered:
         return "structured_output"
     return speech_rejection_reason(
-        text, public_context=public_context, validated_intent=validated_intent
+        text, public_context=public_context, validated_intent=validated_intent,
+        participant_aliases=participant_aliases,
     )

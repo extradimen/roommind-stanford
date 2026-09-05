@@ -620,7 +620,8 @@ Return strict JSON only:
             allow_retrospective=evidence_mode == "retrospective_claim",
         )
         rejection = player_speech_rejection_reason(
-            content, public_context=dialogue, validated_intent=validated_intent
+            content, public_context=dialogue, validated_intent=validated_intent,
+            participant_aliases=participant_aliases,
         ) or ""
         latest_target = str(
             (pending_questions[-1] if pending_questions else {}).get("target_id") or ""
@@ -641,7 +642,8 @@ Return strict JSON only:
                 content, validated_intent=validated_intent
             )
             repaired_rejection = player_speech_rejection_reason(
-                repaired, public_context=dialogue, validated_intent=validated_intent
+                repaired, public_context=dialogue, validated_intent=validated_intent,
+                participant_aliases=participant_aliases,
             ) if repaired else rejection
             if repaired and not repaired_rejection and near_duplicate_public_utterance(
                 repaired, recent_player_utterances(messages)
@@ -748,6 +750,51 @@ async def generate_comparison_player_move(
         participant_aliases=participant_aliases,
         participant_labels=participant_labels,
     )
+    turn_id = sum(
+        1 for message in messages if message.get("speaker_type") == "user"
+    ) + 1
+    latest_target = str(
+        (pending_questions[-1] if pending_questions else {}).get("target_id") or ""
+    )
+    if latest_target and latest_target != "user":
+        # Cross-role floor ownership is an interaction invariant, not a prose
+        # preference.  Do not spend an LLM attempt hoping it will obey the
+        # handoff instruction: publish the same minimal public-only handoff in
+        # both controlled-comparison conditions.
+        target_label = str(
+            pending_questions[-1].get("target_display_name") or latest_target
+        )
+        content = (
+            f"{target_label}, please answer the question directly from your area "
+            "before we continue."
+        )
+        public_intent = validate_public_intent(
+            character={**player, "character_id": "user"},
+            intent={
+                "kind": "handoff",
+                "subject": "directed question ownership",
+                "transition": "proposed",
+                "target_id": latest_target,
+                "simulation_scope": "discussion",
+                "evidence_source": "public_statement",
+            },
+            turn_id=turn_id,
+            allow_retrospective=evidence_mode == "retrospective_claim",
+        )
+        emit(
+            "dialogue.cross_role_handoff.enforced",
+            component="comparison_player",
+            turn_id=turn_id,
+            target_id=latest_target,
+        )
+        return PlayerMove(
+            content=content,
+            intent="enforced_cross_role_handoff",
+            requested_end=False,
+            model_label=resolved.label(),
+            raw="",
+            public_intent=public_intent,
+        )
     continuity_anchor = retrospective_continuity_anchor(
         messages,
         pending_questions=pending_questions,
@@ -843,7 +890,6 @@ Return strict JSON only:
             continue
         parsed = orch_support.parse_json(raw)
         content = normalize_player_content(parsed.get("content") or "").strip()
-        turn_id = sum(1 for message in messages if message.get("speaker_type") == "user") + 1
         validated_intent = validate_public_intent(
             character={**player, "character_id": "user"},
             intent=parsed.get("public_intent"),
@@ -851,7 +897,8 @@ Return strict JSON only:
             allow_retrospective=evidence_mode == "retrospective_claim",
         )
         rejection = player_speech_rejection_reason(
-            content, public_context=dialogue, validated_intent=validated_intent
+            content, public_context=dialogue, validated_intent=validated_intent,
+            participant_aliases=participant_aliases,
         ) or ""
         latest_target = str(
             (pending_questions[-1] if pending_questions else {}).get("target_id") or ""
@@ -872,7 +919,8 @@ Return strict JSON only:
                 content, validated_intent=validated_intent
             )
             repaired_rejection = player_speech_rejection_reason(
-                repaired, public_context=dialogue, validated_intent=validated_intent
+                repaired, public_context=dialogue, validated_intent=validated_intent,
+                participant_aliases=participant_aliases,
             ) if repaired else rejection
             if repaired and not repaired_rejection and near_duplicate_public_utterance(
                 repaired, recent_player_utterances(messages)
@@ -896,7 +944,6 @@ Return strict JSON only:
         if content and not rejection and isinstance(parsed.get("requested_end", False), bool):
             break
         rejection = rejection or "invalid_json_fields"
-    turn_id = sum(1 for message in messages if message.get("speaker_type") == "user") + 1
     if not content or rejection:
         content, fallback_intent = safe_comparison_player_fallback(
             evidence_mode=evidence_mode,
