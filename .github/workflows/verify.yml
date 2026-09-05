@@ -1,0 +1,68 @@
+name: Verify
+
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: roommind
+          POSTGRES_PASSWORD: roommind_dev
+          POSTGRES_DB: roommind_stanford
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U roommind -d roommind_stanford"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://roommind:roommind_dev@localhost:5432/roommind_stanford
+      REDIS_URL: redis://localhost:6379/15
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m compileall -q server/app
+      - run: python -c "from app.main import app; assert app.title == 'RoomMind API'"
+        working-directory: server
+      - run: python tests/smoke_modes.py
+        working-directory: server
+      - run: python tests/smoke_speech_safety.py
+        working-directory: server
+      - run: python tests/smoke_public_ledger.py
+        working-directory: server
+      - run: python tests/smoke_research_protocol.py
+        working-directory: server
+      - run: python tests/smoke_llm_resilience.py
+        working-directory: server
+
+  frontend:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        app: [client, admin]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci --ignore-scripts
+        env:
+          NPM_CONFIG_REPLACE_REGISTRY_HOST: always
+        working-directory: ${{ matrix.app }}
+      - run: npm run build
+        working-directory: ${{ matrix.app }}

@@ -1,18 +1,23 @@
 import logging
+import time
+import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from app.api.admin import router as admin_router
 from app.api.game import router as game_router
+from app.batch_experiments import resume_batch_experiments, router as batch_experiments_router
 from app.avatar_assets import AVATAR_DIR, ensure_avatar_dir
 from app.prop_assets import PROPS_DIR, ensure_props_dir
 from app.config import get_settings, reload_settings
-from app.database import init_db
+from app.database import async_session_factory, init_db
 from app.platform_llm import ensure_platform_llm_defaults
 from app.seed import (
     ensure_scenario_templates,
+    migrate_scenarios_to_schema_v2,
     seed_if_empty,
     sync_character_name_fields,
     sync_dispatch_rule_keywords,
@@ -21,6 +26,7 @@ from app.seed import (
     sync_scenario_side_goals,
     sync_scenario_player_characters,
 )
+from app.telemetry import configure_telemetry, emit, monotonic_ms, telemetry_context
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,7 +34,7 @@ settings = get_settings()
 
 app = FastAPI(
     title="RoomMind API",
-    description="Multi-agent business negotiation platform — Phase 1 Web3D Text",
+    description="Configurable multi-agent interactive task simulation platform",
     version="0.1.0",
 )
 
@@ -40,8 +46,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def request_telemetry(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    started = time.monotonic()
+    with telemetry_context(request_id=request_id, method=request.method, path=request.url.path):
+        emit("http.request.started")
+        try:
+            response = await call_next(request)
+            response.headers["x-request-id"] = request_id
+            emit(
+                "http.request.finished",
+                status_code=response.status_code,
+                duration_ms=monotonic_ms(started),
+            )
+            return response
+        except Exception as exc:
+            logger.exception("Unhandled HTTP request failure request_id=%s", request_id)
+            emit(
+                "http.request.failed",
+                exception_type=type(exc).__name__,
+                error=repr(exc)[:2000],
+                duration_ms=monotonic_ms(started),
+            )
+            raise
+
 app.include_router(admin_router)
 app.include_router(game_router)
+app.include_router(batch_experiments_router)
 
 ensure_avatar_dir()
 ensure_props_dir()
@@ -51,24 +84,54 @@ app.mount("/static/props", StaticFiles(directory=str(PROPS_DIR)), name="prop_ass
 
 @app.on_event("startup")
 async def startup() -> None:
+    telemetry_path = configure_telemetry()
     reload_settings()
     ensure_platform_llm_defaults()
     await init_db()
     await seed_if_empty()
     await ensure_scenario_templates()
+    await migrate_scenarios_to_schema_v2()
     await sync_character_name_fields()
     await sync_scenario_side_goals()
     await sync_scenario_player_characters()
     await sync_scenario_orchestration_config()
     await sync_dispatch_rule_keywords()
     await sync_llm_config_with_platform()
+    await resume_batch_experiments()
     reload_settings()
     logger.info("RoomMind API started on port %s", settings.api_port)
+    logger.info("Structured telemetry log: %s", telemetry_path)
 
 
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "phase": "1-web3d-text"}
+
+
+@app.get("/ready")
+async def ready() -> dict:
+    """Dependency-aware readiness used by deployment checks."""
+    checks: dict[str, str] = {}
+    try:
+        async with async_session_factory() as db:
+            await db.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception as exc:
+        checks["database"] = f"error:{type(exc).__name__}"
+
+    try:
+        from app.memory.service import memory_service
+
+        redis = await memory_service.get_redis()
+        checks["redis"] = "ok" if await redis.ping() else "error:ping_failed"
+    except Exception as exc:
+        checks["redis"] = f"degraded:{type(exc).__name__}"
+
+    # Redis is a fail-open cache; PostgreSQL is the readiness gate.
+    return {
+        "status": "ready" if checks["database"] == "ok" else "not_ready",
+        "checks": checks,
+    }
 
 
 @app.get("/api/info")

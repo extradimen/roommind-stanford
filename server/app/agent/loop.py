@@ -18,21 +18,28 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.act import ActionResult, decision_from_llm, execute_decision
+from app.agent.act import (
+    ActionResult,
+    decision_from_llm,
+    execute_decision,
+    public_participant_aliases,
+)
 from app.agent.memory_stream import (
     AgentMemoryStore,
     MemoryNode,
     active_plan,
     retrieve_memories,
 )
-from app.llm.client import llm_client
+from app.llm.client import LLMEmptyContentError, llm_client
 from app.models.db import CharacterTemplate, ScenarioTemplate
 from app.scenario_side import initial_plan_goal_block, user_speaker_label
 from app.i18n.reply_language import decision_language_rule
 from app.orchestrator.common import orch_support
 from app.orchestrator.llm_binding import ResolvedLlm
+from app.task_state import public_task_result
 from app.world.perception import perceive_events
 from app.world.timeline import WorldEvent, WorldTimeline
+from app.telemetry import emit
 
 
 @dataclass
@@ -91,8 +98,46 @@ def _format_retrieved_block(retrieved_scored: list[tuple[MemoryNode, float]]) ->
             "action": "action",
         }.get(node.node_type, node.node_type)
         imp_bar = "█" * int(node.importance) + "░" * (10 - int(node.importance))
-        lines.append(f"[{tag} imp={node.importance:.0f} {imp_bar}] {node.content}")
-    return "\n".join(lines)
+        content = str(node.content or "")[-700:]
+        lines.append(f"[{tag} imp={node.importance:.0f} {imp_bar}] {content}")
+    return "\n".join(lines)[-6000:]
+
+
+def _bounded_governance_view(task_state: dict[str, Any] | None) -> dict[str, Any]:
+    """Keep decision prompts bounded without changing the persisted task ledger."""
+    public = public_task_result(task_state or {})
+    work_items = list((public.get("work_items") or {}).items())[-15:]
+    ledger = public.get("public_ledger") or {}
+    entities = list((ledger.get("entities") or {}).items())[-30:]
+    return {
+        "phase": public.get("phase"),
+        "completion_status": public.get("completion_status"),
+        "variables": public.get("variables") or {},
+        "open_issues": list(public.get("open_issues") or [])[-20:],
+        "work_items": dict(work_items),
+        "recent_events": list(public.get("recent_events") or [])[-10:],
+        "outcome": public.get("outcome") or {},
+        "progress": public.get("progress") or {},
+        "obligation_graph": {
+            "schema": (public.get("obligation_graph") or {}).get("schema"),
+            "open_obligation_ids": list(
+                (public.get("obligation_graph") or {}).get("open_obligation_ids") or []
+            )[-12:],
+            "obligations": {
+                key: value
+                for key, value in list(
+                    ((public.get("obligation_graph") or {}).get("obligations") or {}).items()
+                )[-12:]
+                if isinstance(value, dict) and value.get("required_now") is True
+            },
+        },
+        "public_ledger": {
+            "schema": ledger.get("schema"),
+            "simulation_clock": ledger.get("simulation_clock") or {},
+            "entities": dict(entities),
+            "recent_events": list(ledger.get("recent_events") or [])[-15:],
+        },
+    }
 
 
 async def run_agent_tick(
@@ -118,6 +163,7 @@ async def run_agent_tick(
     mentioned: bool = False,
     timeline: WorldTimeline | None = None,
     reply_language: str = "en",
+    task_state: dict[str, Any] | None = None,
 ) -> AgentLoopResult:
     """
     Stanford Generative Agent perceive → retrieve → react → act loop.
@@ -136,7 +182,12 @@ async def run_agent_tick(
     # ------------------------------------------------------------------
     # Step 1 — PERCEIVE
     # ------------------------------------------------------------------
-    perceived = perceive_events(character, new_events, reply_language=reply_language)
+    perceived = perceive_events(
+        character,
+        new_events,
+        reply_language=reply_language,
+        relevance_signals=(scenario.task_config or {}).get("relevance_signals") or [],
+    )
     existing_sources = {eid for n in nodes for eid in n.source_event_ids}
     new_obs_nodes: list[MemoryNode] = []
     for obs in perceived:
@@ -209,8 +260,46 @@ async def run_agent_tick(
     )
     goal_block = initial_plan_goal_block(character, scenario)
     user_label = user_speaker_label(character)
+    governance_view = _bounded_governance_view(task_state)
+    progress_view = governance_view.get("progress") or {}
+    stagnant_turns = int(progress_view.get("stagnant_turns", 0))
+    focus = progress_view.get("focus") if isinstance(progress_view.get("focus"), dict) else None
+    focus_owner_ids = set((focus or {}).get("owner_ids") or [])
+    owns_focus = character.character_id in focus_owner_ids
+    if focus:
+        missing_confirmation = list(focus.get("missing_confirmer_ids") or [])
+        focus_guidance = (
+            f"Coordinator focus: {focus.get('issue')} ({focus.get('status')}). "
+            + (
+                f"Outstanding explicit confirmer(s): {missing_confirmation}. "
+                if missing_confirmation else ""
+            )
+            +
+            f"{focus.get('instruction')} "
+            + (
+                "You are the responsible role. Do not defer with another future promise; "
+                "materialize the work or state a truthful blocker/handoff/outcome now."
+                if owns_focus
+                else "Do not echo status already stated by the responsible role. Contribute only if your distinct authority is needed."
+            )
+        )
+    else:
+        focus_guidance = "Coordinator focus: none; help reach a truthful close without inventing work."
+    convergence_rule = (
+        "Material progress has stalled. Do not repeat a promise or request. If you own "
+        "the missing information, artifact, decision, or action, provide/perform it now "
+        "with concrete public details. Otherwise name the blocker and propose a realistic "
+        "handoff, schedule, conditional outcome, or closure."
+        if stagnant_turns >= 2
+        else "Advance one unresolved issue with a new fact, proposal, objection, decision, or action."
+    )
 
-    decision_prompt = f"""You are generative negotiation agent "{character.display_name}".
+    evidence_mode = str((scenario.task_config or {}).get("evidence_mode") or (
+        "retrospective_claim"
+        if str((scenario.task_config or {}).get("task_type") or "") == "structured_interview"
+        else "live_operation"
+    ))
+    decision_prompt = f"""You are generative task-simulation agent "{character.display_name}".
 Every decision must follow your own goals and plan, not react blindly to the user.
 
 ━━━━━━━━━━━━━━━━━━━━
@@ -219,9 +308,12 @@ Persona: {character.persona}
 Responsibility: {character.responsibility}
 Behavior tendency: {json.dumps(character.tendency, ensure_ascii=False)}
 Private knowledge (only you know): {json.dumps(private, ensure_ascii=False)}
+Team: {character.team_id} | Relationship to player: {character.relationship_to_player}
+Interaction role: {character.interaction_role}
+Authority and action limits: {json.dumps(character.authority or {}, ensure_ascii=False)}
 
 ━━━━━━━━━━━━━━━━━━━━
-[Negotiation goals]
+[Task goals and relationship]
 {goal_block}
 
 ━━━━━━━━━━━━━━━━━━━━
@@ -243,6 +335,12 @@ Private knowledge (only you know): {json.dumps(private, ensure_ascii=False)}
 ━━━━━━━━━━━━━━━━━━━━
 [Situation]
 Scenario: {scenario.title} | Phase: {current_phase}
+Task type: {(scenario.task_config or {}).get('task_type', 'simulation')}
+Evidence mode: {evidence_mode}
+Task terminology: {json.dumps((scenario.task_config or {}).get('terminology', {}), ensure_ascii=False)}
+Shared simulation ledger (state, work items, events, outcome): {json.dumps(governance_view, ensure_ascii=False)}
+Consecutive turns without material progress: {stagnant_turns}
+{focus_guidance}
 {user_label}: "{user_input}"
 {wait_guidance}
 {quota_guidance}
@@ -254,6 +352,49 @@ Priority:
 2. Opportunity: did the user open a topic you can advance?
 3. Strategic wait: if speaking now hurts you, wait is valid.
 4. No repetition: do not repeat what you just said.
+5. State-aware: advance an open issue; do not reopen a confirmed issue without new evidence.
+6. Authority: never propose, accept, execute, or confirm an action outside your configured authority.
+7. Contribution gate: speak only to answer a direct question or add a new fact, proposal,
+   objection, authorized decision/action, or necessary coordination. Otherwise wait.
+8. Materialize work: if you control a requested document, analysis, test, approval,
+   action, or other artifact and it is available, provide or perform it now with concrete
+   public details. Do not repeatedly say that you will provide it later.
+9. Convergence: {convergence_rule}
+10. Grounding: coordination changes topic priority, never your incentives, knowledge, or
+    authority. Do not invent links, attachments, hashes, measurements, live-system results,
+    approvals, or actions. In this text simulation, provide the relevant artifact contents
+    inline when known; otherwise label it as a draft, proposal, assumption, or blocker.
+    If an external file cannot be produced in this meeting, do not promise or request it
+    repeatedly. Summarize the evidence that can be stated now, assign the file as a
+    post-meeting deliverable, and continue toward a conditional decision or explicit deferral.
+11. Role boundary: never supply another participant's internal operational data or claim
+    to have performed work controlled by another role.
+12. Public-world intent: before speaking, describe the single public state transition your
+    utterance requests. External work cannot complete in a text meeting. Use transition
+    committed for promised external work. Use submitted/verified/accepted only for
+    in-session work whose concrete result or artifact content is included inline.
+    In a retrospective interview, describe past experience as kind=fact,
+    simulation_scope=retrospective, transition=proposed. It is evidence offered in
+    conversation, not a live action completed by the simulation.
+13. Epistemic discipline: a question asking whether a fact is true is not evidence
+    that it is true. Do not turn requests, assumptions, or proposed metrics into
+    affirmative findings unless a participant already stated the evidence publicly.
+14. Evidence source: ordinary speech is public_statement. A promised action outside
+    this text meeting is external_followup. Never label an assertion as
+    simulated_tool_result unless the simulation supplied a concrete tool event and id.
+15. Floor ownership: if another participant's latest public statement directly asks
+    the player/candidate for an answer, do not answer on that person's behalf. Wait so
+    the addressed participant can respond. A facilitator may redirect a question but
+    must never supply another role's first-person experience or private evidence.
+16. Addressee contract: every visible question or request must set target_id to the
+    exact addressed participant ("user" for the player, otherwise character_id). If
+    asking for a person's experience, judgment, evidence, approval, or responsibility,
+    address that person directly; never redirect it to a convenient substitute.
+17. Obligation discipline: use the obligation graph as the closure contract. Only a
+    listed outstanding confirmer may close that obligation. If a satisfied obligation
+    was reopened by a later authorized contradiction or retraction, address the reopened
+    value before attempting closure. Do not assign task-critical confirmation work to a
+    participant outside the listed authorized confirmer set.
 
 {decision_language_rule(reply_language)}
 
@@ -264,19 +405,55 @@ Output strict JSON only:
   "speak": {{"content": "What to say when action=speak", "emotion": "neutral|concerned|confident|firm", "gesture": "talking|nodding|thinking|leaning"}},
   "plan_update": "New plan text if action=update_plan, else null",
   "internal_note": "Inner monologue if action=internal_note, else null",
+  "public_intent": {{
+    "kind": "statement|fact|proposal|decision|commitment|action|artifact|verification|schedule|issue|outcome|handoff",
+    "subject": "one stable concise public subject",
+    "transition": "proposed|committed|in_progress|submitted|verified|accepted|rejected|blocked",
+    "target_id": "required user or character_id for a question/request; otherwise optional",
+    "field": "optional configured state field",
+    "value": "explicit public typed field value, otherwise null",
+    "simulation_scope": "discussion|in_session|external|retrospective",
+    "inline_content": "actual in-session result or artifact content, otherwise empty",
+    "evidence_source": "public_statement|simulated_tool_result|external_followup",
+    "tool_result_id": "required only for a real simulation-supplied tool result, otherwise empty"
+  }},
   "moment_importance": integer 1-10
 }}"""
 
-    decision_raw = await llm_client.chat_completion(
-        [{"role": "user", "content": decision_prompt}],
-        db_provider=decision_llm.provider,
-        db_model=decision_llm.model,
-        temperature=decision_llm.temperature,
-        max_tokens=min(decision_llm.max_tokens, 512),
-        response_format={"type": "json_object"},
-    )
-    parsed = orch_support.parse_json(decision_raw)
-    decision = decision_from_llm(parsed, decision_raw)
+    if speak_quota_remaining <= 0 and not mentioned:
+        decision_raw = ""
+        decision = decision_from_llm({
+            "action": "wait",
+            "reasoning": "The public speaking quota is already filled this turn.",
+            "moment_importance": 3,
+        })
+    else:
+        try:
+            decision_raw = await llm_client.chat_completion(
+                [{"role": "user", "content": decision_prompt}],
+                db_provider=decision_llm.provider,
+                db_model=decision_llm.model,
+                temperature=decision_llm.temperature,
+                max_tokens=min(max(decision_llm.max_tokens, 768), 1536),
+                response_format={"type": "json_object"},
+            )
+            parsed = orch_support.parse_json(decision_raw)
+            decision = decision_from_llm(parsed, decision_raw)
+        except LLMEmptyContentError:
+            # Degrade a single private decision to a wait. The orchestrator's
+            # normal fallback speaker can still advance the public turn.
+            decision_raw = ""
+            decision = decision_from_llm({
+                "action": "wait",
+                "reasoning": "No reliable private decision was produced this turn.",
+                "moment_importance": 3,
+            })
+            emit(
+                "llm.degraded_fallback",
+                component="agent_decision",
+                character_id=character.character_id,
+                fallback_action="wait",
+            )
 
     # ------------------------------------------------------------------
     # Step 4 — ACT
@@ -296,6 +473,9 @@ Output strict JSON only:
         mentioned=mentioned,
         timeline=timeline,
         reply_language=reply_language,
+        task_state=task_state,
+        allow_retrospective=evidence_mode == "retrospective_claim",
+        participant_aliases=public_participant_aliases(scenario),
     )
 
     return _loop_result_from_action(

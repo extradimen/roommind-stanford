@@ -1,9 +1,14 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+def utc_now() -> datetime:
+    """Wall-clock UTC time; unlike PostgreSQL now(), this advances within a transaction."""
+    return datetime.now(timezone.utc)
 
 
 class Base(DeclarativeBase):
@@ -42,6 +47,7 @@ class ScenarioTemplate(Base):
     business_goal: Mapped[str] = mapped_column(Text)
     player_side_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
     opponent_side_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
+    task_config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     phases: Mapped[list[str]] = mapped_column(JSONB, default=list)
     win_conditions: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
     scene_config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
@@ -66,6 +72,12 @@ class CharacterTemplate(Base):
     scenario_id: Mapped[int] = mapped_column(ForeignKey("scenario_templates.id", ondelete="CASCADE"))
     character_id: Mapped[str] = mapped_column(String(64))
     side: Mapped[str] = mapped_column(String(32), default="opponent")
+    team_id: Mapped[str] = mapped_column(String(64), default="independent")
+    relationship_to_player: Mapped[str] = mapped_column(String(32), default="counterpart")
+    interaction_role: Mapped[str] = mapped_column(String(64), default="participant")
+    authority: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    aliases: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    fallback_actions: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     character_name: Mapped[str] = mapped_column(String(128), default="")
     job_title: Mapped[str] = mapped_column(String(128), default="")
     display_name: Mapped[str] = mapped_column(String(128))
@@ -110,15 +122,76 @@ class GameSession(Base):
     user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     current_phase: Mapped[str] = mapped_column(String(64), default="opening")
     orchestration_mode: Mapped[str] = mapped_column(String(32), default="generative")
+    session_mode: Mapped[str] = mapped_column(String(32), default="participation")
+    run_config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     shared_state: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     status: Mapped[str] = mapped_column(String(32), default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), onupdate=utc_now
     )
 
     messages: Mapped[list["SessionMessage"]] = relationship(back_populates="session", cascade="all, delete-orphan")
     memories: Mapped[list["EpisodeMemory"]] = relationship(back_populates="session", cascade="all, delete-orphan")
+
+
+class BatchExperiment(Base):
+    """Persistent server-side collection of autonomous comparison runs."""
+
+    __tablename__ = "batch_experiments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_uuid: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(256), default="Batch experiment")
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    total_runs: Mapped[int] = mapped_column(Integer, default=0)
+    completed_runs: Mapped[int] = mapped_column(Integer, default=0)
+    failed_runs: Mapped[int] = mapped_column(Integer, default=0)
+    cancelled_runs: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BatchExperimentRun(Base):
+    """One scenario/condition/repetition cell in a batch experiment."""
+
+    __tablename__ = "batch_experiment_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[int] = mapped_column(
+        ForeignKey("batch_experiments.id", ondelete="CASCADE"), index=True
+    )
+    scenario_id: Mapped[int] = mapped_column(ForeignKey("scenario_templates.id"), index=True)
+    condition: Mapped[str] = mapped_column(String(32))  # test | baseline
+    repetition: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    session_uuid: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BatchHumanReview(Base):
+    """Condition-blinded realism rating submitted after an autonomous run."""
+
+    __tablename__ = "batch_human_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[int] = mapped_column(
+        ForeignKey("batch_experiments.id", ondelete="CASCADE"), index=True
+    )
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("batch_experiment_runs.id", ondelete="CASCADE"), index=True
+    )
+    reviewer_id: Mapped[str] = mapped_column(String(128))
+    ratings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class SessionMessage(Base):
@@ -128,6 +201,9 @@ class SessionMessage(Base):
     session_id: Mapped[int] = mapped_column(ForeignKey("game_sessions.id", ondelete="CASCADE"))
     speaker_id: Mapped[str] = mapped_column(String(64))
     speaker_type: Mapped[str] = mapped_column(String(16))  # user | npc | director | system
+    speaker_source: Mapped[str] = mapped_column(String(16), default="human")  # human | ai | system
+    turn_id: Mapped[int] = mapped_column(Integer, default=0)
+    sequence_no: Mapped[int] = mapped_column(Integer, default=0)
     content: Mapped[str] = mapped_column(Text)
     emotion: Mapped[str | None] = mapped_column(String(32), nullable=True)
     gesture: Mapped[str | None] = mapped_column(String(64), nullable=True)

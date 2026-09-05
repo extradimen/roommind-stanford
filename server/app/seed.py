@@ -37,6 +37,28 @@ async def ensure_scenario_templates() -> None:
             await db.commit()
 
 
+async def migrate_scenarios_to_schema_v2() -> None:
+    """One-shot cutover: migrate bundled scenarios; hide unsupported legacy scenarios."""
+    from app.scenario_template_loader import find_scenario_template_by_slug, reimport_scenario_from_template
+
+    async with async_session_factory() as db:
+        result = await db.execute(select(ScenarioTemplate))
+        scenarios = list(result.scalars().all())
+        changed = False
+        for scenario in scenarios:
+            template = find_scenario_template_by_slug(scenario.slug)
+            current_version = int((scenario.task_config or {}).get("config_version") or 0)
+            template_version = int(((template or {}).get("task_config") or {}).get("config_version") or 0)
+            if template and (not (scenario.task_config or {}).get("task_type") or template_version > current_version):
+                await reimport_scenario_from_template(db, scenario.slug, overwrite_orchestration=False)
+                changed = True
+            elif not (scenario.task_config or {}).get("task_type"):
+                scenario.is_published = False
+                changed = True
+        if changed:
+            await db.commit()
+
+
 async def sync_character_name_fields() -> None:
     """Backfill character_name / job_title from legacy display_name."""
     from app.character_display import split_display_name

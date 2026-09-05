@@ -2,19 +2,45 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.agent.debug_payload import build_session_agent_memories_payload
-from app.session_export import build_session_export_bundle
+from app.session_export import (
+    build_public_session_export_bundle,
+    build_session_export_bundle,
+    transcript_csv,
+    transcript_jsonl,
+)
 from app.database import async_session_factory, get_db
 from app.memory.service import memory_service
 from app.models.db import AgentMemoryNode, ScenarioTemplate, SessionMessage
 from app.orchestrator.defaults import ORCHESTRATION_MODE, merge_orchestration_config
+from app.orchestrator.common import orch_support
 from app.avatar_manifest import client_avatar_manifest
+from app.baseline_chat import generate_baseline_player_move, process_baseline_step
+from app.external_observer import build_blinded_evaluation_packet
+from app.external_evaluator import evaluate_public_transcript
 from app.player_character import resolve_player_character
+from app.player_agent import generate_comparison_player_move, generate_player_move
+from app.public_ledger import (
+    align_explicit_confirmation_intent,
+    commit_public_intent,
+    ground_public_intent_in_quote,
+    validate_public_intent,
+)
 from app.scenario_side import resolve_player_side_goal
+from app.telemetry import emit
+from app.task_state import (
+    TERMINAL_OUTCOMES,
+    finalize_no_progress_outcome,
+    finalize_stalled_task_state,
+    prepare_turn_governance,
+    set_progress_metadata,
+    task_progress_signature,
+)
 from app.schemas import (
     AgentMemoryNodeOut,
     AgentMemoryNodeUpdate,
@@ -23,12 +49,276 @@ from app.schemas import (
     SessionAgentMemoriesOut,
     SessionCreate,
     SessionOut,
+    TestRunIn,
     UserMessageIn,
 )
 
 router = APIRouter(prefix="/api/game", tags=["game"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 logger = logging.getLogger(__name__)
+
+
+async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None = None) -> dict:
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if session.session_mode != "test":
+        raise HTTPException(409, "This operation requires a test session")
+    if session.status not in {"active", "paused"}:
+        raise HTTPException(409, f"Session is {session.status}")
+
+    scenario = await orch_support.load_scenario(db, session.scenario_id)
+    result = await db.execute(
+        select(SessionMessage)
+        .where(SessionMessage.session_id == session.id)
+        .order_by(SessionMessage.sequence_no, SessionMessage.id)
+    )
+    rows = list(result.scalars().all())
+    messages = [
+        {"speaker_id": m.speaker_id, "speaker_type": m.speaker_type, "content": m.content}
+        for m in rows
+    ]
+    completed_turns = sum(1 for m in rows if m.speaker_type == "user") + 1
+    safety_max_turns = max(10, min(int((session.run_config or {}).get("safety_max_turns", 50)), 100))
+    max_stagnant_turns = max(4, min(int((session.run_config or {}).get("max_stagnant_turns", 10)), 25))
+    before_task_state = prepare_turn_governance(
+        ((session.shared_state or {}).get("task_state") or {}),
+        task_config=scenario.task_config or {},
+        characters=list(scenario.characters or []),
+        turn_id=completed_turns,
+        safety_max_turns=safety_max_turns,
+        max_stagnant_turns=max_stagnant_turns,
+    )
+    prepared_shared = dict(session.shared_state or {})
+    prepared_shared["task_state"] = before_task_state
+    session.shared_state = prepared_shared
+    before_signature = task_progress_signature(before_task_state)
+    if (session.run_config or {}).get("comparison_protocol"):
+        move = await generate_comparison_player_move(db, session, scenario, messages)
+    else:
+        move = await generate_player_move(db, session, scenario, messages)
+    if move.public_intent:
+        task_config = scenario.task_config or {}
+        evidence_mode = str(task_config.get("evidence_mode") or (
+            "retrospective_claim"
+            if str(task_config.get("task_type") or "") == "structured_interview"
+            else "live_operation"
+        ))
+        # The shared player policy remains public-only in both conditions. The
+        # RoomMind treatment validates its already-generated intent against the
+        # authoritative current state only at the commit boundary; it does not
+        # regenerate or rewrite the player's public words.
+        player_character = resolve_player_character(scenario)
+        move.public_intent = align_explicit_confirmation_intent(
+            character=player_character,
+            intent=move.public_intent,
+            public_quote=move.content,
+            state=before_task_state,
+        )
+        if move.public_intent.get("alignment") == "explicit_authorized_confirmation":
+            emit(
+                "task_state.confirmation_intent.aligned",
+                actor_id="user",
+                turn_id=completed_turns,
+                field=move.public_intent.get("field"),
+            )
+        move.public_intent = validate_public_intent(
+            character=player_character,
+            intent=move.public_intent,
+            turn_id=completed_turns,
+            state=before_task_state,
+            allow_retrospective=evidence_mode == "retrospective_claim",
+        )
+        move.public_intent = ground_public_intent_in_quote(
+            move.public_intent, move.content
+        )
+        if move.public_intent.get("quote_grounding") == "material_clause":
+            emit(
+                "public_ledger.intent.clause_grounded",
+                actor_id="user",
+                turn_id=completed_turns,
+                field=move.public_intent.get("field"),
+                transition=move.public_intent.get("transition"),
+            )
+    if move.public_intent and move.public_intent.get("commit_allowed", True):
+        commit_public_intent(
+            before_task_state,
+            intent=move.public_intent,
+            public_quote=move.content,
+            tick=0,
+        )
+        prepared_shared["task_state"] = before_task_state
+        session.shared_state = prepared_shared
+    turn_result: dict = {}
+    async for event in memory_service.process_player_message_stream(
+        db,
+        session_uuid,
+        move.content,
+        ui_locale=locale,
+        speaker_source="ai",
+        message_meta={
+            "intent": move.intent,
+            "generation_model": move.model_label,
+            "requested_end": move.requested_end,
+            "public_intent": move.public_intent,
+        },
+    ):
+        if event.get("type") == "turn_result":
+            turn_result = {k: v for k, v in event.items() if k != "_result"}
+
+    stop_reason = None
+    after_task_state = ((session.shared_state or {}).get("task_state") or {})
+    after_signature = task_progress_signature(after_task_state)
+    previous_test_state = dict((session.shared_state or {}).get("_test_state") or {})
+    stagnant_turns = 0 if after_signature != before_signature else int(previous_test_state.get("stagnant_turns", 0)) + 1
+    completion_status = str(after_task_state.get("completion_status") or "in_progress")
+    task_terminal = completion_status in TERMINAL_OUTCOMES
+    if task_terminal:
+        stop_reason = (
+            "completion_conditions_met" if completion_status == "completed"
+            else f"terminal_outcome_{completion_status}"
+        )
+    elif completed_turns >= safety_max_turns:
+        # A text-only meeting reaching its timebox is not evidence that the
+        # simulated organization failed. Preserve unmet conditions and close
+        # truthfully as conditional/deferred when the existing reducer can do
+        # so; reserve ``stalled`` for a state that cannot be reconciled at all.
+        stop_reason = "safety_timebox_close"
+        after_task_state = finalize_no_progress_outcome(
+            scenario.task_config or {}, after_task_state, turn_id=completed_turns
+        )
+        completion_status = str(
+            after_task_state.get("completion_status") or "in_progress"
+        )
+        if completion_status not in TERMINAL_OUTCOMES:
+            stop_reason = "safety_limit_reached"
+            after_task_state = finalize_stalled_task_state(
+                after_task_state,
+                turn_id=completed_turns,
+                reason=(
+                    "The autonomous simulation reached its configured safety turn "
+                    "limit before a terminal outcome."
+                ),
+            )
+            completion_status = "stalled"
+        task_terminal = True
+    elif stagnant_turns >= max_stagnant_turns:
+        stop_reason = "no_task_progress"
+        after_task_state = finalize_no_progress_outcome(
+            scenario.task_config or {}, after_task_state, turn_id=completed_turns
+        )
+        completion_status = str(after_task_state.get("completion_status") or "deferred")
+        task_terminal = True
+    after_task_state = set_progress_metadata(
+        after_task_state,
+        stagnant_turns=stagnant_turns,
+        turn_id=completed_turns,
+        progress_made=after_signature != before_signature,
+    )
+    if stop_reason:
+        session.status = "completed" if completion_status in {"completed", "conditional"} else "stopped"
+    shared = dict(session.shared_state or {})
+    shared["task_state"] = after_task_state
+    shared["_test_state"] = {
+        "completed_turns": completed_turns,
+        "safety_max_turns": safety_max_turns,
+        "stop_reason": stop_reason,
+        "last_player_intent": move.intent,
+        "stagnant_turns": stagnant_turns,
+        "max_stagnant_turns": max_stagnant_turns,
+        "progress_made": after_signature != before_signature,
+        "completion_status": completion_status,
+    }
+    session.shared_state = shared
+    await db.flush()
+    return {
+        "player_move": {
+            "content": move.content,
+            "intent": move.intent,
+            "requested_end": move.requested_end,
+            "model": move.model_label,
+            "public_intent": move.public_intent,
+        },
+        "turn_result": turn_result,
+        "status": session.status,
+        "test_state": shared["_test_state"],
+    }
+
+
+async def _run_baseline_step(db: AsyncSession, session_uuid: str, locale: str | None = None) -> dict:
+    """Advance independent conventional agents without RoomMind governance."""
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if session.session_mode != "baseline":
+        raise HTTPException(409, "This operation requires a baseline session")
+    if session.status not in {"active", "paused"}:
+        raise HTTPException(409, f"Session is {session.status}")
+    scenario = await orch_support.load_scenario(db, session.scenario_id)
+    rows = sorted(session.messages, key=lambda row: (row.sequence_no, row.id))
+    messages = [
+        {
+            "speaker_id": row.speaker_id,
+            "speaker_type": row.speaker_type,
+            "speaker_source": row.speaker_source,
+            "turn_id": row.turn_id,
+            "sequence_no": row.sequence_no,
+            "content": row.content,
+        }
+        for row in rows
+    ]
+    move = await generate_baseline_player_move(db, session, scenario, messages)
+    turn = await process_baseline_step(db, session, scenario, move, messages)
+    completed_turns = sum(1 for row in rows if row.speaker_type == "user") + 1
+    safety_max_turns = max(10, min(int((session.run_config or {}).get("safety_max_turns", 50)), 100))
+    stop_reason = None
+    if turn.declared_complete:
+        session.status = "completed"
+        stop_reason = "model_declared_complete"
+    elif completed_turns >= safety_max_turns:
+        session.status = "stopped"
+        stop_reason = "safety_limit_reached"
+    shared = dict(session.shared_state or {})
+    shared["_baseline_state"] = {
+        "architecture": "traditional_independent_agents",
+        "memory_type": "per_agent_rolling_public_history",
+        "structured_cognition": False,
+        "runtime_governance": False,
+        "completed_turns": completed_turns,
+        "safety_max_turns": safety_max_turns,
+        "stop_reason": stop_reason,
+        "declared_phase": turn.declared_phase,
+        "declared_complete": turn.declared_complete,
+        "last_player_intent": move.intent,
+        "model": turn.model_label,
+        "reply_count": len(turn.replies),
+    }
+    session.shared_state = shared
+    await db.flush()
+    return {
+        "player_move": {
+            "content": move.content,
+            "intent": move.intent,
+            "requested_end": move.requested_end,
+            "model": move.model_label,
+        },
+        "turn_result": {
+            "replies": turn.replies,
+            "declared_phase": turn.declared_phase,
+            "declared_complete": turn.declared_complete,
+        },
+        "status": session.status,
+        "test_state": shared["_baseline_state"],
+    }
+
+
+async def _run_autonomous_step(db: AsyncSession, session_uuid: str, locale: str | None = None) -> dict:
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if session.session_mode == "baseline":
+        return await _run_baseline_step(db, session_uuid, locale)
+    return await _run_test_step(db, session_uuid, locale)
 
 
 @router.get("/scenarios", response_model=list[ScenarioListItem])
@@ -74,7 +364,9 @@ async def get_published_scenario(scenario_id: int, db: DbDep) -> dict:
         "description": scenario.description,
         "player_side_goal": resolve_player_side_goal(scenario),
         "business_goal": resolve_player_side_goal(scenario),
-        "phases": scenario.phases,
+        "schema_version": 2,
+        "task_config": scenario.task_config or {},
+        "phases": [p.get("phase_id") for p in (scenario.task_config or {}).get("phases", [])],
         "scene_config": scenario.scene_config,
         "player_character": player,
         "orchestration_mode": ORCHESTRATION_MODE,
@@ -86,6 +378,9 @@ async def get_published_scenario(scenario_id: int, db: DbDep) -> dict:
                 "job_title": c.job_title,
                 "display_name": c.display_name,
                 "side": c.side or "opponent",
+                "team_id": c.team_id,
+                "relationship_to_player": c.relationship_to_player,
+                "interaction_role": c.interaction_role,
                 "spawn_point": c.spawn_point,
                 "avatar_manifest": client_avatar_manifest(c.avatar_manifest),
             }
@@ -105,13 +400,24 @@ async def create_session(body: SessionCreate, db: DbDep) -> SessionOut:
     if not result.scalar_one_or_none():
         raise HTTPException(404, "Scenario not found or not published")
 
-    session = await memory_service.create_session(db, body.scenario_id, body.user_id)
+    try:
+        session = await memory_service.create_session(
+            db,
+            body.scenario_id,
+            body.user_id,
+            session_mode=body.session_mode,
+            run_config=body.run_config,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     await db.flush()
     return SessionOut(
         session_uuid=session.session_uuid,
         scenario_id=session.scenario_id,
         current_phase=session.current_phase,
         orchestration_mode=session.orchestration_mode,
+        session_mode=session.session_mode,
+        run_config=session.run_config or {},
         shared_state=session.shared_state or {},
         status=session.status,
     )
@@ -127,6 +433,8 @@ async def get_session(session_uuid: str, db: DbDep) -> SessionOut:
         scenario_id=session.scenario_id,
         current_phase=session.current_phase,
         orchestration_mode=session.orchestration_mode,
+        session_mode=session.session_mode,
+        run_config=session.run_config or {},
         shared_state=session.shared_state or {},
         status=session.status,
     )
@@ -138,7 +446,9 @@ async def get_messages(session_uuid: str, db: DbDep) -> list[ChatMessageOut]:
     if not session:
         raise HTTPException(404, "Session not found")
     result = await db.execute(
-        select(SessionMessage).where(SessionMessage.session_id == session.id).order_by(SessionMessage.created_at)
+        select(SessionMessage)
+        .where(SessionMessage.session_id == session.id)
+        .order_by(SessionMessage.sequence_no, SessionMessage.id)
     )
     return list(result.scalars().all())
 
@@ -157,7 +467,70 @@ async def export_session(session_uuid: str, db: DbDep) -> dict:
     session = await memory_service.get_session(db, session_uuid)
     if not session:
         raise HTTPException(404, "Session not found")
-    return await build_session_export_bundle(db, session)
+    full = await build_session_export_bundle(db, session)
+    return build_public_session_export_bundle(full)
+
+
+@router.get("/sessions/{session_uuid}/evaluation-packet")
+async def export_blinded_evaluation_packet(session_uuid: str, db: DbDep) -> dict:
+    """Condition-hidden public transcript for an external human or AI judge."""
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    public = build_public_session_export_bundle(await build_session_export_bundle(db, session))
+    return build_blinded_evaluation_packet(public)
+
+
+@router.post("/sessions/{session_uuid}/external-evaluation")
+async def run_external_evaluation(session_uuid: str, db: DbDep) -> dict:
+    """Run a post-hoc observer that cannot affect dialogue or stopping."""
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if session.status not in {"completed", "stopped"}:
+        raise HTTPException(409, "External evaluation is only available after the session ends")
+    scenario = await orch_support.load_scenario(db, session.scenario_id)
+    public = build_public_session_export_bundle(await build_session_export_bundle(db, session))
+    try:
+        result = await evaluate_public_transcript(
+            db,
+            scenario=scenario,
+            messages=public.get("messages") or [],
+            system_claim=(public.get("external_observation") or {}).get("system_claim") or {},
+        )
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    shared = dict(session.shared_state or {})
+    shared["_external_evaluation"] = result
+    session.shared_state = shared
+    await db.flush()
+    return result
+
+
+@router.get("/sessions/{session_uuid}/export.csv", response_class=PlainTextResponse)
+async def export_session_csv(session_uuid: str, db: DbDep) -> PlainTextResponse:
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    bundle = build_public_session_export_bundle(await build_session_export_bundle(db, session))
+    return PlainTextResponse(
+        transcript_csv(bundle),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="session-{session_uuid}.csv"'},
+    )
+
+
+@router.get("/sessions/{session_uuid}/export.jsonl", response_class=PlainTextResponse)
+async def export_session_jsonl(session_uuid: str, db: DbDep) -> PlainTextResponse:
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    bundle = build_public_session_export_bundle(await build_session_export_bundle(db, session))
+    return PlainTextResponse(
+        transcript_jsonl(bundle),
+        media_type="application/x-ndjson; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="session-{session_uuid}.jsonl"'},
+    )
 
 
 @router.patch("/sessions/{session_uuid}/agent-memories/{node_id}", response_model=AgentMemoryNodeOut)
@@ -223,6 +596,78 @@ async def send_message(session_uuid: str, body: UserMessageIn, db: DbDep) -> dic
         raise HTTPException(404, str(e)) from e
     except RuntimeError as e:
         raise HTTPException(502, str(e)) from e
+
+
+@router.post("/sessions/{session_uuid}/test/step")
+async def run_test_step(session_uuid: str, body: TestRunIn, db: DbDep) -> dict:
+    """Generate one autonomous turn for RoomMind test or prompt baseline."""
+    try:
+        return await _run_autonomous_step(db, session_uuid, body.locale)
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@router.post("/sessions/{session_uuid}/test/run")
+async def run_test_session(session_uuid: str, body: TestRunIn, db: DbDep) -> dict:
+    """Run requested turns or continue until task completion, with a safety cap."""
+    session = await memory_service.get_session(db, session_uuid)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    completed = sum(1 for m in session.messages if m.speaker_type == "user")
+    safety_max = max(10, min(int((session.run_config or {}).get("safety_max_turns", 50)), 100))
+    iterations = max(0, safety_max - completed) if body.until_complete else body.max_steps
+    steps: list[dict] = []
+    try:
+        for _ in range(iterations):
+            step = await _run_autonomous_step(db, session_uuid, body.locale)
+            steps.append(step)
+            # Multi-turn API clients can observe/export every completed turn even
+            # while a longer autonomous run is still in progress.
+            await db.commit()
+            if step["status"] != "active":
+                break
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    status = steps[-1]["status"] if steps else session.status
+    return {"steps": steps, "step_count": len(steps), "status": status}
+
+
+@router.post("/sessions/{session_uuid}/test/pause")
+async def pause_test_session(session_uuid: str, db: DbDep) -> dict:
+    session = await memory_service.get_session(db, session_uuid)
+    if not session or session.session_mode not in {"test", "baseline"}:
+        raise HTTPException(404, "Autonomous session not found")
+    session.status = "paused"
+    await db.flush()
+    return {"status": session.status}
+
+
+@router.post("/sessions/{session_uuid}/test/resume")
+async def resume_test_session(session_uuid: str, db: DbDep) -> dict:
+    session = await memory_service.get_session(db, session_uuid)
+    if not session or session.session_mode not in {"test", "baseline"}:
+        raise HTTPException(404, "Autonomous session not found")
+    if session.status == "completed":
+        raise HTTPException(409, "Completed sessions cannot be resumed")
+    session.status = "active"
+    await db.flush()
+    return {"status": session.status}
+
+
+@router.post("/sessions/{session_uuid}/test/stop")
+async def stop_test_session(session_uuid: str, db: DbDep) -> dict:
+    session = await memory_service.get_session(db, session_uuid)
+    if not session or session.session_mode not in {"test", "baseline"}:
+        raise HTTPException(404, "Autonomous session not found")
+    session.status = "stopped"
+    shared = dict(session.shared_state or {})
+    state_key = "_baseline_state" if session.session_mode == "baseline" else "_test_state"
+    test_state = dict(shared.get(state_key) or {})
+    test_state["stop_reason"] = "manually_stopped"
+    shared[state_key] = test_state
+    session.shared_state = shared
+    await db.flush()
+    return {"status": session.status, "test_state": test_state}
 
 
 @router.websocket("/ws/{session_uuid}")

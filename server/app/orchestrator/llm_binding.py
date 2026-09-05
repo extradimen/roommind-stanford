@@ -45,6 +45,12 @@ def resolve_llm(
         char_layer = character.llm_config
 
     combined = {**layer, **char_layer}
+    if bool((orchestration_config or {}).get("_comparison_lock_model")):
+        # Controlled experiments freeze provider/model to the platform-wide
+        # model. Role-specific temperatures/token budgets may still fit each
+        # internal operation, but neither condition gets a stronger base model.
+        combined.pop("provider", None)
+        combined.pop("model", None)
 
     def _inherit(val: Any, fallback: str | None) -> str | None:
         if val is None:

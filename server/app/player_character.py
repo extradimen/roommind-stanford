@@ -13,18 +13,6 @@ DEFAULT_PLAYER_AVATAR: dict[str, Any] = {
     "avatar_style": "gltf",
 }
 
-SLUG_PLAYER_DEFAULTS: dict[str, dict[str, str]] = {
-    "global-smart-manufacturing-supply-chain-negotiation": {
-        "character_name": "James Park",
-        "job_title": "Director of Strategic Procurement",
-    },
-    "supply-chain-negotiation": {
-        "character_name": "Alex Chen",
-        "job_title": "Chief Procurement Officer",
-    },
-}
-
-
 def resolve_player_character(scenario: ScenarioTemplate) -> dict[str, Any]:
     """Return normalized player identity for UI and agent prompts."""
     scene = scenario.scene_config if isinstance(scenario.scene_config, dict) else {}
@@ -37,9 +25,9 @@ def resolve_player_character(scenario: ScenarioTemplate) -> dict[str, Any]:
     )
 
     if not name and not title:
-        slug_defaults = SLUG_PLAYER_DEFAULTS.get(scenario.slug or "", {})
-        name = slug_defaults.get("character_name", "Alex Chen")
-        title = slug_defaults.get("job_title", "Chief Procurement Officer")
+        terminology = (scenario.task_config or {}).get("terminology") or {}
+        name = str(terminology.get("player_name") or "Player")
+        title = str(terminology.get("player_role") or "Participant")
         display = compose_display_name(name, title)
 
     manifest = sanitize_avatar_manifest(raw.get("avatar_manifest"))
@@ -50,10 +38,36 @@ def resolve_player_character(scenario: ScenarioTemplate) -> dict[str, Any]:
         manifest.pop("model_url", None)
     manifest.setdefault("avatar_style", "gltf")
 
+    # Derive the player's public authority from the same configured
+    # permissions used by task-state confirmation. Without this projection an
+    # autonomous player is incorrectly treated as unauthorized when accepting
+    # a term that explicitly lists ``player`` as a confirmer.
+    configured_authority = raw.get("authority") if isinstance(raw.get("authority"), dict) else {}
+    authority = dict(configured_authority)
+    can_propose = set(authority.get("can_propose") or [])
+    can_confirm = set(authority.get("can_confirm") or [])
+    can_execute = set(authority.get("can_execute") or [])
+    for field, field_schema in ((scenario.task_config or {}).get("state_schema") or {}).items():
+        if not isinstance(field_schema, dict):
+            continue
+        proposers = {str(value) for value in (field_schema.get("propose_permissions") or [])}
+        confirmers = {str(value) for value in (field_schema.get("confirm_permissions") or [])}
+        executors = {str(value) for value in (field_schema.get("execute_permissions") or [])}
+        if not proposers or proposers.intersection({"player", "user"}):
+            can_propose.add(str(field))
+        if confirmers.intersection({"player", "user"}):
+            can_confirm.add(str(field))
+        if executors.intersection({"player", "user"}):
+            can_execute.add(str(field))
+    authority["can_propose"] = sorted(can_propose)
+    authority["can_confirm"] = sorted(can_confirm)
+    authority["can_execute"] = sorted(can_execute)
+
     return {
         "character_id": "user",
         "character_name": name,
         "job_title": title,
         "display_name": display,
         "avatar_manifest": manifest,
+        "authority": authority,
     }

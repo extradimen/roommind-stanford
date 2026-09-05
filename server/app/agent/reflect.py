@@ -15,10 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.memory_stream import AgentMemoryStore, MemoryNode, active_plan
 from app.i18n.reply_language import plan_fallback_text
-from app.llm.client import llm_client
+from app.llm.client import LLMEmptyContentError, llm_client
 from app.models.db import CharacterTemplate, ScenarioTemplate
 from app.orchestrator.llm_binding import ResolvedLlm
 from app.scenario_side import goal_seed_text, initial_plan_goal_block
+from app.telemetry import emit
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +38,7 @@ def _build_seed_memories(character: CharacterTemplate, scenario: ScenarioTemplat
         "importance": 7.0,
     })
     seeds.append({
-        "content": f"My responsibility in this meeting: {character.responsibility}",
+        "content": f"My responsibility in this task: {character.responsibility}",
         "importance": 8.0,
     })
 
@@ -56,7 +57,7 @@ def _build_seed_memories(character: CharacterTemplate, scenario: ScenarioTemplat
             })
 
     seeds.append({
-        "content": f"Negotiation scenario: {scenario.title}. {goal_seed_text(character, scenario)}",
+        "content": f"Task scenario: {scenario.title}. {goal_seed_text(character, scenario)}",
         "importance": 6.0,
     })
 
@@ -127,24 +128,35 @@ Private knowledge: {json.dumps(private, ensure_ascii=False)}
 Background facts you already know:
 {seed_facts}
 
-Meeting: {scenario.title}
+Task setting: {scenario.title}
 {goal_block}
 
 Write a 2-3 sentence opening strategy plan in English:
 - Which topic will you raise first?
-- What is your bottom line?
+- Which constraints must you protect?
 - How will you open the conversation?
 
 Output the plan only. No JSON. No explanation."""
 
-    raw = await llm_client.chat_completion(
-        [{"role": "user", "content": prompt}],
-        db_provider=decision_llm.provider,
-        db_model=decision_llm.model,
-        temperature=decision_llm.temperature,
-        max_tokens=min(decision_llm.max_tokens, 200),
-    )
-    plan_text = raw.strip()
+    try:
+        raw = await llm_client.chat_completion(
+            [{"role": "user", "content": prompt}],
+            db_provider=decision_llm.provider,
+            db_model=decision_llm.model,
+            temperature=decision_llm.temperature,
+            # Reasoning-capable models need enough budget to finish their private
+            # reasoning before they can emit this short visible plan.
+            max_tokens=min(max(decision_llm.max_tokens, 1024), 2048),
+        )
+        plan_text = raw.strip()
+    except LLMEmptyContentError:
+        plan_text = ""
+        emit(
+            "llm.degraded_fallback",
+            component="initial_plan",
+            character_id=character.character_id,
+            fallback_action="deterministic_plan",
+        )
     if not plan_text:
         plan_text = plan_fallback_text(character.responsibility)
 
@@ -188,6 +200,15 @@ async def maybe_reflect(
     if len(candidates) < 2:
         return [], 0.0, None
 
+    # Reflection is a higher-order aid, not a reason to make the public
+    # simulation unavailable. Avoid repeatedly reflecting on nearly identical
+    # observations and reduce cumulative provider-failure exposure.
+    recent_reflection_turns = [
+        n.turn_id for n in nodes if n.node_type == "reflection"
+    ]
+    if recent_reflection_turns and turn_id - max(recent_reflection_turns) < 3:
+        return [], min(accumulator, threshold), None
+
     obs_lines = "\n".join(f"- (importance {n.importance}) {n.content}" for n in candidates[-8:])
 
     prompt = f"""You are {character.display_name}. Persona: {character.persona}. Responsibility: {character.responsibility}.
@@ -199,7 +220,7 @@ Recent dialogue:
 {context[-600:]}
 
 Complete two steps in English:
-1. List 2 questions that matter most to you (negotiation situation, opponent intent, your risks).
+1. List 2 questions that matter most to you (task situation, participant intent, your risks).
 2. For each question, write one-sentence inference (higher-order reflection, not dialogue).
 
 Format:
@@ -210,13 +231,24 @@ A2: <inference>
 
 Output the format above only."""
 
-    raw = await llm_client.chat_completion(
-        [{"role": "user", "content": prompt}],
-        db_provider=reflect_llm.provider,
-        db_model=reflect_llm.model,
-        temperature=reflect_llm.temperature,
-        max_tokens=min(reflect_llm.max_tokens, 300),
-    )
+    try:
+        raw = await llm_client.chat_completion(
+            [{"role": "user", "content": prompt}],
+            db_provider=reflect_llm.provider,
+            db_model=reflect_llm.model,
+            temperature=reflect_llm.temperature,
+            max_tokens=min(max(reflect_llm.max_tokens, 512), 1024),
+        )
+    except LLMEmptyContentError:
+        # Preserve the underlying observations and continue the dialogue. A
+        # later turn can form a new reflection from the same memory stream.
+        emit(
+            "llm.degraded_fallback",
+            component="reflection",
+            character_id=character.character_id,
+            fallback_action="skip_reflection",
+        )
+        return [], 0.0, None
     content = raw.strip()
     if not content:
         return [], 0.0, None

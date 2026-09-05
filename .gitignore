@@ -3,6 +3,7 @@
 .env.*.local
 .venv
 .venv/
+.venv*/
 server/.venv/
 admin/node_modules/
 client/node_modules/
@@ -17,3 +18,4 @@ __pycache__/
 .mypy_cache/
 .DS_Store
 *.log
+*.tsbuildinfo

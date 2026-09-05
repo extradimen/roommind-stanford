@@ -156,6 +156,12 @@ export interface Character {
   id?: number;
   character_id: string;
   side?: "player_ally" | "opponent";
+  team_id: string;
+  relationship_to_player: string;
+  interaction_role: string;
+  authority: Record<string, unknown>;
+  aliases: string[];
+  fallback_actions: Record<string, unknown>;
   character_name: string;
   job_title: string;
   display_name?: string;
@@ -175,6 +181,8 @@ export interface Scenario {
   id: number;
   slug: string;
   title: string;
+  schema_version: 2;
+  task_config: Record<string, unknown>;
   description: string | null;
   player_side_goal: string;
   opponent_side_goal: string;
@@ -220,6 +228,7 @@ export interface SessionListItem {
   session_uuid: string;
   scenario_id: number;
   orchestration_mode: string;
+  session_mode: "participation" | "test";
   current_phase: string;
   status: string;
   created_at?: string;
@@ -229,6 +238,8 @@ export interface SessionDebug {
   session_uuid: string;
   scenario_id: number;
   orchestration_mode: string;
+  session_mode: "participation" | "test";
+  run_config: Record<string, unknown>;
   current_phase: string;
   shared_state: Record<string, unknown>;
   orchestration_config: Record<string, unknown>;
@@ -236,6 +247,9 @@ export interface SessionDebug {
   messages: Array<{
     speaker_id: string;
     speaker_type: string;
+    speaker_source?: "human" | "ai" | "system";
+    turn_id?: number;
+    sequence_no?: number;
     content: string;
     emotion?: string | null;
     gesture?: string | null;

@@ -75,12 +75,12 @@ class WorldTimeline:
             if e.turn_id > turn_id or (e.turn_id == turn_id and e.tick >= tick)
         ]
 
-    def speech_context(self, limit: int = 30) -> str:
+    def speech_context(self, limit: int = 30, character_limit: int = 6000) -> str:
         lines: list[str] = []
         for e in self.events[-limit:]:
             if e.event_type in ("user_speech", "npc_speech"):
                 lines.append(f"[{e.actor_id}]: {e.content}")
-        return "\n".join(lines)
+        return "\n".join(lines)[-max(500, character_limit):]
 
     def to_list(self) -> list[dict[str, Any]]:
         return [e.to_dict() for e in self.events]

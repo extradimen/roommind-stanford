@@ -153,9 +153,9 @@ export const en = {
     ],
     aiGuideIncludesTitle: "JSON should include",
     aiGuideIncludes: [
-      "slug, title, description, player_side_goal, opponent_side_goal",
-      "phases, win_conditions, scene_config (environment params), is_published",
-      "characters[]: character_id, side, character_name, job_title, persona, responsibility, …",
+      "schema_version: 2, slug, title, description",
+      "task_config: task_type, terminology, state_schema, phases, completion_conditions",
+      "characters[]: character_id, team_id, relationship_to_player, interaction_role, authority, persona, responsibility, …",
       "dispatch_rules[]: name, trigger_keywords, priority_character_ids",
       "Upload GLB avatars on Scene visual / Web3D Studio — not required in import JSON",
     ],
@@ -173,20 +173,25 @@ export const en = {
 Mirror the structure and field names of the example JSON the user provides. Output only valid JSON — no markdown fences, no commentary.
 
 【Required top-level】
+- schema_version: 2
 - slug: unique English kebab-case id, e.g. retail-supplier-negotiation
 - title: scenario title
+- task_config with task_type, terminology, state_schema, phases, and completion_conditions
 
 【Recommended fields】
 - description, player_side_goal, opponent_side_goal
-- phases: string array, e.g. ["opening","discovery","bargaining","closing"]
-- win_conditions: array of objects, e.g. {"field":"price","operator":"<=","value":85}
+- task_config.state_schema defines every observable task variable, its type, description, and confirmation_policy
+- task_config.phases is an array of {phase_id, description}
+- task_config.completion_conditions uses all/any arrays of {field, operator, value, required_status}
+- task_config.relevance_signals and evaluator_instructions contain task-specific semantics
 - scene_config: e.g. {"environment":"meeting_room","camera":"first_person"}
 - is_published: true/false
 - characters: array of NPC definitions
 - dispatch_rules: keyword-based speaker priority rules
 
 【Each character】
-- character_id, side ("opponent" | "player_ally")
+- character_id, team_id, relationship_to_player, interaction_role
+- authority: {"can_confirm":["state_field"]}
 - character_name, job_title, persona, responsibility
 - tendency, private_state (hidden agenda, redlines, etc.)
 - spawn_point (3D seating configured on Scene visual page — optional in JSON)

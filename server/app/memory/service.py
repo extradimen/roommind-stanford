@@ -1,20 +1,26 @@
 import json
+import logging
 import uuid
 from collections.abc import AsyncIterator
+from datetime import datetime, timezone
 from typing import Any
 
 import redis.asyncio as aioredis
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
+from app.llm.client import llm_provider_failover_enabled
 from app.models.db import GameSession, SessionMessage
 from app.orchestrator.common import orch_support
 from app.orchestrator.defaults import ORCHESTRATION_MODE
 from app.orchestrator.generative import generative_orchestrator
+from app.task_state import TERMINAL_OUTCOMES, initial_task_state, update_task_state
+from app.telemetry import emit
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 class MemoryService:
@@ -30,14 +36,39 @@ class MemoryService:
         return f"roommind:session:{session_uuid}:working"
 
     async def cache_working_memory(self, session_uuid: str, messages: list[dict[str, Any]]) -> None:
-        r = await self.get_redis()
-        await r.set(self._session_key(session_uuid), json.dumps(messages[-50:], ensure_ascii=False), ex=86400)
+        try:
+            r = await self.get_redis()
+            await r.set(
+                self._session_key(session_uuid),
+                json.dumps(messages[-50:], ensure_ascii=False),
+                ex=86400,
+            )
+        except Exception as exc:
+            # PostgreSQL is authoritative. A cache outage must not roll back a
+            # completed LLM turn or make the learner resend the same message.
+            logger.warning("Redis working-memory cache write skipped: %s", exc)
+            emit(
+                "cache.working_memory.write_failed",
+                session_uuid=session_uuid,
+                exception_type=type(exc).__name__,
+                error=repr(exc)[:500],
+            )
 
     async def get_working_memory(self, session_uuid: str) -> list[dict[str, Any]]:
-        r = await self.get_redis()
-        raw = await r.get(self._session_key(session_uuid))
-        if raw:
-            return json.loads(raw)
+        try:
+            r = await self.get_redis()
+            raw = await r.get(self._session_key(session_uuid))
+            if raw:
+                parsed = json.loads(raw)
+                return parsed if isinstance(parsed, list) else []
+        except Exception as exc:
+            logger.warning("Redis working-memory cache read skipped: %s", exc)
+            emit(
+                "cache.working_memory.read_failed",
+                session_uuid=session_uuid,
+                exception_type=type(exc).__name__,
+                error=repr(exc)[:500],
+            )
         return []
 
     async def create_session(
@@ -45,14 +76,26 @@ class MemoryService:
         db: AsyncSession,
         scenario_id: int,
         user_id: str | None = None,
+        session_mode: str = "participation",
+        run_config: dict[str, Any] | None = None,
     ) -> GameSession:
+        if session_mode not in {"participation", "test", "baseline"}:
+            raise ValueError("session_mode must be 'participation', 'test', or 'baseline'")
+        scenario = await orch_support.load_scenario(db, scenario_id)
+        task_state = initial_task_state(scenario.task_config or {})
         session = GameSession(
             session_uuid=str(uuid.uuid4()),
             scenario_id=scenario_id,
             user_id=user_id,
-            current_phase="opening",
-            orchestration_mode=ORCHESTRATION_MODE,
-            shared_state={},
+            current_phase=task_state["phase"],
+            orchestration_mode=(
+                "independent_agent_baseline" if session_mode == "baseline" else ORCHESTRATION_MODE
+            ),
+            session_mode=session_mode,
+            run_config=run_config or {},
+            # The conventional agent baseline has rolling chat memories only,
+            # initialized lazily, and deliberately has no RoomMind task state.
+            shared_state={} if session_mode == "baseline" else {"task_state": task_state},
             status="active",
         )
         db.add(session)
@@ -72,11 +115,14 @@ class MemoryService:
             {
                 "speaker_id": m.speaker_id,
                 "speaker_type": m.speaker_type,
+                "speaker_source": m.speaker_source,
+                "turn_id": m.turn_id,
+                "sequence_no": m.sequence_no,
                 "content": m.content,
                 "emotion": m.emotion,
                 "gesture": m.gesture,
             }
-            for m in sorted(session.messages, key=lambda x: x.created_at)
+            for m in sorted(session.messages, key=lambda x: (x.sequence_no, x.id))
         ]
 
     async def process_user_message(
@@ -95,73 +141,204 @@ class MemoryService:
     async def process_user_message_stream(
         self, db: AsyncSession, session_uuid: str, user_input: str, ui_locale: str | None = None
     ) -> AsyncIterator[dict[str, Any]]:
+        async for event in self.process_player_message_stream(
+            db,
+            session_uuid,
+            user_input,
+            ui_locale=ui_locale,
+            speaker_source="human",
+        ):
+            yield event
+
+    async def process_player_message_stream(
+        self,
+        db: AsyncSession,
+        session_uuid: str,
+        user_input: str,
+        ui_locale: str | None = None,
+        speaker_source: str = "human",
+        message_meta: dict[str, Any] | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
         from app.i18n.reply_language import detect_reply_language
 
-        session = await self.get_session(db, session_uuid)
+        if speaker_source not in {"human", "ai"}:
+            raise ValueError("speaker_source must be 'human' or 'ai'")
+
+        session_result = await db.execute(
+            select(GameSession).where(GameSession.session_uuid == session_uuid).with_for_update()
+        )
+        session = session_result.scalar_one_or_none()
         if not session:
             raise ValueError("Session not found")
+        if session.session_mode == "test" and speaker_source != "ai":
+            raise ValueError("Test sessions only accept AI player turns")
+        if session.session_mode == "baseline":
+            raise ValueError("Baseline sessions must use the independent-agent baseline endpoint")
+        if session.session_mode == "participation" and speaker_source != "human":
+            raise ValueError("Participation sessions only accept human player turns")
 
         scenario = await orch_support.load_scenario(db, session.scenario_id)
         dispatch_rules = await orch_support.load_dispatch_rules(db, session.scenario_id)
-        messages = await self.get_session_messages_dict(session)
+        message_result = await db.execute(
+            select(SessionMessage)
+            .where(SessionMessage.session_id == session.id)
+            .order_by(SessionMessage.sequence_no, SessionMessage.id)
+        )
+        messages = [
+            {
+                "speaker_id": m.speaker_id,
+                "speaker_type": m.speaker_type,
+                "speaker_source": m.speaker_source,
+                "turn_id": m.turn_id,
+                "sequence_no": m.sequence_no,
+                "content": m.content,
+                "emotion": m.emotion,
+                "gesture": m.gesture,
+            }
+            for m in message_result.scalars().all()
+        ]
 
+        turn_id = sum(1 for m in messages if m.get("speaker_type") == "user") + 1
+        seq_result = await db.execute(
+            select(func.coalesce(func.max(SessionMessage.sequence_no), 0)).where(
+                SessionMessage.session_id == session.id
+            )
+        )
+        next_sequence = int(seq_result.scalar_one()) + 1
         user_msg = SessionMessage(
             session_id=session.id,
             speaker_id="user",
             speaker_type="user",
+            speaker_source=speaker_source,
+            turn_id=turn_id,
+            sequence_no=next_sequence,
             content=user_input,
+            meta=message_meta or {},
+            created_at=datetime.now(timezone.utc),
         )
         db.add(user_msg)
-        messages.append({"speaker_id": "user", "speaker_type": "user", "content": user_input})
+        emit(
+            "dialogue.message.recorded",
+            session_uuid=session_uuid,
+            scenario_id=session.scenario_id,
+            session_mode=session.session_mode,
+            turn_id=turn_id,
+            sequence_no=next_sequence,
+            speaker_id="user",
+            speaker_type="user",
+            speaker_source=speaker_source,
+            content=user_input,
+        )
+        messages.append({
+            "speaker_id": "user",
+            "speaker_type": "user",
+            "speaker_source": speaker_source,
+            "turn_id": turn_id,
+            "sequence_no": next_sequence,
+            "content": user_input,
+        })
 
-        user_turn_count = sum(1 for m in messages if m.get("speaker_type") == "user")
-        orch_cfg = scenario.orchestration_config or {}
+        user_turn_count = turn_id
+        orch_cfg = dict(scenario.orchestration_config or {})
+        if (session.run_config or {}).get("comparison_lock_model"):
+            orch_cfg["_comparison_lock_model"] = True
+            agent_layer = dict(orch_cfg.get("agent") or {})
+            agent_layer["working_message_limit"] = int(
+                (session.run_config or {}).get("working_message_limit", 30)
+            )
+            orch_cfg["agent"] = agent_layer
         reply_language = detect_reply_language(user_input, ui_locale)
         shared_state = dict(session.shared_state or {})
         shared_state["_reply_language"] = reply_language
 
         result: Any = None
-        async for event in generative_orchestrator.process_turn_stream(
-            db,
-            session_id=session.id,
-            scenario=scenario,
-            characters=scenario.characters,
-            dispatch_rules=dispatch_rules,
-            user_input=user_input,
-            messages=messages,
-            current_phase=session.current_phase,
-            shared_state=shared_state,
-            orchestration_config=orch_cfg,
-            user_turn_count=user_turn_count,
-            reply_language=reply_language,
-        ):
-            if event.get("type") == "turn_result":
-                result = event.pop("_result", None)
-                yield event
-            else:
-                yield event
+        failover_token = llm_provider_failover_enabled.set(session.session_mode == "participation")
+        try:
+            async for event in generative_orchestrator.process_turn_stream(
+                db,
+                session_id=session.id,
+                scenario=scenario,
+                characters=scenario.characters,
+                dispatch_rules=dispatch_rules,
+                user_input=user_input,
+                messages=messages,
+                current_phase=session.current_phase,
+                shared_state=shared_state,
+                orchestration_config=orch_cfg,
+                user_turn_count=user_turn_count,
+                reply_language=reply_language,
+            ):
+                if event.get("type") == "turn_result":
+                    result = event.pop("_result", None)
+                    yield event
+                else:
+                    yield event
+        finally:
+            llm_provider_failover_enabled.reset(failover_token)
 
         if result is None:
             raise RuntimeError("Stream ended without turn_result")
 
-        session.current_phase = result.phase
-        session.shared_state = result.shared_state
+        updated_shared_state = dict(result.shared_state or {})
+        failover_token = llm_provider_failover_enabled.set(session.session_mode == "participation")
+        try:
+            task_state = await update_task_state(
+                db,
+                task_config=scenario.task_config or {},
+                previous=updated_shared_state.get("task_state"),
+                player_text=user_input,
+                npc_turns=[{"speaker_id": reply.character_id, "content": reply.content} for reply in result.replies],
+                orchestration_config=orch_cfg,
+                characters=list(scenario.characters),
+                turn_id=turn_id,
+            )
+        finally:
+            llm_provider_failover_enabled.reset(failover_token)
+        updated_shared_state["task_state"] = task_state
+        session.current_phase = task_state["phase"]
+        completion_status = str(task_state.get("completion_status") or "in_progress")
+        if completion_status in TERMINAL_OUTCOMES:
+            session.status = "completed" if completion_status in {"completed", "conditional"} else "stopped"
+        session.shared_state = updated_shared_state
         session.orchestration_mode = ORCHESTRATION_MODE
 
         npc_records = []
-        for reply in result.replies:
+        for reply_index, reply in enumerate(result.replies, start=1):
             msg = SessionMessage(
                 session_id=session.id,
                 speaker_id=reply.character_id,
                 speaker_type="npc",
+                speaker_source="ai",
+                turn_id=turn_id,
+                sequence_no=next_sequence + reply_index,
                 content=reply.content,
                 emotion=reply.emotion,
                 gesture=reply.gesture,
-                meta={"reasoning": reply.reasoning},
+                meta={
+                    "reasoning": reply.reasoning,
+                    "public_intent": reply.public_intent,
+                    "public_ledger_event": reply.public_ledger_event,
+                },
+                created_at=datetime.now(timezone.utc),
             )
             db.add(msg)
+            emit(
+                "dialogue.message.recorded",
+                session_uuid=session_uuid,
+                scenario_id=session.scenario_id,
+                session_mode=session.session_mode,
+                turn_id=turn_id,
+                sequence_no=next_sequence + reply_index,
+                speaker_id=reply.character_id,
+                speaker_type="npc",
+                speaker_source="ai",
+                content=reply.content,
+                emotion=reply.emotion,
+                gesture=reply.gesture,
+            )
             npc_records.append(reply)
 
+        session.updated_at = datetime.now(timezone.utc)
         await db.flush()
         await self.cache_working_memory(
             session_uuid,
