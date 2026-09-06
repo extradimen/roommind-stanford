@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G4.7"
+    assert CURRENT_GENERATION_ID == "G4.8"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g4.7-floor-and-authority-routing-governance"
+        "g4.8-convergence-closure-and-evidence-governance"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -565,6 +565,39 @@ def main() -> None:
     })
     bounded_handoff = run_integrity_probes(g47_bundle)
     assert bounded_handoff["checks"]["g47_repeated_player_handoff_is_bounded"] is True
+
+    g48_bundle = deepcopy(g47_bundle)
+    g48_bundle["session"]["run_config"]["research_manifest"] = {
+        "generation_id": "G4.8",
+        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+    }
+    g48_bundle["messages"] = [{
+        "sequence_no": 1, "turn_id": 2, "speaker_id": "user",
+        "speaker_type": "user", "speaker_source": "ai",
+        "content": "We will close here and leave the decision unresolved.",
+        "meta": {"requested_end": True},
+    }, {
+        "sequence_no": 2, "turn_id": 2, "speaker_id": "ceo",
+        "speaker_type": "npc", "speaker_source": "ai",
+        "content": "I still object to closing.", "meta": {},
+    }]
+    bad_g48_closure = run_integrity_probes(g48_bundle)
+    assert bad_g48_closure["checks"]["g48_no_speech_after_player_closure"] is False
+    g48_bundle["messages"] = [{
+        "sequence_no": 1, "turn_id": 2, "speaker_id": "user",
+        "speaker_type": "user", "speaker_source": "ai",
+        "content": "Mr.", "meta": {},
+    }]
+    bad_g48_fragment = run_integrity_probes(g48_bundle)
+    assert bad_g48_fragment["checks"]["g48_public_utterances_well_formed"] is False
+    g48_bundle["messages"] = [{
+        "sequence_no": 1, "turn_id": 2, "speaker_id": "ceo",
+        "speaker_type": "npc", "speaker_source": "ai",
+        "content": "The attached files include verified capacity measurements.",
+        "meta": {},
+    }]
+    bad_g48_artifact = run_integrity_probes(g48_bundle)
+    assert bad_g48_artifact["checks"]["g48_live_artifact_receipts_grounded"] is False
 
     g4_bundle["messages"].append({
         "sequence_no": 5,

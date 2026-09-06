@@ -345,5 +345,69 @@ class MemoryService:
             messages + [{"speaker_id": r.character_id, "content": r.content} for r in npc_records],
         )
 
+    async def record_player_message_only(
+        self,
+        db: AsyncSession,
+        session_uuid: str,
+        user_input: str,
+        *,
+        speaker_source: str = "ai",
+        message_meta: dict[str, Any] | None = None,
+    ) -> SessionMessage:
+        """Persist a terminal player utterance without opening another NPC floor."""
+        if speaker_source not in {"human", "ai"}:
+            raise ValueError("speaker_source must be 'human' or 'ai'")
+        session_result = await db.execute(
+            select(GameSession).where(GameSession.session_uuid == session_uuid).with_for_update()
+        )
+        session = session_result.scalar_one_or_none()
+        if not session:
+            raise ValueError("Session not found")
+        turn_result = await db.execute(
+            select(func.count(SessionMessage.id)).where(
+                SessionMessage.session_id == session.id,
+                SessionMessage.speaker_type == "user",
+            )
+        )
+        turn_id = int(turn_result.scalar_one()) + 1
+        seq_result = await db.execute(
+            select(func.coalesce(func.max(SessionMessage.sequence_no), 0)).where(
+                SessionMessage.session_id == session.id
+            )
+        )
+        sequence_no = int(seq_result.scalar_one()) + 1
+        message = SessionMessage(
+            session_id=session.id,
+            speaker_id="user",
+            speaker_type="user",
+            speaker_source=speaker_source,
+            turn_id=turn_id,
+            sequence_no=sequence_no,
+            content=user_input,
+            meta=message_meta or {},
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(message)
+        emit(
+            "dialogue.message.recorded",
+            session_uuid=session_uuid,
+            scenario_id=session.scenario_id,
+            session_mode=session.session_mode,
+            turn_id=turn_id,
+            sequence_no=sequence_no,
+            speaker_id="user",
+            speaker_type="user",
+            speaker_source=speaker_source,
+            content=user_input,
+        )
+        emit(
+            "dialogue.closure.floor_locked",
+            session_uuid=session_uuid,
+            turn_id=turn_id,
+            session_mode=session.session_mode,
+        )
+        await db.flush()
+        return message
+
 
 memory_service = MemoryService()

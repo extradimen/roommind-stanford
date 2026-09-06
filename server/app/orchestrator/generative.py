@@ -417,6 +417,11 @@ class GenerativeOrchestrator:
             *(cid for cid in priority_mentions if cid not in spoken_ids),
             *directed_pending,
         ]))
+        # The test runner must not interpret a fresh, directed player question
+        # as task stagnation. The flag is public interaction state, not shared
+        # private memory, and is cleared as soon as the next player turn is
+        # processed.
+        updated_state["_pending_player_response"] = floor_handed_to_player
         updated_state["_importance_accumulators"] = accumulators
         updated_state["_last_debug"] = {
             "turn_id":                  turn_id,

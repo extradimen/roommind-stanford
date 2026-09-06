@@ -15,6 +15,7 @@ from app.agent.speech_safety import (
     near_duplicate_public_utterance,
     npc_directed_question_handoff_reason,
     resolve_direct_question_target,
+    speech_rejection_reason,
     terminal_current_world_action_reason,
     unregistered_participant_assignment_reason,
     unsupported_evidence_reason,
@@ -71,12 +72,13 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     is_g38_roommind = session_mode == "test" and architecture_version.startswith(("g3.8", "g3.9", "g4"))
     is_g39_roommind = session_mode == "test" and architecture_version.startswith(("g3.9", "g4"))
     is_g4_roommind = session_mode == "test" and architecture_version.startswith("g4")
-    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7"))
-    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7"))
-    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5", "g4.6", "g4.7"))
-    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5", "g4.6", "g4.7"))
-    is_g45_roommind = session_mode == "test" and architecture_version.startswith(("g4.5", "g4.6", "g4.7"))
-    is_g47_roommind = session_mode == "test" and architecture_version.startswith("g4.7")
+    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8"))
+    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8"))
+    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8"))
+    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5", "g4.6", "g4.7", "g4.8"))
+    is_g45_roommind = session_mode == "test" and architecture_version.startswith(("g4.5", "g4.6", "g4.7", "g4.8"))
+    is_g47_roommind = session_mode == "test" and architecture_version.startswith(("g4.7", "g4.8"))
+    is_g48_roommind = session_mode == "test" and architecture_version.startswith("g4.8")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -175,6 +177,16 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         and row.get("provenance") == "simulated_tool_result"
         and str(row.get("tool_result_id") or "") in ledger_tool_results
     }
+    public_content_by_sequence = {
+        int(row.get("sequence_no") or 0):
+        " ".join(str(row.get("content") or "").split())
+        for row in messages
+    }
+    ungrounded_live_artifact_receipts = [
+        row for row in unsupported_public_evidence
+        if public_content_by_sequence.get(int(row.get("sequence_no") or 0), "")
+        not in tool_grounded_quotes
+    ]
     unsupported_visible_current_world_actions = []
     for row in messages:
         content = " ".join(str(row.get("content") or "").split())
@@ -427,6 +439,27 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "target_id": target_id,
         "reason": "bounded_handoff_repeated",
     } for target_id, count in bounded_handoffs_by_target.items() if count > 1)
+    malformed_public_fragments = [
+        {
+            "sequence_no": int(row.get("sequence_no") or 0),
+            "speaker_id": str(row.get("speaker_id") or ""),
+        }
+        for row in ordered_messages
+        if speech_rejection_reason(str(row.get("content") or ""))
+        == "malformed_fragment"
+    ]
+    post_closure_speech: list[dict[str, Any]] = []
+    closure_sequence = 0
+    for row in ordered_messages:
+        meta = row.get("meta") or {}
+        if closure_sequence:
+            post_closure_speech.append({
+                "closure_sequence_no": closure_sequence,
+                "sequence_no": int(row.get("sequence_no") or 0),
+                "speaker_id": str(row.get("speaker_id") or ""),
+            })
+        if row.get("speaker_type") == "user" and meta.get("requested_end") is True:
+            closure_sequence = int(row.get("sequence_no") or 0)
     capability_boundaries = task_result.get("capability_boundaries") or {}
     capability_focus_issues = [
         str((row.get("focus") or {}).get("issue") or "")
@@ -680,6 +713,18 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "g47_repeated_player_handoff_is_bounded": (
             not bounded_handoff_violations if is_g47_roommind else None
         ),
+        "g48_cross_speaker_issue_repetition_absent": (
+            not cross_role_obligation_duplicates if is_g48_roommind else None
+        ),
+        "g48_public_utterances_well_formed": (
+            not malformed_public_fragments if is_g48_roommind else None
+        ),
+        "g48_no_speech_after_player_closure": (
+            not post_closure_speech if is_g48_roommind else None
+        ),
+        "g48_live_artifact_receipts_grounded": (
+            not ungrounded_live_artifact_receipts if is_g48_roommind else None
+        ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
             and ledger_clock_sequence == sorted(ledger_clock_sequence)
@@ -732,6 +777,9 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "g45_recorded_open_obligations": recorded_open_obligations,
             "g47_focus_target_authority_violations": focus_target_authority_violations,
             "g47_bounded_handoff_violations": bounded_handoff_violations,
+            "g48_malformed_public_fragments": malformed_public_fragments,
+            "g48_post_closure_speech": post_closure_speech,
+            "g48_ungrounded_live_artifact_receipts": ungrounded_live_artifact_receipts,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }

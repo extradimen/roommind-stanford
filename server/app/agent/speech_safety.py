@@ -30,6 +30,11 @@ _UNSUPPORTED_ARTIFACT_PATTERNS = (
     r"\battached\s+(?:below|here|herewith|for\s+(?:your\s+)?review)\b",
     r"\bplease\s+find\b[^.!?]{0,140}\b(?:attached|enclosed)\b",
     r"\b(?:the\s+)?attachment\s+(?:contains|includes|is|has)\b",
+    r"\b(?:the\s+)?attached\s+(?:file|files|report|reports|document|documents)\b"
+    r"[^.!?]{0,100}\b(?:include|includes|contain|contains|show|shows|confirm|confirms)\b",
+    r"\b(?:i|we)(?:['’]ve| have)?\s+(?:received|reviewed|opened)\b"
+    r"[^.!?]{0,80}\b(?:attachment|attached\b[^.!?]{0,40}\b"
+    r"(?:file|files|report|reports|document|documents)|upload)\b",
     r"\b(?:archive|file|document|report|letter|draft|package)\s+(?:upload|submission|transfer)\s+(?:is\s+)?(?:complete|completed|verified)\b",
     r"\b(?:upload|submission|transfer)\s+(?:is\s+)?(?:complete|completed|verified)\b",
     r"\bplease\s+find\s+(?:the\s+)?(?:attached|enclosed)\b",
@@ -259,6 +264,19 @@ def near_duplicate_obligation_utterance(
     is_question = normalized.endswith(("?", "？")) or bool(
         re.search(r"\b(?:can|could|would|will)\s+you\b", normalized)
     )
+    focus_terms = {
+        token for token in re.findall(
+            r"[a-z0-9]+",
+            " ".join(str(focus.get(key) or "") for key in (
+                "issue", "field", "subject", "obligation_id",
+            )).casefold(),
+        )
+        if len(token) >= 4 and token not in _REPETITION_STOPWORDS
+    }
+    current_terms = {
+        token for token in re.findall(r"[a-z0-9]+", normalized)
+        if len(token) >= 4 and token not in _REPETITION_STOPWORDS
+    }
     comparable = [
         str(row.get("content") or "")
         for row in list(prior_utterances or ())[-8:]
@@ -277,7 +295,23 @@ def near_duplicate_obligation_utterance(
             ))
         ) == is_question
     ]
-    return near_duplicate_public_utterance(normalized, comparable)
+    if near_duplicate_public_utterance(normalized, comparable):
+        return True
+    # G4.7 exposed short paraphrases by different speakers that repeated one
+    # unresolved issue but stayed below the generic six-token threshold. Apply
+    # a narrower topic-aware threshold only to question/request speech.
+    if not is_question or not focus_terms or not (current_terms & focus_terms):
+        return False
+    for prior in comparable:
+        prior_terms = {
+            token for token in re.findall(r"[a-z0-9]+", prior.casefold())
+            if len(token) >= 4 and token not in _REPETITION_STOPWORDS
+        }
+        shared_topic = current_terms & prior_terms & focus_terms
+        content_overlap = current_terms & prior_terms
+        if shared_topic and len(content_overlap) >= 3:
+            return True
+    return False
 
 
 _PLAYER_RESPONSE_REASONING_RE = re.compile(
@@ -867,7 +901,8 @@ def unsupported_live_evidentiary_artifact_reason(
     if not re.search(
         r"\b(?:here\s+(?:is|are)|please\s+find\s+below|"
         r"i(?:'ve| have)\s+(?:located|provided)|"
-        r"we(?:'ve| have)\s+(?:located|provided)|the\s+following)\b",
+        r"we(?:'ve| have)\s+(?:located|provided)|"
+        r"the\s+following)\b",
         text,
         flags=re.IGNORECASE,
     ):
@@ -1015,7 +1050,7 @@ def private_constraint_contradiction_reason(
             constraint,
         ):
             continue
-        if len(public_terms.intersection(stems(constraint))) >= 1:
+        if len(public_terms.intersection(stems(constraint))) >= 2:
             return "private_constraint_contradiction"
     return None
 
@@ -1113,6 +1148,11 @@ def speech_rejection_reason(
 
     if text[-1] not in ".!?\"'”’":
         return "truncated"
+    words = re.findall(r"[A-Za-z0-9]+", text)
+    if len(words) <= 2 and re.fullmatch(
+        r"(?i)(?:mr|mrs|ms|dr|prof|sir|madam|team|everyone)[.!?]?", text
+    ):
+        return "malformed_fragment"
     return None
 
 

@@ -1964,6 +1964,39 @@ def main() -> None:
         public_intent={"transition": "proposed"},
     ) is True
     assert near_duplicate_obligation_utterance(
+        "Supplier, can you provide the capacity report?",
+        [{
+            "speaker_id": "first",
+            "content": "Could the supplier share the capacity report before we decide?",
+            "obligation_id": "work:capacity_report",
+        }],
+        speaker_id="second",
+        focus={
+            "kind": "work_item", "obligation_id": "work:capacity_report",
+            "issue": "capacity report evidence",
+        },
+        public_intent={"transition": "proposed"},
+    ) is True
+    assert speech_rejection_reason("Mr.") == "malformed_fragment"
+    assert speech_rejection_reason(
+        "All support teams are fully trained.",
+        private_constraints=["The launch budget is still pending."],
+    ) is None
+    assert speech_rejection_reason(
+        "The attached files include utilization, yield, and CpK measurements.",
+        validated_intent={"simulation_scope": "discussion"},
+    ) in {
+        "unsupported_artifact_claim",
+        "live_evidentiary_artifact_requires_simulated_tool_result",
+    }
+    assert speech_rejection_reason(
+        "We have received and reviewed the attached capacity report.",
+        validated_intent={"simulation_scope": "discussion"},
+    ) in {
+        "unsupported_artifact_claim",
+        "live_evidentiary_artifact_requires_simulated_tool_result",
+    }
+    assert near_duplicate_obligation_utterance(
         repeated_request,
         [{"speaker_id": "first", "content": repeated_request}],
         speaker_id="second", focus=focus,

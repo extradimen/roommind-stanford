@@ -162,27 +162,44 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
         prepared_shared["task_state"] = before_task_state
         session.shared_state = prepared_shared
     turn_result: dict = {}
-    async for event in memory_service.process_player_message_stream(
-        db,
-        session_uuid,
-        move.content,
-        ui_locale=locale,
-        speaker_source="ai",
-        message_meta={
-            "intent": move.intent,
-            "generation_model": move.model_label,
-            "requested_end": move.requested_end,
-            "public_intent": move.public_intent,
-        },
-    ):
-        if event.get("type") == "turn_result":
-            turn_result = {k: v for k, v in event.items() if k != "_result"}
+    move_meta = {
+        "intent": move.intent,
+        "generation_model": move.model_label,
+        "requested_end": move.requested_end,
+        "public_intent": move.public_intent,
+    }
+    if move.requested_end:
+        await memory_service.record_player_message_only(
+            db, session_uuid, move.content, speaker_source="ai", message_meta=move_meta,
+        )
+    else:
+        async for event in memory_service.process_player_message_stream(
+            db,
+            session_uuid,
+            move.content,
+            ui_locale=locale,
+            speaker_source="ai",
+            message_meta=move_meta,
+        ):
+            if event.get("type") == "turn_result":
+                turn_result = {k: v for k, v in event.items() if k != "_result"}
 
     stop_reason = None
     after_task_state = ((session.shared_state or {}).get("task_state") or {})
     after_signature = task_progress_signature(after_task_state)
     previous_test_state = dict((session.shared_state or {}).get("_test_state") or {})
-    stagnant_turns = 0 if after_signature != before_signature else int(previous_test_state.get("stagnant_turns", 0)) + 1
+    shared_after_turn = dict(session.shared_state or {})
+    pending_player_response = bool(shared_after_turn.get("_pending_player_response"))
+    previous_player_response = bool(prepared_shared.get("_pending_player_response"))
+    interaction_progress = (
+        after_signature != before_signature
+        or pending_player_response
+        or previous_player_response
+    )
+    stagnant_turns = (
+        0 if interaction_progress
+        else int(previous_test_state.get("stagnant_turns", 0)) + 1
+    )
     completion_status = str(after_task_state.get("completion_status") or "in_progress")
     task_terminal = completion_status in TERMINAL_OUTCOMES
     if task_terminal:
@@ -235,7 +252,7 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
         after_task_state,
         stagnant_turns=stagnant_turns,
         turn_id=completed_turns,
-        progress_made=after_signature != before_signature,
+        progress_made=interaction_progress,
     )
     if stop_reason:
         session.status = "completed" if completion_status in {"completed", "conditional"} else "stopped"
@@ -248,7 +265,7 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
         "last_player_intent": move.intent,
         "stagnant_turns": stagnant_turns,
         "max_stagnant_turns": max_stagnant_turns,
-        "progress_made": after_signature != before_signature,
+        "progress_made": interaction_progress,
         "completion_status": completion_status,
     }
     session.shared_state = shared
@@ -291,11 +308,26 @@ async def _run_baseline_step(db: AsyncSession, session_uuid: str, locale: str | 
         for row in rows
     ]
     move = await generate_baseline_player_move(db, session, scenario, messages)
-    turn = await process_baseline_step(db, session, scenario, move, messages)
+    turn = None
+    if move.requested_end:
+        await memory_service.record_player_message_only(
+            db,
+            session_uuid,
+            move.content,
+            speaker_source="ai",
+            message_meta={
+                "intent": move.intent,
+                "generation_model": move.model_label,
+                "requested_end": True,
+                "public_intent": move.public_intent,
+            },
+        )
+    else:
+        turn = await process_baseline_step(db, session, scenario, move, messages)
     completed_turns = sum(1 for row in rows if row.speaker_type == "user") + 1
     safety_max_turns = max(10, min(int((session.run_config or {}).get("safety_max_turns", 50)), 100))
     stop_reason = None
-    if turn.declared_complete:
+    if turn and turn.declared_complete:
         session.status = "completed"
         stop_reason = "model_declared_complete"
     elif move.requested_end:
@@ -313,11 +345,11 @@ async def _run_baseline_step(db: AsyncSession, session_uuid: str, locale: str | 
         "completed_turns": completed_turns,
         "safety_max_turns": safety_max_turns,
         "stop_reason": stop_reason,
-        "declared_phase": turn.declared_phase,
-        "declared_complete": turn.declared_complete,
+        "declared_phase": turn.declared_phase if turn else "bounded_close",
+        "declared_complete": turn.declared_complete if turn else False,
         "last_player_intent": move.intent,
-        "model": turn.model_label,
-        "reply_count": len(turn.replies),
+        "model": turn.model_label if turn else move.model_label,
+        "reply_count": len(turn.replies) if turn else 0,
     }
     session.shared_state = shared
     await db.flush()
@@ -329,9 +361,9 @@ async def _run_baseline_step(db: AsyncSession, session_uuid: str, locale: str | 
             "model": move.model_label,
         },
         "turn_result": {
-            "replies": turn.replies,
-            "declared_phase": turn.declared_phase,
-            "declared_complete": turn.declared_complete,
+            "replies": turn.replies if turn else [],
+            "declared_phase": turn.declared_phase if turn else "bounded_close",
+            "declared_complete": turn.declared_complete if turn else False,
         },
         "status": session.status,
         "test_state": shared["_baseline_state"],

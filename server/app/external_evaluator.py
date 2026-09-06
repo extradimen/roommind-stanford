@@ -225,8 +225,10 @@ Public transcript:
 System claim (untrusted):
 {json.dumps(system_claim, ensure_ascii=False)}
 
-Return strict JSON only:
-{{"dimension_score":4,"metrics":{{{','.join(json.dumps(name)+':{"score":4,"evidence_sequence_nos":[],"reason":"brief"}' for name in metrics)}}},"strengths":[],"issues":[],"notes":"brief"}}
+Return strict JSON only. Every metric must include at least one valid public
+transcript sequence number, including metrics describing an absence (cite the
+most relevant exchange that demonstrates the absence):
+{{"dimension_score":4,"metrics":{{{','.join(json.dumps(name)+':{"score":4,"evidence_sequence_nos":[1],"reason":"brief"}' for name in metrics)}}},"strengths":[],"issues":[],"notes":"brief"}}
 Do not add metrics or omit metrics."""
     last_preview = ""
     for attempt in range(EVALUATOR_ATTEMPTS):

@@ -86,6 +86,14 @@ async def main() -> None:
             session_mode="baseline",
             run_config={"safety_max_turns": 50, "player_strategy": "balanced"},
         )
+        closure_test_session = await memory_service.create_session(
+            db, scenario.id, session_mode="test",
+            run_config={"comparison_protocol": True},
+        )
+        closure_baseline_session = await memory_service.create_session(
+            db, scenario.id, session_mode="baseline",
+            run_config={"comparison_protocol": True},
+        )
         batch = BatchExperiment(
             batch_uuid="00000000-0000-0000-0000-000000000001",
             name="CI batch smoke",
@@ -94,6 +102,24 @@ async def main() -> None:
         )
         db.add(batch)
         await db.flush()
+
+        for closure_session in (closure_test_session, closure_baseline_session):
+            recorded = await memory_service.record_player_message_only(
+                db,
+                closure_session.session_uuid,
+                "We will close here and record the unresolved condition.",
+                speaker_source="ai",
+                message_meta={"requested_end": True},
+            )
+            assert recorded.sequence_no == 1
+            closure_messages = list((await db.execute(
+                select(SessionMessage).where(
+                    SessionMessage.session_id == closure_session.id
+                )
+            )).scalars().all())
+            assert len(closure_messages) == 1
+            assert closure_messages[0].speaker_type == "user"
+            assert closure_messages[0].meta["requested_end"] is True
         db.add_all([
             BatchExperimentRun(
                 batch_id=batch.id, scenario_id=scenario.id, condition="test", repetition=1
