@@ -7,6 +7,7 @@ architecture exploration.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.agent.speech_safety import (
@@ -23,6 +24,7 @@ from app.agent.speech_safety import (
     unsupported_evidence_reason,
 )
 from app.research_protocol import transcript_provenance
+from app.player_agent import is_minimal_player_floor_handoff
 
 
 def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
@@ -74,14 +76,15 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     is_g38_roommind = session_mode == "test" and architecture_version.startswith(("g3.8", "g3.9", "g4"))
     is_g39_roommind = session_mode == "test" and architecture_version.startswith(("g3.9", "g4"))
     is_g4_roommind = session_mode == "test" and architecture_version.startswith("g4")
-    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9"))
-    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9"))
-    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9"))
-    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9"))
-    is_g45_roommind = session_mode == "test" and architecture_version.startswith(("g4.5", "g4.6", "g4.7", "g4.8", "g4.9"))
-    is_g47_roommind = session_mode == "test" and architecture_version.startswith(("g4.7", "g4.8", "g4.9"))
-    is_g48_roommind = session_mode == "test" and architecture_version.startswith(("g4.8", "g4.9"))
-    is_g49_roommind = session_mode == "test" and architecture_version.startswith("g4.9")
+    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10"))
+    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10"))
+    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10"))
+    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10"))
+    is_g45_roommind = session_mode == "test" and architecture_version.startswith(("g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10"))
+    is_g47_roommind = session_mode == "test" and architecture_version.startswith(("g4.7", "g4.8", "g4.9", "g4.10"))
+    is_g48_roommind = session_mode == "test" and architecture_version.startswith(("g4.8", "g4.9", "g4.10"))
+    is_g49_roommind = session_mode == "test" and architecture_version.startswith(("g4.9", "g4.10"))
+    is_g410_roommind = session_mode == "test" and architecture_version.startswith("g4.10")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -326,7 +329,12 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             continue
         following: list[dict[str, Any]] = []
         for candidate in ordered_messages[index + 1:]:
-            if candidate.get("speaker_type") == "user":
+            if (
+                candidate.get("speaker_type") == "user"
+                and not is_minimal_player_floor_handoff(
+                    str(candidate.get("content") or "")
+                )
+            ):
                 break
             following.append(candidate)
         answered = {str(candidate.get("speaker_id") or "") for candidate in following}
@@ -365,6 +373,66 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         )]
         if reason
     ]
+    conditional_acceptance_events = [
+        {
+            "event_id": str(event.get("event_id") or ""),
+            "field": str(event.get("field") or ""),
+            "turn_id": int(event.get("turn_id") or 0),
+        }
+        for event in ledger_events
+        if isinstance(event, dict)
+        and str(event.get("transition_to") or "") in {"accepted", "verified"}
+        and re.search(
+            r"\b(?:conditionally|subject\s+to|provided(?:\s+that)?|assuming|pending|"
+            r"awaiting|unless|until|before\s+(?:i|we)\s+(?:can|will)|cannot|can't|"
+            r"not\s+(?:yet\s+)?(?:confirm|accept|approve|agree|ready))\b",
+            str((event.get("public_evidence") or {}).get("quote") or ""),
+            flags=re.IGNORECASE,
+        )
+    ]
+    post_terminal_confirmation_speech: list[dict[str, Any]] = []
+    completion_fields = {
+        str(condition.get("field") or "")
+        for condition in [
+            *(((full_bundle.get("scenario") or {}).get("task_config") or {}).get(
+                "completion_conditions", {}
+            ).get("all", [])),
+            *(((full_bundle.get("scenario") or {}).get("task_config") or {}).get(
+                "completion_conditions", {}
+            ).get("any", [])),
+        ]
+        if isinstance(condition, dict) and condition.get("field")
+    }
+    accepted_completion_events = [
+        event for event in ledger_events
+        if isinstance(event, dict)
+        and str(event.get("transition_to") or "") == "accepted"
+        and str(event.get("field") or "") in completion_fields
+    ]
+    if completion_status == "completed" and accepted_completion_events:
+        final_event = max(
+            accepted_completion_events,
+            key=lambda event: (int(event.get("turn_id") or 0), int(event.get("tick") or 0)),
+        )
+        final_turn = int(final_event.get("turn_id") or 0)
+        actor_id = str(final_event.get("actor_id") or "")
+        actor_rows = [
+            (index, row) for index, row in enumerate(ordered_messages)
+            if int(row.get("turn_id") or 0) == final_turn
+            and str(row.get("speaker_id") or "") == actor_id
+        ]
+        if actor_rows:
+            final_index = actor_rows[-1][0]
+            post_terminal_confirmation_speech = [
+                {
+                    "sequence_no": int(row.get("sequence_no") or 0),
+                    "speaker_id": str(row.get("speaker_id") or ""),
+                    "terminal_event_id": str(final_event.get("event_id") or ""),
+                }
+                for row in ordered_messages[final_index + 1:]
+                if int(row.get("turn_id") or 0) == final_turn
+                and row.get("speaker_type") == "npc"
+            ]
     unregistered_public_assignments = [
         {
             "sequence_no": int(row.get("sequence_no") or 0),
@@ -792,6 +860,12 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "g49_retrospective_authorship_preserved": (
             not retrospective_authorship_violations if is_g49_roommind else None
         ),
+        "g410_conditional_confirmations_not_committed": (
+            not conditional_acceptance_events if is_g410_roommind else None
+        ),
+        "g410_terminal_confirmation_locks_floor": (
+            not post_terminal_confirmation_speech if is_g410_roommind else None
+        ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
             and ledger_clock_sequence == sorted(ledger_clock_sequence)
@@ -850,6 +924,8 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "g49_multi_addressee_response_violations": multi_addressee_response_violations,
             "g49_generated_routing_prompt_violations": routing_prompt_violations,
             "g49_retrospective_authorship_violations": retrospective_authorship_violations,
+            "g410_conditional_acceptance_events": conditional_acceptance_events,
+            "g410_post_terminal_confirmation_speech": post_terminal_confirmation_speech,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }

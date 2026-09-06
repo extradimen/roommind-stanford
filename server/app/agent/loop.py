@@ -478,6 +478,7 @@ Output strict JSON only:
         timeline=timeline,
         reply_language=reply_language,
         task_state=task_state,
+        task_config=scenario.task_config or {},
         allow_retrospective=evidence_mode == "retrospective_claim",
         participant_aliases=public_participant_aliases(scenario),
     )

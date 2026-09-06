@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G4.9"
+    assert CURRENT_GENERATION_ID == "G4.10"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g4.9-response-routing-and-authorship-governance"
+        "g4.10-prerequisite-and-terminal-floor-governance"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID

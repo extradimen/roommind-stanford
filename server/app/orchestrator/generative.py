@@ -39,6 +39,7 @@ from app.i18n.reply_language import processing_message
 from app.player_character import resolve_player_character
 from app.public_ledger import ensure_public_ledger
 from app.telemetry import emit
+from app.task_state import refresh_task_state_from_public_ledger
 
 
 class GenerativeOrchestrator:
@@ -214,6 +215,7 @@ class GenerativeOrchestrator:
         replies: list[NPCReply] = []
         speak_quota = max_speakers
         floor_handed_to_player = False
+        terminal_floor_locked = False
         directed_pending: list[str] = []
         npc_labels = [
             label
@@ -344,6 +346,23 @@ class GenerativeOrchestrator:
                 async for evt in yield_speech_stream(char, action_result):
                     yield evt
 
+                if action_result.public_ledger_event:
+                    refresh_task_state_from_public_ledger(
+                        scenario.task_config or {}, task_state, characters,
+                    )
+                    terminal_floor_locked = (
+                        str(task_state.get("completion_status") or "") == "completed"
+                    )
+                    if terminal_floor_locked:
+                        emit(
+                            "dialogue.terminal_floor.locked",
+                            component="generative_orchestrator",
+                            character_id=cid,
+                            turn_id=turn_id,
+                            reason="intra_turn_completion_confirmation",
+                        )
+                        agent_debug[cid]["terminal_floor_locked"] = True
+
                 if floor_handed_to_player:
                     emit(
                         "dialogue.floor_handoff.to_player",
@@ -381,7 +400,7 @@ class GenerativeOrchestrator:
                 agent_debug[cid]["reflection"]            = reflect_text
                 agent_debug[cid]["reflection_node_count"] = len(new_reflections)
 
-            if floor_handed_to_player:
+            if floor_handed_to_player or terminal_floor_locked:
                 break
 
         # ----------------------------------------------------------------
@@ -460,6 +479,7 @@ class GenerativeOrchestrator:
             "agent_order":              [c.character_id for c in agent_order],
             "coordinator_focus":         focus,
             "floor_handed_to_player":   floor_handed_to_player,
+            "terminal_floor_locked":    terminal_floor_locked,
             "agents":                   agent_debug,
             "retrieval_weights":        {"alpha": alpha, "beta": beta, "gamma": gamma},
             "reflect_threshold":        reflect_threshold,

@@ -784,6 +784,22 @@ def evaluate_conditions(task_config: dict[str, Any], task_state: dict[str, Any])
     return task_state
 
 
+def refresh_task_state_from_public_ledger(
+    task_config: dict[str, Any], task_state: dict[str, Any],
+    characters: list[CharacterTemplate],
+) -> dict[str, Any]:
+    """Synchronously project committed public events at an intra-turn boundary.
+
+    NPCs speak sequentially inside one autonomous turn.  Waiting for the later
+    LLM evaluator allowed a second NPC to reopen a task after the first NPC had
+    already supplied the final authoritative confirmation.  This projection is
+    deterministic and uses only the canonical public ledger.
+    """
+    _project_public_ledger(task_state)
+    _project_field_ledger(task_config, task_state, characters)
+    return evaluate_conditions(task_config, task_state)
+
+
 def set_progress_metadata(
     task_state: dict[str, Any], *, stagnant_turns: int, turn_id: int, progress_made: bool
 ) -> dict[str, Any]:
@@ -1277,6 +1293,7 @@ def _commit_explicit_field_confirmations(
     *, field: str, spec: dict[str, Any], value: Any,
     confirmations: list[str], evidence: list[dict[str, Any]],
     state: dict[str, Any], characters: list[CharacterTemplate], turn_id: int,
+    task_config: dict[str, Any] | None = None,
 ) -> None:
     """Atomically project explicit authorized speech into the public ledger.
 
@@ -1344,6 +1361,7 @@ def _commit_explicit_field_confirmations(
             },
             turn_id=turn_id,
             state=state,
+            task_config=task_config or {},
         )
         intent = ground_public_intent_in_quote(
             intent, quote, actor_aliases=[display_name] if display_name else [],
@@ -1383,7 +1401,7 @@ _EXPLICIT_ACCEPTANCE_RE = re.compile(
 )
 _CONDITIONAL_OR_NEGATED_ACCEPTANCE_RE = re.compile(
     r"\b(?:do\s+not|don't|cannot|can't|not\s+(?:yet\s+)?(?:confirm|accept|approve|"
-    r"agree|ready)|conditionally|conditional\s+on|subject\s+to|provided\s+that|"
+    r"agree|ready)|conditionally|conditional\s+on|subject\s+to|provided(?:\s+that)?|"
     r"pending|awaiting|before\s+(?:i|we)\s+(?:can|will)|until|"
     r"please|could\s+you|can\s+you|would\s+you)\b",
     flags=re.IGNORECASE,
@@ -1600,6 +1618,7 @@ def _commit_quote_level_confirmations(
                 confirmations=[speaker_id],
                 evidence=[{"speaker_id": speaker_id, "quote": quote}],
                 state=state, characters=characters, turn_id=turn_id,
+                task_config=task_config,
             )
             after = len((ensure_public_ledger(state).get("events") or []))
             if after > before:
@@ -1916,6 +1935,7 @@ def apply_evaluator_updates(
             field=str(field), spec=schema[field], value=value,
             confirmations=confirmations, evidence=valid_evidence,
             state=state, characters=characters, turn_id=turn_id,
+            task_config=task_config,
         )
         confirmation_valid = {
             "player": has_player,

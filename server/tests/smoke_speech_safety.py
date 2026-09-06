@@ -50,7 +50,8 @@ from app.player_agent import (
 )
 from app.public_ledger import (
     align_explicit_confirmation_intent, commit_public_intent,
-    record_simulated_tool_result, validate_public_intent,
+    ground_public_intent_in_quote, record_simulated_tool_result,
+    validate_public_intent,
 )
 
 
@@ -82,6 +83,88 @@ def main() -> None:
         participant_aliases=multi_addressee_aliases,
     )
     assert [row["target_id"] for row in pending_addressees] == ["cfo"]
+    pending_across_handoff = pending_player_addressed_responses(
+        [
+            {"speaker_id": "user", "speaker_type": "user", "content": multi_addressee_request},
+            {"speaker_id": "operations_director", "speaker_type": "npc", "content": "Operations is ready."},
+            {"speaker_id": "user", "speaker_type": "user", "content": "Dana Kim, the floor is yours."},
+        ],
+        participant_aliases=multi_addressee_aliases,
+    )
+    assert [row["target_id"] for row in pending_across_handoff] == ["cfo"]
+
+    conditional_acceptance = validate_public_intent(
+        character={"character_id": "cfo", "authority": {"can_confirm": ["budget_approved"]}},
+        intent={
+            "kind": "decision", "subject": "budget approval",
+            "field": "budget_approved", "value": True,
+            "transition": "accepted",
+        },
+        turn_id=1,
+    )
+    conditional_acceptance = ground_public_intent_in_quote(
+        conditional_acceptance,
+        "I can approve the budget provided that Finance signs off next week.",
+    )
+    assert conditional_acceptance["commit_allowed"] is False
+    assert "public_quote_does_not_support_transition" in conditional_acceptance["validation_reason"]
+
+    prerequisite_config = {
+        "state_schema": {
+            "scope_confirmed": {"type": "boolean"},
+            "containment_active": {"type": "boolean"},
+            "recovery_plan_approved": {"type": "boolean"},
+        },
+        "phases": [
+            {"phase_id": "triage"},
+            {"phase_id": "containment", "entry_conditions": {"all": [
+                {"field": "scope_confirmed", "operator": "==", "value": True,
+                 "required_status": "confirmed"},
+            ]}},
+            {"phase_id": "recovery", "entry_conditions": {"all": [
+                {"field": "containment_active", "operator": "==", "value": True,
+                 "required_status": "confirmed"},
+            ]}},
+            {"phase_id": "handoff", "entry_conditions": {"all": [
+                {"field": "recovery_plan_approved", "operator": "==", "value": True,
+                 "required_status": "confirmed"},
+            ]}},
+        ],
+    }
+    prerequisite_state = initial_task_state(prerequisite_config)
+    premature_recovery = validate_public_intent(
+        character={
+            "character_id": "security_lead",
+            "authority": {"can_confirm": ["recovery_plan_approved"]},
+        },
+        intent={
+            "kind": "decision", "subject": "recovery plan approval",
+            "field": "recovery_plan_approved", "value": True,
+            "transition": "accepted",
+        },
+        turn_id=1, state=prerequisite_state, task_config=prerequisite_config,
+    )
+    assert premature_recovery["commit_allowed"] is False
+    assert "phase_prerequisites_unmet" in premature_recovery["validation_reason"]
+    prerequisite_state["variables"]["scope_confirmed"].update({
+        "value": True, "status": "confirmed",
+    })
+    prerequisite_state["variables"]["containment_active"].update({
+        "value": True, "status": "confirmed",
+    })
+    sequenced_recovery = validate_public_intent(
+        character={
+            "character_id": "security_lead",
+            "authority": {"can_confirm": ["recovery_plan_approved"]},
+        },
+        intent={
+            "kind": "decision", "subject": "recovery plan approval",
+            "field": "recovery_plan_approved", "value": True,
+            "transition": "accepted",
+        },
+        turn_id=2, state=prerequisite_state, task_config=prerequisite_config,
+    )
+    assert sequenced_recovery["commit_allowed"] is True
     assert retrospective_role_substitution_reason(
         "I partnered with Taylor to define the architecture and ship the redesign.",
         speaker_id="engineering_director",

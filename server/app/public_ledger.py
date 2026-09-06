@@ -201,9 +201,104 @@ def _authority_allows(character: Any, intent: dict[str, Any]) -> bool:
     return True
 
 
+def _condition_is_met(condition: dict[str, Any], state: dict[str, Any]) -> bool:
+    """Evaluate a phase prerequisite from the public field projection only."""
+    variable = ((state.get("variables") or {}).get(str(condition.get("field") or "")) or {})
+    allowed = condition.get("allowed_statuses")
+    required = condition.get("required_status", "confirmed")
+    status_ok = (
+        variable.get("status") in allowed
+        if allowed
+        else variable.get("status") == required if required else True
+    )
+    actual = variable.get("value")
+    expected = condition.get("value")
+    operator = str(condition.get("operator") or "==")
+    try:
+        if operator == "==":
+            value_ok = actual == expected
+        elif operator == "!=":
+            value_ok = actual != expected
+        elif operator == "<=":
+            value_ok = actual <= expected
+        elif operator == ">=":
+            value_ok = actual >= expected
+        elif operator == "<":
+            value_ok = actual < expected
+        elif operator == ">":
+            value_ok = actual > expected
+        elif operator == "in":
+            value_ok = actual in expected
+        elif operator == "contains":
+            value_ok = expected in actual
+        else:
+            value_ok = False
+    except (TypeError, ValueError):
+        value_ok = False
+    return bool(status_ok and value_ok)
+
+
+def _unmet_phase_prerequisites(
+    task_config: dict[str, Any], state: dict[str, Any], field: str,
+) -> list[str]:
+    """Return public prerequisites that must precede accepting ``field``.
+
+    A configured phase order is a workflow contract. A field may help enter
+    its own phase without requiring its peer conditions first. But when that
+    field does not participate in the immediately preceding phase's entry, the
+    preceding entry conditions must already be met (for example, containment
+    before recovery-plan approval, or interview evidence before closure).
+    """
+    phases = [
+        phase for phase in (task_config.get("phases") or [])
+        if isinstance(phase, dict)
+    ]
+    target_index = next((
+        index for index, phase in enumerate(phases)
+        if any(
+            str(condition.get("field") or "") == field
+            for condition in [
+                *((phase.get("entry_conditions") or {}).get("all") or []),
+                *((phase.get("entry_conditions") or {}).get("any") or []),
+            ]
+            if isinstance(condition, dict)
+        )
+    ), -1)
+    if target_index < 0:
+        return []
+    if target_index <= 1:
+        return []
+    root = phases[target_index - 1].get("entry_conditions") or {}
+    all_conditions = [
+        condition for condition in (root.get("all") or [])
+        if isinstance(condition, dict)
+    ]
+    any_conditions = [
+        condition for condition in (root.get("any") or [])
+        if isinstance(condition, dict)
+    ]
+    preceding_fields = {
+        str(condition.get("field") or "")
+        for condition in [*all_conditions, *any_conditions]
+    }
+    if field in preceding_fields:
+        return []
+    unmet = [
+        str(condition.get("field") or "")
+        for condition in all_conditions
+        if not _condition_is_met(condition, state)
+    ]
+    if any_conditions and not any(
+        _condition_is_met(condition, state) for condition in any_conditions
+    ):
+        unmet.extend(str(condition.get("field") or "") for condition in any_conditions)
+    return list(dict.fromkeys(value for value in unmet if value))
+
+
 def validate_public_intent(
     *, character: Any, intent: dict[str, Any] | None, turn_id: int,
     state: dict[str, Any] | None = None,
+    task_config: dict[str, Any] | None = None,
     allow_retrospective: bool = False,
 ) -> dict[str, Any]:
     """Validate an agent's proposed public-world transition before wording it.
@@ -354,6 +449,14 @@ def validate_public_intent(
     if field and transition in {"verified", "accepted"} and value is None:
         rejection = rejection or "field_terminal_transition_requires_value"
         transition = "proposed"
+    if state is not None and task_config and field and transition == "accepted":
+        unmet_prerequisites = _unmet_phase_prerequisites(task_config, state, field)
+        if unmet_prerequisites:
+            rejection = rejection or (
+                "phase_prerequisites_unmet:" + ",".join(unmet_prerequisites)
+            )
+            transition = "proposed"
+            commit_allowed = False
 
     # Material entities advance monotonically. Concrete in-session work may be
     # submitted immediately, but it cannot also verify and accept itself in the
@@ -449,8 +552,9 @@ _EXPLICIT_FIRST_PERSON_CONFIRMATION_RE = re.compile(
     flags=re.IGNORECASE,
 )
 _CONDITIONAL_CONFIRMATION_RE = re.compile(
-    r"\b(?:conditionally|subject\s+to|provided\s+that|assuming|pending|awaiting|"
-    r"if|unless|once|when|before\s+(?:i|we)\s+(?:can|will))\b",
+    r"\b(?:conditionally|subject\s+to|provided(?:\s+that)?|assuming|pending|awaiting|"
+    r"if|unless|until|once|when|before\s+(?:i|we)\s+(?:can|will)|"
+    r"cannot|can't|not\s+(?:yet\s+)?(?:confirm|accept|approve|agree|ready))\b",
     flags=re.IGNORECASE,
 )
 
@@ -629,9 +733,16 @@ def ground_public_intent_in_quote(
         "blocked": r"\b(?:i|we)\s+(?:cannot|can't|am unable|are unable)\b|\b(?:is|are|remains?)\s+blocked\b",
     }
     pattern = patterns.get(transition)
-    transition_match = (
-        re.search(pattern, quote, flags=re.IGNORECASE) if pattern else None
-    )
+    transition_match = None
+    if pattern:
+        for clause in re.split(r"(?<=[.!?])\s+|;\s*", quote):
+            candidate = re.search(pattern, clause, flags=re.IGNORECASE)
+            if not candidate:
+                continue
+            if transition in {"accepted", "verified"} and _CONDITIONAL_CONFIRMATION_RE.search(clause):
+                continue
+            transition_match = candidate
+            break
     if pattern and not transition_match:
         prior_reason = str(grounded.get("validation_reason") or "")
         request_only = (

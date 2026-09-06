@@ -261,15 +261,26 @@ def pending_player_addressed_responses(
     participant_aliases: dict[str, list[str]] | None = None,
     participant_labels: dict[str, str] | None = None,
 ) -> list[dict[str, str]]:
-    """Return NPCs explicitly asked by the latest player who have not replied."""
-    latest_player_index = next((
-        index for index in range(len(messages) - 1, -1, -1)
-        if messages[index].get("speaker_type") == "user"
-        or messages[index].get("speaker_id") == "user"
-    ), -1)
-    if latest_player_index < 0:
+    """Return unanswered addressees from the latest substantive player request.
+
+    A deterministic ``Name, the floor is yours`` message transfers the public
+    floor; it does not replace the multi-addressee request that caused it.
+    Keep walking across those handoffs so the original response set remains
+    visible until every requested role has spoken.
+    """
+    player_indexes = [
+        index for index, message in enumerate(messages)
+        if message.get("speaker_type") == "user" or message.get("speaker_id") == "user"
+    ]
+    if not player_indexes:
         return []
-    player_message = messages[latest_player_index]
+    position = len(player_indexes) - 1
+    while position > 0 and is_minimal_player_floor_handoff(
+        str(messages[player_indexes[position]].get("content") or "")
+    ):
+        position -= 1
+    origin_index = player_indexes[position]
+    player_message = messages[origin_index]
     targets = [
         target for target in resolve_direct_question_targets(
             str(player_message.get("content") or ""),
@@ -280,7 +291,7 @@ def pending_player_addressed_responses(
     ]
     answered = {
         str(message.get("speaker_id") or "")
-        for message in messages[latest_player_index + 1:]
+        for message in messages[origin_index + 1:]
         if message.get("speaker_type") == "npc"
     }
     return [{
@@ -289,6 +300,19 @@ def pending_player_addressed_responses(
         "target_id": target,
         "target_display_name": str((participant_labels or {}).get(target) or target),
     } for target in targets if target not in answered]
+
+
+_MINIMAL_PLAYER_FLOOR_HANDOFF_RE = re.compile(
+    r"^\s*[^.!?]{1,100},\s*(?:the\s+floor\s+is\s+yours|"
+    r"please\s+respond\s+when\s+the\s+evidence\s+is\s+available\s*;\s*"
+    r"until\s+then,\s+we\s+will\s+leave\s+this\s+decision\s+unresolved)\s*[.!]?\s*$",
+    flags=re.IGNORECASE,
+)
+
+
+def is_minimal_player_floor_handoff(content: str) -> bool:
+    """Identify the deterministic public handoff without relying on hidden meta."""
+    return bool(_MINIMAL_PLAYER_FLOOR_HANDOFF_RE.fullmatch(" ".join(content.split())))
 
 
 _EXPLICIT_NEW_EXAMPLE_RE = re.compile(

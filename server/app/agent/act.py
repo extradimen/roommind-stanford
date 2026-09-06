@@ -721,6 +721,7 @@ async def execute_decision(
     timeline: WorldTimeline | None = None,
     reply_language: str = "en",
     task_state: dict[str, Any] | None = None,
+    task_config: dict[str, Any] | None = None,
     allow_retrospective: bool = False,
     participant_aliases: dict[str, list[str]] | None = None,
 ) -> ActionResult:
@@ -744,6 +745,7 @@ async def execute_decision(
         intent=decision.public_intent,
         turn_id=turn_id,
         state=task_state,
+        task_config=task_config,
         allow_retrospective=allow_retrospective,
     )
     emit(

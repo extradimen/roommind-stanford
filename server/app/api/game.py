@@ -139,6 +139,7 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
             intent=move.public_intent,
             turn_id=completed_turns,
             state=before_task_state,
+            task_config=task_config,
             allow_retrospective=evidence_mode == "retrospective_claim",
         )
         move.public_intent = ground_public_intent_in_quote(
