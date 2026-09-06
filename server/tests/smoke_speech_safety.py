@@ -7,6 +7,8 @@ from app.agent.speech_safety import (
     npc_directed_question_handoff_reason,
     near_duplicate_obligation_utterance,
     resolve_direct_question_target,
+    resolve_direct_question_targets,
+    retrospective_role_substitution_reason,
     near_duplicate_public_utterance,
     player_speech_rejection_reason,
     private_constraint_contradiction_reason,
@@ -41,6 +43,7 @@ from app.task_state import (
 from app.orchestrator.generative import generative_orchestrator
 from app.player_agent import (
     normalize_player_content,
+    pending_player_addressed_responses,
     pending_public_questions,
     retrospective_continuity_anchor,
     safe_comparison_player_fallback,
@@ -56,6 +59,48 @@ def main() -> None:
     # this boundary assertion so an omitted runtime import cannot pass compile
     # checks and fail only deep into a batch dialogue again.
     assert callable(game_api.emit)
+    multi_addressee_aliases = {
+        "user": ["Morgan Lee"],
+        "sales_vp": ["Elena Ruiz", "Elena"],
+        "operations_director": ["Samir Khan", "Samir"],
+        "cfo": ["Dana Kim", "Dana"],
+    }
+    multi_addressee_request = (
+        "Thank you, Elena, for confirming market readiness. "
+        "Samir, can you confirm operational readiness? "
+        "Dana, please confirm that the launch budget is approved."
+    )
+    assert resolve_direct_question_targets(
+        multi_addressee_request,
+        participant_aliases=multi_addressee_aliases,
+    ) == ["operations_director", "cfo"]
+    pending_addressees = pending_player_addressed_responses(
+        [
+            {"speaker_id": "user", "speaker_type": "user", "content": multi_addressee_request},
+            {"speaker_id": "operations_director", "speaker_type": "npc", "content": "Operations is ready."},
+        ],
+        participant_aliases=multi_addressee_aliases,
+    )
+    assert [row["target_id"] for row in pending_addressees] == ["cfo"]
+    assert retrospective_role_substitution_reason(
+        "I partnered with Taylor to define the architecture and ship the redesign.",
+        speaker_id="engineering_director",
+        participant_aliases={"user": ["Taylor Morgan", "Taylor"]},
+        validated_intent={"simulation_scope": "retrospective"},
+    ) == "retrospective_role_substitution"
+    assert retrospective_role_substitution_reason(
+        "Taylor, could you explain how you partnered with engineering?",
+        speaker_id="engineering_director",
+        participant_aliases={"user": ["Taylor Morgan", "Taylor"]},
+        validated_intent={"simulation_scope": "discussion"},
+    ) is None
+    assert retrospective_role_substitution_reason(
+        "We launched our current mentoring program last year, Taylor.",
+        speaker_id="people_partner",
+        participant_aliases={"user": ["Taylor Morgan", "Taylor"]},
+        validated_intent={"simulation_scope": "discussion"},
+        interview_mode=True,
+    ) is None
     assert configured_public_fallback({
         "default": "Ask for the commercial conditions needed to make the proposal workable."
     }) == ""

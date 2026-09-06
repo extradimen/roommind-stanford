@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G4.8"
+    assert CURRENT_GENERATION_ID == "G4.9"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g4.8-convergence-closure-and-evidence-governance"
+        "g4.9-response-routing-and-authorship-governance"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -483,7 +483,7 @@ def main() -> None:
     g45_bundle = deepcopy(g44_bundle)
     g45_bundle["session"]["run_config"]["research_manifest"] = {
         "generation_id": "G4.5",
-        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+        "architecture_version": "g4.5-obligation-graph-convergence",
     }
     g45_bundle["scenario"]["task_config"] = {
         "state_schema": {
@@ -525,7 +525,7 @@ def main() -> None:
     g47_bundle = deepcopy(g45_bundle)
     g47_bundle["session"]["run_config"]["research_manifest"] = {
         "generation_id": "G4.7",
-        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+        "architecture_version": "g4.7-floor-and-authority-routing",
     }
     g47_bundle["speaker_directory"]["advisor"] = {
         "role": "npc", "display_name": "Avery Chen",
@@ -569,7 +569,7 @@ def main() -> None:
     g48_bundle = deepcopy(g47_bundle)
     g48_bundle["session"]["run_config"]["research_manifest"] = {
         "generation_id": "G4.8",
-        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+        "architecture_version": "g4.8-convergence-closure-and-evidence-governance",
     }
     g48_bundle["messages"] = [{
         "sequence_no": 1, "turn_id": 2, "speaker_id": "user",
@@ -598,6 +598,44 @@ def main() -> None:
     }]
     bad_g48_artifact = run_integrity_probes(g48_bundle)
     assert bad_g48_artifact["checks"]["g48_live_artifact_receipts_grounded"] is False
+
+    g49_bundle = deepcopy(g48_bundle)
+    g49_bundle["session"]["run_config"]["research_manifest"] = {
+        "generation_id": "G4.9",
+        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+    }
+    g49_bundle["scenario"]["task_config"] = {"task_type": "structured_interview"}
+    g49_bundle["speaker_directory"].update({
+        "user": {"role": "user", "display_name": "Taylor Morgan"},
+        "ceo": {"role": "npc", "display_name": "Avery Chen"},
+        "advisor": {"role": "npc", "display_name": "Noah Williams"},
+    })
+    g49_bundle["messages"] = [{
+        "sequence_no": 1, "turn_id": 1, "speaker_id": "user",
+        "speaker_type": "user", "speaker_source": "ai",
+        "content": (
+            "Avery, please describe the current roadmap. "
+            "Noah, please explain the current capacity limits."
+        ),
+        "meta": {},
+    }, {
+        "sequence_no": 2, "turn_id": 1, "speaker_id": "ceo",
+        "speaker_type": "npc", "speaker_source": "ai",
+        "content": "The current roadmap prioritizes onboarding.", "meta": {},
+    }, {
+        "sequence_no": 3, "turn_id": 1, "speaker_id": "advisor",
+        "speaker_type": "npc", "speaker_source": "ai",
+        "content": "The current capacity limit is 5,000 users per minute.", "meta": {},
+    }]
+    clean_g49 = run_integrity_probes(g49_bundle)
+    assert clean_g49["checks"]["g49_multi_addressee_responses_preserved"] is True
+    assert clean_g49["checks"]["g49_generated_routing_prompts_absent"] is True
+    assert clean_g49["checks"]["g49_retrospective_authorship_preserved"] is True
+    g49_bundle["messages"][2]["content"] = (
+        "I partnered with Taylor to define and ship the onboarding redesign."
+    )
+    bad_g49_authorship = run_integrity_probes(g49_bundle)
+    assert bad_g49_authorship["checks"]["g49_retrospective_authorship_preserved"] is False
 
     g4_bundle["messages"].append({
         "sequence_no": 5,

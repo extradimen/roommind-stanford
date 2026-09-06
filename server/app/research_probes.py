@@ -15,6 +15,8 @@ from app.agent.speech_safety import (
     near_duplicate_public_utterance,
     npc_directed_question_handoff_reason,
     resolve_direct_question_target,
+    resolve_direct_question_targets,
+    retrospective_role_substitution_reason,
     speech_rejection_reason,
     terminal_current_world_action_reason,
     unregistered_participant_assignment_reason,
@@ -72,13 +74,14 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     is_g38_roommind = session_mode == "test" and architecture_version.startswith(("g3.8", "g3.9", "g4"))
     is_g39_roommind = session_mode == "test" and architecture_version.startswith(("g3.9", "g4"))
     is_g4_roommind = session_mode == "test" and architecture_version.startswith("g4")
-    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8"))
-    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8"))
-    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8"))
-    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5", "g4.6", "g4.7", "g4.8"))
-    is_g45_roommind = session_mode == "test" and architecture_version.startswith(("g4.5", "g4.6", "g4.7", "g4.8"))
-    is_g47_roommind = session_mode == "test" and architecture_version.startswith(("g4.7", "g4.8"))
-    is_g48_roommind = session_mode == "test" and architecture_version.startswith("g4.8")
+    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9"))
+    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9"))
+    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9"))
+    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9"))
+    is_g45_roommind = session_mode == "test" and architecture_version.startswith(("g4.5", "g4.6", "g4.7", "g4.8", "g4.9"))
+    is_g47_roommind = session_mode == "test" and architecture_version.startswith(("g4.7", "g4.8", "g4.9"))
+    is_g48_roommind = session_mode == "test" and architecture_version.startswith(("g4.8", "g4.9"))
+    is_g49_roommind = session_mode == "test" and architecture_version.startswith("g4.9")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -306,6 +309,62 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         for speaker_id, speaker in directory.items()
         if isinstance(speaker, dict)
     }
+    ordered_messages = sorted(messages, key=lambda item: int(item.get("sequence_no") or 0))
+    multi_addressee_response_violations: list[dict[str, Any]] = []
+    for index, row in enumerate(ordered_messages):
+        if row.get("speaker_type") != "user":
+            continue
+        targets = [
+            target for target in resolve_direct_question_targets(
+                str(row.get("content") or ""),
+                public_intent=((row.get("meta") or {}).get("public_intent") or {}),
+                participant_aliases=participant_aliases,
+            )
+            if target not in {"", "user"}
+        ]
+        if len(targets) < 2:
+            continue
+        following: list[dict[str, Any]] = []
+        for candidate in ordered_messages[index + 1:]:
+            if candidate.get("speaker_type") == "user":
+                break
+            following.append(candidate)
+        answered = {str(candidate.get("speaker_id") or "") for candidate in following}
+        missing = [target for target in targets if target not in answered]
+        if missing:
+            multi_addressee_response_violations.append({
+                "sequence_no": int(row.get("sequence_no") or 0),
+                "target_ids": targets,
+                "missing_target_ids": missing,
+            })
+    routing_prompt_violations = [
+        {
+            "sequence_no": int(row.get("sequence_no") or 0),
+            "content": str(row.get("content") or ""),
+        }
+        for row in ordered_messages
+        if row.get("speaker_type") == "user"
+        and "please answer the question directly from your area" in str(
+            row.get("content") or ""
+        ).casefold()
+    ]
+    retrospective_authorship_violations = [
+        {
+            "sequence_no": int(row.get("sequence_no") or 0),
+            "speaker_id": str(row.get("speaker_id") or ""),
+            "reason": reason,
+        }
+        for row in ordered_messages
+        if row.get("speaker_type") == "npc"
+        for reason in [retrospective_role_substitution_reason(
+            str(row.get("content") or ""),
+            speaker_id=str(row.get("speaker_id") or ""),
+            participant_aliases=participant_aliases,
+            validated_intent=((row.get("meta") or {}).get("public_intent") or {}),
+            interview_mode=retrospective_scenario,
+        )]
+        if reason
+    ]
     unregistered_public_assignments = [
         {
             "sequence_no": int(row.get("sequence_no") or 0),
@@ -361,7 +420,6 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
                 })
             if resolved_target == "user":
                 handoff_sequence = int(row.get("sequence_no") or 0)
-    ordered_messages = sorted(messages, key=lambda item: int(item.get("sequence_no") or 0))
     for index, row in enumerate(ordered_messages):
         if row.get("speaker_type") != "npc":
             continue
@@ -725,6 +783,15 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "g48_live_artifact_receipts_grounded": (
             not ungrounded_live_artifact_receipts if is_g48_roommind else None
         ),
+        "g49_multi_addressee_responses_preserved": (
+            not multi_addressee_response_violations if is_g49_roommind else None
+        ),
+        "g49_generated_routing_prompts_absent": (
+            not routing_prompt_violations if is_g49_roommind else None
+        ),
+        "g49_retrospective_authorship_preserved": (
+            not retrospective_authorship_violations if is_g49_roommind else None
+        ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
             and ledger_clock_sequence == sorted(ledger_clock_sequence)
@@ -780,6 +847,9 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "g48_malformed_public_fragments": malformed_public_fragments,
             "g48_post_closure_speech": post_closure_speech,
             "g48_ungrounded_live_artifact_receipts": ungrounded_live_artifact_receipts,
+            "g49_multi_addressee_response_violations": multi_addressee_response_violations,
+            "g49_generated_routing_prompt_violations": routing_prompt_violations,
+            "g49_retrospective_authorship_violations": retrospective_authorship_violations,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }

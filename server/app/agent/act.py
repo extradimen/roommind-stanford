@@ -16,6 +16,7 @@ from app.agent.speech_safety import (
     near_duplicate_obligation_utterance,
     near_duplicate_public_utterance,
     public_speech_act_mismatch,
+    retrospective_role_substitution_reason,
     retain_safe_public_clauses,
     speech_rejection_reason,
 )
@@ -184,6 +185,7 @@ async def render_npc_speech(
     prior_public_utterances: list[dict[str, str]] | None = None,
     coordinator_focus: dict[str, Any] | None = None,
     participant_aliases: dict[str, list[str]] | None = None,
+    interview_mode: bool = False,
 ) -> tuple[str, str, str, bool]:
     """
     Stanford: NPC speech is grounded in the agent's active plan.
@@ -227,7 +229,13 @@ async def render_npc_speech(
         flags=re.IGNORECASE,
     ))
     if draft != PUBLIC_RESPONSE_DRAFT and not draft_is_instruction:
-        draft_rejection = (
+        draft_rejection = retrospective_role_substitution_reason(
+            draft,
+            speaker_id=character.character_id,
+            participant_aliases=participant_aliases,
+            validated_intent=validated_intent,
+            interview_mode=interview_mode,
+        ) or (
             "speech_act_mismatch"
             if public_speech_act_mismatch(reasoning, draft)
             else speech_rejection_reason(
@@ -262,7 +270,13 @@ async def render_npc_speech(
             draft, validated_intent=validated_intent
         )
         if repaired_draft and repaired_draft != draft:
-            repaired_rejection = (
+            repaired_rejection = retrospective_role_substitution_reason(
+                repaired_draft,
+                speaker_id=character.character_id,
+                participant_aliases=participant_aliases,
+                validated_intent=validated_intent,
+                interview_mode=interview_mode,
+            ) or (
                 "speech_act_mismatch"
                 if public_speech_act_mismatch(reasoning, repaired_draft)
                 else speech_rejection_reason(
@@ -414,7 +428,13 @@ Requirements:
                 source="rendered_candidate",
             )
             continue
-        rejection = speech_rejection_reason(
+        rejection = retrospective_role_substitution_reason(
+            cleaned,
+            speaker_id=character.character_id,
+            participant_aliases=participant_aliases,
+            validated_intent=validated_intent,
+            interview_mode=interview_mode,
+        ) or speech_rejection_reason(
             cleaned,
             active_plan_text=active_plan_text,
             public_context=f"{conversation_context}\n{user_input}",
@@ -569,6 +589,7 @@ async def _apply_speak(
     reply_language: str = "en",
     task_state: dict[str, Any] | None = None,
     participant_aliases: dict[str, list[str]] | None = None,
+    interview_mode: bool = False,
 ) -> ActionResult:
     plan = active_plan(nodes)
     prior_utterances = [
@@ -604,6 +625,7 @@ async def _apply_speak(
         prior_public_utterances=prior_public_utterances,
         coordinator_focus=coordinator_focus,
         participant_aliases=participant_aliases,
+        interview_mode=interview_mode,
     )
     result.spoke = bool(content.strip())
     result.content = content
@@ -802,6 +824,7 @@ async def execute_decision(
                 reply_language=reply_language,
                 task_state=task_state,
                 participant_aliases=participant_aliases,
+                interview_mode=allow_retrospective,
             )
 
         if plan_text:
@@ -854,6 +877,7 @@ async def execute_decision(
                 reply_language=reply_language,
                 task_state=task_state,
                 participant_aliases=participant_aliases,
+                interview_mode=allow_retrospective,
             )
         if note:
             await _record_action_memory(
@@ -890,6 +914,7 @@ async def execute_decision(
             reply_language=reply_language,
             task_state=task_state,
             participant_aliases=participant_aliases,
+            interview_mode=allow_retrospective,
         )
 
     if action == "wait" and speak_quota_remaining > 0 and mentioned:
@@ -914,6 +939,7 @@ async def execute_decision(
             reply_language=reply_language,
             task_state=task_state,
             participant_aliases=participant_aliases,
+            interview_mode=allow_retrospective,
         )
 
     if action == "wait" and timeline is not None:
@@ -1017,6 +1043,7 @@ async def execute_plan_fallback_speak(
         reply_language=reply_language,
         task_state=task_state,
         participant_aliases=public_participant_aliases(scenario),
+        interview_mode=allow_retrospective,
     )
 
 

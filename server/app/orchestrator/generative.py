@@ -26,7 +26,10 @@ from app.agent.act import (
 from app.agent.loop import run_agent_tick
 from app.agent.memory_stream import AgentMemoryStore
 from app.agent.reflect import ensure_initial_plan, ensure_seed_memories, maybe_reflect
-from app.agent.speech_safety import resolve_direct_question_target
+from app.agent.speech_safety import (
+    resolve_direct_question_target,
+    resolve_direct_question_targets,
+)
 from app.models.db import CharacterTemplate, DispatchRule, ScenarioTemplate
 from app.orchestrator.common import NPCReply, OrchestratorResult, npc_replies_payload, orch_support
 from app.orchestrator.defaults import ORCHESTRATION_MODE, agent_config
@@ -122,9 +125,35 @@ class GenerativeOrchestrator:
         tick += 1
 
         mentioned_list = orch_support.match_mentioned_characters(user_input, characters)
+        participant_aliases = {
+            "user": [
+                str(label) for label in (
+                    player.get("display_name"), player.get("character_name"),
+                    player.get("job_title"),
+                ) if label
+            ],
+            **{
+                char.character_id: [
+                    str(label) for label in (
+                        char.display_name, char.character_name, char.job_title,
+                        *(char.aliases or []),
+                    ) if label
+                ]
+                for char in characters
+            },
+        }
+        directed_mentions = [
+            target for target in resolve_direct_question_targets(
+                user_input, participant_aliases=participant_aliases,
+            )
+            if target != "user"
+        ]
         pending = [cid for cid in updated_state.get("_pending_responses", []) if cid not in mentioned_list]
-        # A direct mention in the current utterance outranks an older queued response.
-        priority_mentions = [*mentioned_list, *pending]
+        # Interrogative/request addressees outrank courtesy mentions and older
+        # queued responses. Preserve every addressee in public order.
+        priority_mentions = list(dict.fromkeys([
+            *directed_mentions, *mentioned_list, *pending,
+        ]))
         mentioned = set(priority_mentions)
         rule_hits  = orch_support.match_dispatch_rules(user_input, dispatch_rules)
         focus = (((updated_state.get("task_state") or {}).get("progress") or {}).get("focus") or {})

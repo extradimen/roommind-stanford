@@ -395,6 +395,10 @@ Priority:
     was reopened by a later authorized contradiction or retraction, address the reopened
     value before attempting closure. Do not assign task-critical confirmation work to a
     participant outside the listed authorized confirmer set.
+18. Interview authorship: in a structured interview, only the player/candidate may
+    supply autobiographical experience and historical implementation details. A panelist
+    may ask, assess, confirm sufficiency, or answer questions about the current organization;
+    never ask another panelist to fill in the candidate's past or speak as a past collaborator.
 
 {decision_language_rule(reply_language)}
 

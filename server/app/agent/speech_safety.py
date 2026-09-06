@@ -324,9 +324,9 @@ _PLAYER_RESPONSE_REASONING_RE = re.compile(
 _VISIBLE_RESPONSE_REQUEST_RE = re.compile(
     r"(?:\?|？)|\b(?:can|could|would|will)\s+you\b|"
     r"(?:^|[.!?]\s+)\s*(?:please\s+)?"
-    r"(?:tell|describe|explain|share|walk|give|answer|respond|address)\b|"
+    r"(?:tell|describe|explain|share|walk|give|answer|respond|address|confirm|provide)\b|"
     r"(?:^|[.!?]\s+)\s*[\w .'-]{2,60}[,—:-]\s*please\s+"
-    r"(?:tell|describe|explain|share|walk|give|answer|respond|address)\b",
+    r"(?:tell|describe|explain|share|walk|give|answer|respond|address|confirm|provide)\b",
     flags=re.IGNORECASE,
 )
 
@@ -454,6 +454,86 @@ def resolve_direct_question_target(
         if re.search(rf"\b{re.escape(label)}\b", folded):
             return "user"
     return "user" if re.search(r"\b(?:you|your)\b", folded) else ""
+
+
+def resolve_direct_question_targets(
+    content: str,
+    *,
+    public_intent: dict | None = None,
+    npc_labels: list[str] | tuple[str, ...] = (),
+    player_labels: list[str] | tuple[str, ...] = (),
+    participant_aliases: dict[str, list[str] | tuple[str, ...]] | None = None,
+) -> list[str]:
+    """Resolve every explicitly addressed response owner in public order.
+
+    A single player utterance can ask Operations and Finance separate questions.
+    Returning only the first visible name let a courtesy mention consume the
+    speaker quota and allowed the meeting to close before the second owner spoke.
+    Clause-local resolution keeps the mechanism deterministic and public-only.
+    """
+    targets: list[str] = []
+    clauses = re.split(r"(?<=[.!?？])\s+|[\r\n;]+", content or "")
+    for clause in clauses:
+        target = resolve_direct_question_target(
+            clause,
+            public_intent=public_intent,
+            npc_labels=npc_labels,
+            player_labels=player_labels,
+            participant_aliases=participant_aliases,
+        )
+        if target and target not in targets:
+            targets.append(target)
+    return targets
+
+
+_RETROSPECTIVE_ROLE_SUBSTITUTION_RE = re.compile(
+    r"\b(?:i|we)\s+(?:personally\s+)?(?:partnered|worked|collaborated|agreed|"
+    r"implemented|built|shipped|launched|led|owned|defined|established|decided|"
+    r"identified|made|deferred|set|specified)\b",
+    flags=re.IGNORECASE,
+)
+_RETROSPECTIVE_COLLABORATOR_SUBSTITUTION_RE = re.compile(
+    r"\b(?:i|we)\s+(?:personally\s+)?(?:partnered|worked|collaborated)\b",
+    flags=re.IGNORECASE,
+)
+_RETROSPECTIVE_EXPERIENCE_REQUEST_RE = re.compile(
+    r"\b(?:partnered|worked|collaborated|experience|project|incident|redesign|"
+    r"decision|implementation|trade[- ]?offs?|constraints?)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def retrospective_role_substitution_reason(
+    content: str,
+    *,
+    speaker_id: str,
+    participant_aliases: dict[str, list[str] | tuple[str, ...]] | None = None,
+    validated_intent: dict | None = None,
+    interview_mode: bool = False,
+) -> str | None:
+    """Reject an evaluator claiming first-person ownership of candidate history."""
+    if speaker_id == "user":
+        return None
+    intent = validated_intent or {}
+    player_aliases = _direct_address_aliases(
+        list((participant_aliases or {}).get("user") or [])
+    )
+    folded = " ".join((content or "").casefold().split())
+    mentions_player = any(
+        re.search(rf"\b{re.escape(alias)}\b", folded) for alias in player_aliases
+    )
+    retrospective_scope = str(intent.get("simulation_scope") or "") == "retrospective"
+    if interview_mode and mentions_player and _VISIBLE_RESPONSE_REQUEST_RE.search(content or ""):
+        target_id = str(intent.get("target_id") or "")
+        if target_id not in {"", "user", "player", "candidate", "interviewee"} \
+                and _RETROSPECTIVE_EXPERIENCE_REQUEST_RE.search(content or ""):
+            return "retrospective_question_wrong_source"
+    if retrospective_scope and _RETROSPECTIVE_ROLE_SUBSTITUTION_RE.search(content or ""):
+        return "retrospective_role_substitution"
+    if interview_mode and mentions_player \
+            and _RETROSPECTIVE_COLLABORATOR_SUBSTITUTION_RE.search(content or ""):
+        return "retrospective_role_substitution"
+    return None
 
 
 _CROSS_ROLE_SUBSTITUTION_RE = re.compile(

@@ -19,6 +19,7 @@ from app.agent.speech_safety import (
     npc_directed_question_handoff_reason,
     player_speech_rejection_reason,
     resolve_direct_question_target,
+    resolve_direct_question_targets,
     retain_safe_public_clauses,
 )
 from app.llm.client import LLMEmptyContentError, llm_client
@@ -252,6 +253,42 @@ def pending_public_questions(
                 ),
             })
     return questions[-4:]
+
+
+def pending_player_addressed_responses(
+    messages: list[dict[str, Any]],
+    *,
+    participant_aliases: dict[str, list[str]] | None = None,
+    participant_labels: dict[str, str] | None = None,
+) -> list[dict[str, str]]:
+    """Return NPCs explicitly asked by the latest player who have not replied."""
+    latest_player_index = next((
+        index for index in range(len(messages) - 1, -1, -1)
+        if messages[index].get("speaker_type") == "user"
+        or messages[index].get("speaker_id") == "user"
+    ), -1)
+    if latest_player_index < 0:
+        return []
+    player_message = messages[latest_player_index]
+    targets = [
+        target for target in resolve_direct_question_targets(
+            str(player_message.get("content") or ""),
+            public_intent=((player_message.get("meta") or {}).get("public_intent") or {}),
+            participant_aliases=participant_aliases,
+        )
+        if target not in {"", "user"}
+    ]
+    answered = {
+        str(message.get("speaker_id") or "")
+        for message in messages[latest_player_index + 1:]
+        if message.get("speaker_type") == "npc"
+    }
+    return [{
+        "speaker_id": "user",
+        "question": str(player_message.get("content") or ""),
+        "target_id": target,
+        "target_display_name": str((participant_labels or {}).get(target) or target),
+    } for target in targets if target not in answered]
 
 
 _EXPLICIT_NEW_EXAMPLE_RE = re.compile(
@@ -516,6 +553,11 @@ async def generate_player_move(
         participant_aliases=participant_aliases,
         participant_labels=participant_labels,
     )
+    pending_questions.extend(pending_player_addressed_responses(
+        messages,
+        participant_aliases=participant_aliases,
+        participant_labels=participant_labels,
+    ))
     continuity_anchor = retrospective_continuity_anchor(
         messages,
         pending_questions=pending_questions,
@@ -793,11 +835,16 @@ async def generate_comparison_player_move(
         participant_aliases=participant_aliases,
         participant_labels=participant_labels,
     )
+    pending_questions.extend(pending_player_addressed_responses(
+        messages,
+        participant_aliases=participant_aliases,
+        participant_labels=participant_labels,
+    ))
     turn_id = sum(
         1 for message in messages if message.get("speaker_type") == "user"
     ) + 1
     latest_target = str(
-        (pending_questions[-1] if pending_questions else {}).get("target_id") or ""
+        (pending_questions[0] if pending_questions else {}).get("target_id") or ""
     )
     if latest_target and latest_target != "user":
         # Cross-role floor ownership is an interaction invariant, not a prose
@@ -805,7 +852,7 @@ async def generate_comparison_player_move(
         # handoff instruction: publish the same minimal public-only handoff in
         # both controlled-comparison conditions.
         target_label = str(
-            pending_questions[-1].get("target_display_name") or latest_target
+            pending_questions[0].get("target_display_name") or latest_target
         )
         repeated_handoff = recent_player_handoff_count(
             messages, target_id=latest_target
@@ -814,8 +861,7 @@ async def generate_comparison_player_move(
             f"{target_label}, please respond when the evidence is available; until "
             "then, we will leave this decision unresolved."
             if repeated_handoff
-            else f"{target_label}, please answer the question directly from your area "
-            "before we continue."
+            else f"{target_label}, the floor is yours."
         )
         public_intent = validate_public_intent(
             character={**player, "character_id": "user"},
@@ -958,7 +1004,7 @@ Return strict JSON only:
             participant_aliases=participant_aliases,
         ) or ""
         latest_target = str(
-            (pending_questions[-1] if pending_questions else {}).get("target_id") or ""
+            (pending_questions[0] if pending_questions else {}).get("target_id") or ""
         )
         if not rejection and latest_target and latest_target != "user":
             rejection = npc_directed_question_handoff_reason(
