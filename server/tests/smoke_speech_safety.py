@@ -3,11 +3,13 @@
 from app.agent.speech_safety import (
     PUBLIC_RESPONSE_DRAFT,
     direct_question_to_player,
+    focus_question_target_mismatch_reason,
     npc_directed_question_handoff_reason,
     near_duplicate_obligation_utterance,
     resolve_direct_question_target,
     near_duplicate_public_utterance,
     player_speech_rejection_reason,
+    private_constraint_contradiction_reason,
     normalized_public_propositions,
     protected_information_reason,
     public_speech_act_mismatch,
@@ -57,6 +59,14 @@ def main() -> None:
     assert configured_public_fallback({
         "default": "Ask for the commercial conditions needed to make the proposal workable."
     }) == ""
+    assert private_constraint_contradiction_reason(
+        "All relevant support teams are fully trained and ready for launch.",
+        private_constraints=["The support team is short two trained specialists."],
+    ) == "private_constraint_contradiction"
+    assert private_constraint_contradiction_reason(
+        "The support team is short two trained specialists for the launch.",
+        private_constraints=["The support team is short two trained specialists."],
+    ) is None
     assert configured_public_fallback({
         "default": "Internal instruction.",
         "public_reply": "Could you clarify the commercial conditions you can offer?",
@@ -1772,6 +1782,19 @@ def main() -> None:
         participant_labels={"supplier": "Morgan Lee"},
     )
     assert directed_request[-1]["target_id"] == "supplier"
+    polite_leadin = pending_public_questions(
+        [
+            {"speaker_id": "user", "speaker_type": "user", "content": "Continue."},
+            {
+                "speaker_id": "sales", "speaker_type": "npc",
+                "content": "Dana, thank you for the provisional approval. Could you share the revised cost model?",
+                "meta": {"public_intent": {"kind": "issue", "target_id": "cfo"}},
+            },
+        ],
+        participant_aliases={"cfo": ["Dana Wu", "Dana"], "sales": ["Elena"]},
+        participant_labels={"cfo": "Dana Wu"},
+    )
+    assert polite_leadin[-1]["target_id"] == "cfo"
     resolved_directed_pending = pending_public_questions(
         [
             {"speaker_id": "user", "speaker_type": "user", "content": "Please advise."},
@@ -1818,6 +1841,28 @@ def main() -> None:
         public_intent={"kind": "statement"},
         participant_aliases={"supplier": ["Morgan Lee", "Morgan"]},
     ) == "player_did_not_yield_npc_directed_question"
+    authority_focus = {
+        "kind": "state_variable", "issue": "evidence_captured",
+        "subject": "forensic evidence capture", "owner_ids": ["security_lead"],
+    }
+    assert focus_question_target_mismatch_reason(
+        "Priya, can you confirm that the forensic evidence capture is complete?",
+        speaker_id="communications_lead", focus=authority_focus,
+        public_intent={"target_id": "sre_lead"},
+        participant_aliases={
+            "sre_lead": ["Priya Shah", "Priya"],
+            "security_lead": ["Marcus Chen", "Marcus"],
+        },
+    ) == "question_target_lacks_focus_authority"
+    assert focus_question_target_mismatch_reason(
+        "Marcus, can you confirm that the forensic evidence capture is complete?",
+        speaker_id="communications_lead", focus=authority_focus,
+        public_intent={"target_id": "security_lead"},
+        participant_aliases={
+            "sre_lead": ["Priya Shah", "Priya"],
+            "security_lead": ["Marcus Chen", "Marcus"],
+        },
+    ) is None
 
     assert unsupported_live_evidentiary_artifact_reason(
         "Here is the post-launch performance report with the measured results.",

@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G4.6"
+    assert CURRENT_GENERATION_ID == "G4.7"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g4.6-clause-grounded-recovery-governance"
+        "g4.7-floor-and-authority-routing-governance"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -521,6 +521,50 @@ def main() -> None:
     g45_bundle["task_result"]["obligation_graph"]["open_obligation_ids"] = []
     bad_open_graph = run_integrity_probes(g45_bundle)
     assert bad_open_graph["checks"]["g45_open_obligations_reconcile"] is False
+
+    g47_bundle = deepcopy(g45_bundle)
+    g47_bundle["session"]["run_config"]["research_manifest"] = {
+        "generation_id": "G4.7",
+        "architecture_version": CURRENT_ARCHITECTURE_VERSION,
+    }
+    g47_bundle["speaker_directory"]["advisor"] = {
+        "role": "npc", "display_name": "Avery Chen",
+        "character_name": "Avery", "job_title": "Advisor", "authority": {},
+    }
+    g47_bundle["task_result"]["coordination_history"] = [{
+        "turn_id": 2,
+        "focus": {
+            "kind": "state_variable", "issue": "decision",
+            "subject": "decision approval", "owner_ids": ["ceo"],
+        },
+    }]
+    g47_bundle["messages"] = [{
+        "sequence_no": 1, "turn_id": 2, "speaker_id": "advisor",
+        "speaker_type": "npc", "speaker_source": "ai",
+        "content": "Avery, could you confirm the decision approval?",
+        "meta": {"public_intent": {"target_id": "advisor"}},
+    }]
+    bad_focus_target = run_integrity_probes(g47_bundle)
+    assert bad_focus_target["checks"]["g47_focus_question_targets_authorized"] is False
+    g47_bundle["messages"] = [{
+        "sequence_no": 1, "turn_id": 2, "speaker_id": "advisor",
+        "speaker_type": "npc", "speaker_source": "ai",
+        "content": "Chief Executive, could you confirm the decision approval?",
+        "meta": {"public_intent": {"target_id": "ceo"}},
+    }]
+    good_focus_target = run_integrity_probes(g47_bundle)
+    assert good_focus_target["checks"]["g47_focus_question_targets_authorized"] is True
+    g47_bundle["messages"].append({
+        "sequence_no": 2, "turn_id": 3, "speaker_id": "user",
+        "speaker_type": "user", "speaker_source": "ai",
+        "content": "Chief Executive, please respond when the evidence is available; until then, we will leave this decision unresolved.",
+        "meta": {
+            "intent": "bounded_cross_role_handoff", "requested_end": True,
+            "public_intent": {"kind": "handoff", "target_id": "ceo"},
+        },
+    })
+    bounded_handoff = run_integrity_probes(g47_bundle)
+    assert bounded_handoff["checks"]["g47_repeated_player_handoff_is_bounded"] is True
 
     g4_bundle["messages"].append({
         "sequence_no": 5,

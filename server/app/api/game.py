@@ -74,8 +74,20 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
         .order_by(SessionMessage.sequence_no, SessionMessage.id)
     )
     rows = list(result.scalars().all())
+    # Keep the persisted public-intent target in the autonomous player's
+    # public history.  Dropping ``meta`` here made a clearly structured
+    # NPC-to-NPC question look like an unaddressed second-person question, so
+    # the player answered or redirected it before the intended role spoke.
     messages = [
-        {"speaker_id": m.speaker_id, "speaker_type": m.speaker_type, "content": m.content}
+        {
+            "speaker_id": m.speaker_id,
+            "speaker_type": m.speaker_type,
+            "speaker_source": m.speaker_source,
+            "turn_id": m.turn_id,
+            "sequence_no": m.sequence_no,
+            "content": m.content,
+            "meta": dict(m.meta or {}),
+        }
         for m in rows
     ]
     completed_turns = sum(1 for m in rows if m.speaker_type == "user") + 1
@@ -202,6 +214,16 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
             )
             completion_status = "stalled"
         task_terminal = True
+    elif move.requested_end:
+        # A second unanswered floor handoff or exhausted recovery path is a
+        # truthful request to stop, not permission to keep paraphrasing the
+        # same demand.  Preserve any open obligations in a bounded outcome.
+        stop_reason = "player_requested_bounded_close"
+        after_task_state = finalize_no_progress_outcome(
+            scenario.task_config or {}, after_task_state, turn_id=completed_turns
+        )
+        completion_status = str(after_task_state.get("completion_status") or "deferred")
+        task_terminal = True
     elif stagnant_turns >= max_stagnant_turns:
         stop_reason = "no_task_progress"
         after_task_state = finalize_no_progress_outcome(
@@ -264,6 +286,7 @@ async def _run_baseline_step(db: AsyncSession, session_uuid: str, locale: str | 
             "turn_id": row.turn_id,
             "sequence_no": row.sequence_no,
             "content": row.content,
+            "meta": dict(row.meta or {}),
         }
         for row in rows
     ]
@@ -275,6 +298,9 @@ async def _run_baseline_step(db: AsyncSession, session_uuid: str, locale: str | 
     if turn.declared_complete:
         session.status = "completed"
         stop_reason = "model_declared_complete"
+    elif move.requested_end:
+        session.status = "stopped"
+        stop_reason = "player_requested_bounded_close"
     elif completed_turns >= safety_max_turns:
         session.status = "stopped"
         stop_reason = "safety_limit_reached"

@@ -154,6 +154,32 @@ def recent_player_utterances(messages: list[dict[str, Any]]) -> list[str]:
     ][-4:]
 
 
+def recent_player_handoff_count(
+    messages: list[dict[str, Any]], *, target_id: str
+) -> int:
+    """Count visible player floor yields to one target since that target spoke.
+
+    A single concise handoff is natural. Repeating it after the responsible
+    role remains silent is not; the second yield should close conditionally.
+    """
+    count = 0
+    for message in reversed(messages):
+        if str(message.get("speaker_id") or "") == target_id:
+            break
+        if message.get("speaker_type") != "user" and message.get("speaker_id") != "user":
+            continue
+        meta = message.get("meta") or {}
+        intent = meta.get("public_intent") or {}
+        if (
+            str(meta.get("intent") or "") in {
+                "enforced_cross_role_handoff", "bounded_cross_role_handoff",
+            }
+            and str(intent.get("target_id") or "") == target_id
+        ):
+            count += 1
+    return count
+
+
 def pending_public_questions(
     messages: list[dict[str, Any]],
     *,
@@ -203,11 +229,20 @@ def pending_public_questions(
                 question = question[:360].rsplit(" ", 1)[0].rstrip(" ,;:?.") + suffix
             if not question:
                 continue
+            # The complete utterance may name the addressee in a courteous
+            # lead-in sentence ("Dana, thank you. Could you..."). Preserve
+            # that address when the extracted question sentence uses only
+            # second person.
+            full_target_id = resolve_direct_question_target(
+                content,
+                public_intent=public_intent,
+                participant_aliases=participant_aliases,
+            )
             target_id = resolve_direct_question_target(
                 question,
                 public_intent=public_intent,
                 participant_aliases=participant_aliases,
-            )
+            ) or full_target_id
             questions.append({
                 "speaker_id": speaker_id,
                 "question": question,
@@ -314,8 +349,7 @@ def safe_comparison_player_fallback(
         )
         variants = (
             f"{target_label}, could you answer that question directly before we move on?",
-            f"Let's keep ownership clear. {target_label}, could you respond with the evidence within your responsibility?",
-            f"I won't answer on another role's behalf. {target_label}, could you address the question and identify any remaining uncertainty?",
+            f"{target_label}, please respond when the evidence is available; until then, we will leave this decision unresolved.",
         )
         return _nonduplicate_player_fallback(
             variants,
@@ -346,7 +380,8 @@ def safe_comparison_player_fallback(
     if len(question_topic) > 180:
         question_topic = question_topic[-180:].lstrip()
     if question_topic.casefold().startswith((
-        "what can ", "what should ", "can we ", "could we ", "how should ",
+        "what can ", "what should ", "can we ", "could we ", "can you ",
+        "could you ", "would you ", "will you ", "how should ",
     )):
         question_topic = "the decision we can support from the current evidence"
     asks_for_artifact = any(
@@ -362,9 +397,8 @@ def safe_comparison_player_fallback(
         subject = "external evidence follow-up"
     elif question_topic:
         variants = (
-            f"On your question—{question_topic}—I cannot confirm more from what we have heard. {target_label}, what can you verify from your area?",
-            f"Let's answer that directly: {question_topic}. {target_label}, what evidence can you add so we can decide?",
-            f"For {question_topic}, I suggest we separate what we know from what still needs checking. {target_label}, what can you confirm now?",
+            f"I cannot confirm {question_topic} from the evidence stated so far. {target_label}, what can you verify from your area?",
+            f"Let's separate the verified facts from what still needs checking. {target_label}, what evidence can you add about {question_topic}?",
         )
         subject = question_topic
     else:
@@ -773,8 +807,14 @@ async def generate_comparison_player_move(
         target_label = str(
             pending_questions[-1].get("target_display_name") or latest_target
         )
+        repeated_handoff = recent_player_handoff_count(
+            messages, target_id=latest_target
+        ) > 0
         content = (
-            f"{target_label}, please answer the question directly from your area "
+            f"{target_label}, please respond when the evidence is available; until "
+            "then, we will leave this decision unresolved."
+            if repeated_handoff
+            else f"{target_label}, please answer the question directly from your area "
             "before we continue."
         )
         public_intent = validate_public_intent(
@@ -791,15 +831,23 @@ async def generate_comparison_player_move(
             allow_retrospective=evidence_mode == "retrospective_claim",
         )
         emit(
-            "dialogue.cross_role_handoff.enforced",
+            (
+                "dialogue.cross_role_handoff.bounded"
+                if repeated_handoff
+                else "dialogue.cross_role_handoff.enforced"
+            ),
             component="comparison_player",
             turn_id=turn_id,
             target_id=latest_target,
         )
         return PlayerMove(
             content=content,
-            intent="enforced_cross_role_handoff",
-            requested_end=False,
+            intent=(
+                "bounded_cross_role_handoff"
+                if repeated_handoff
+                else "enforced_cross_role_handoff"
+            ),
+            requested_end=repeated_handoff,
             model_label=resolved.label(),
             raw="",
             public_intent=public_intent,

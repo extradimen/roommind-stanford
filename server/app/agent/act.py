@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.memory_stream import AgentMemoryStore, MemoryNode, active_plan
 from app.agent.speech_safety import (
     PUBLIC_RESPONSE_DRAFT,
+    focus_question_target_mismatch_reason,
     near_duplicate_obligation_utterance,
     near_duplicate_public_utterance,
     public_speech_act_mismatch,
@@ -128,6 +129,12 @@ def contextual_public_fallback(
     transition = str(intent.get("transition") or "proposed")
     field = str(intent.get("field") or "").replace("_", " ").strip()
     topic = field or subject.replace("_", " ")
+    if re.match(
+        r"^(?:can|could|would|will|what|when|where|why|how|please)\b",
+        topic,
+        flags=re.IGNORECASE,
+    ):
+        topic = "the current evidence"
 
     if kind == "outcome" and transition == "blocked":
         return (
@@ -231,8 +238,18 @@ async def render_npc_speech(
                 protected_secrets=list(
                     (character.private_state or {}).get("protected_secrets") or []
                 ),
+                private_constraints=[
+                    *list((character.private_state or {}).get("discoverable_information") or []),
+                    *list((character.private_state or {}).get("hidden_agenda") or []),
+                ],
                 participant_aliases=participant_aliases,
             )
+        ) or focus_question_target_mismatch_reason(
+            draft,
+            speaker_id=character.character_id,
+            focus=coordinator_focus,
+            public_intent=validated_intent,
+            participant_aliases=participant_aliases,
         )
         if not draft_rejection:
             emit(
@@ -256,8 +273,18 @@ async def render_npc_speech(
                     protected_secrets=list(
                         (character.private_state or {}).get("protected_secrets") or []
                     ),
+                    private_constraints=[
+                        *list((character.private_state or {}).get("discoverable_information") or []),
+                        *list((character.private_state or {}).get("hidden_agenda") or []),
+                    ],
                     participant_aliases=participant_aliases,
                 )
+            ) or focus_question_target_mismatch_reason(
+                repaired_draft,
+                speaker_id=character.character_id,
+                focus=coordinator_focus,
+                public_intent=validated_intent,
+                participant_aliases=participant_aliases,
             )
             if not repaired_rejection and near_duplicate_public_utterance(
                 repaired_draft, prior_utterances or []
@@ -287,6 +314,7 @@ You are in a multi-role task simulation. Speak naturally in 1-2 sentences based 
 Intent for this turn (from your decision): {reasoning}
 Core content to convey: {draft}
 Validated public-world intent: {validated_intent or {"kind": "statement", "transition": "proposed"}}
+Current task-critical focus and authorized response owners: {coordinator_focus or {}}
 
 Recent dialogue:
 {conversation_context[-600:]}
@@ -311,6 +339,8 @@ Requirements:
   evidence available now and treat an unavailable file as a post-meeting follow-up.
 - A question asking whether something happened is not evidence that it happened.
   Never convert a question or request for confirmation into an affirmative fact.
+- When the current focus lists owner_ids, route questions about that focus only
+  to one of those owners. Do not ask another role to certify the owner's work.
 - A completed current-world operation (deployment, containment, upload, archive,
   health check, verification, publication, or similar side effect) may be reported
   only when the validated intent names a registered simulated tool result. Otherwise
@@ -393,6 +423,16 @@ Requirements:
             protected_secrets=list(
                 (character.private_state or {}).get("protected_secrets") or []
             ),
+            private_constraints=[
+                *list((character.private_state or {}).get("discoverable_information") or []),
+                *list((character.private_state or {}).get("hidden_agenda") or []),
+            ],
+            participant_aliases=participant_aliases,
+        ) or focus_question_target_mismatch_reason(
+            cleaned,
+            speaker_id=character.character_id,
+            focus=coordinator_focus,
+            public_intent=validated_intent,
             participant_aliases=participant_aliases,
         ) or ""
         if rejection:
@@ -436,18 +476,30 @@ Requirements:
         fallback = ""
     if fallback and public_speech_act_mismatch(reasoning, fallback):
         fallback = ""
-    if fallback and speech_rejection_reason(
-        fallback,
-        active_plan_text=active_plan_text,
-        public_draft_text=draft,
-        public_context=f"{conversation_context}\n{user_input}",
-        validated_intent=validated_intent,
-        protected_secrets=list(
-            (character.private_state or {}).get("protected_secrets") or []
-        ),
-        participant_aliases=participant_aliases,
-    ):
-        fallback = ""
+    if fallback:
+        fallback_rejection = speech_rejection_reason(
+            fallback,
+            active_plan_text=active_plan_text,
+            public_draft_text=draft,
+            public_context=f"{conversation_context}\n{user_input}",
+            validated_intent=validated_intent,
+            protected_secrets=list(
+                (character.private_state or {}).get("protected_secrets") or []
+            ),
+            private_constraints=[
+                *list((character.private_state or {}).get("discoverable_information") or []),
+                *list((character.private_state or {}).get("hidden_agenda") or []),
+            ],
+            participant_aliases=participant_aliases,
+        ) or focus_question_target_mismatch_reason(
+            fallback,
+            speaker_id=character.character_id,
+            focus=coordinator_focus,
+            public_intent=validated_intent,
+            participant_aliases=participant_aliases,
+        )
+        if fallback_rejection:
+            fallback = ""
     if not fallback:
         # A reusable deterministic sentence is visibly artificial and became
         # the dominant G3.4/G3.5 dialogue failure.  After two bounded repairs,

@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.agent.speech_safety import (
+    focus_question_target_mismatch_reason,
     near_duplicate_obligation_utterance,
     near_duplicate_public_utterance,
     npc_directed_question_handoff_reason,
@@ -70,11 +71,12 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     is_g38_roommind = session_mode == "test" and architecture_version.startswith(("g3.8", "g3.9", "g4"))
     is_g39_roommind = session_mode == "test" and architecture_version.startswith(("g3.9", "g4"))
     is_g4_roommind = session_mode == "test" and architecture_version.startswith("g4")
-    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4", "g4.5", "g4.6"))
-    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5", "g4.6"))
-    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5", "g4.6"))
-    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5", "g4.6"))
-    is_g45_roommind = session_mode == "test" and architecture_version.startswith(("g4.5", "g4.6"))
+    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7"))
+    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7"))
+    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5", "g4.6", "g4.7"))
+    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5", "g4.6", "g4.7"))
+    is_g45_roommind = session_mode == "test" and architecture_version.startswith(("g4.5", "g4.6", "g4.7"))
+    is_g47_roommind = session_mode == "test" and architecture_version.startswith("g4.7")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -384,6 +386,47 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
                     "reason": reason,
                 })
             break
+    focus_target_authority_violations: list[dict[str, Any]] = []
+    bounded_handoff_violations: list[dict[str, Any]] = []
+    bounded_handoffs_by_target: dict[str, int] = {}
+    for row in ordered_messages:
+        meta = row.get("meta") or {}
+        public_intent = meta.get("public_intent") or {}
+        if row.get("speaker_type") == "npc":
+            focus = focus_by_turn.get(int(row.get("turn_id") or 0)) or {}
+            reason = focus_question_target_mismatch_reason(
+                str(row.get("content") or ""),
+                speaker_id=str(row.get("speaker_id") or ""),
+                focus=focus,
+                public_intent=public_intent,
+                participant_aliases=participant_aliases,
+            )
+            if reason:
+                focus_target_authority_violations.append({
+                    "sequence_no": int(row.get("sequence_no") or 0),
+                    "speaker_id": str(row.get("speaker_id") or ""),
+                    "target_id": str(public_intent.get("target_id") or ""),
+                    "reason": reason,
+                })
+        if (
+            row.get("speaker_type") == "user"
+            and str(meta.get("intent") or "") == "bounded_cross_role_handoff"
+        ):
+            target_id = str(public_intent.get("target_id") or "")
+            bounded_handoffs_by_target[target_id] = (
+                bounded_handoffs_by_target.get(target_id, 0) + 1
+            )
+            if not target_id or meta.get("requested_end") is not True:
+                bounded_handoff_violations.append({
+                    "sequence_no": int(row.get("sequence_no") or 0),
+                    "target_id": target_id,
+                    "reason": "bounded_handoff_missing_target_or_stop_request",
+                })
+    bounded_handoff_violations.extend({
+        "sequence_no": 0,
+        "target_id": target_id,
+        "reason": "bounded_handoff_repeated",
+    } for target_id, count in bounded_handoffs_by_target.items() if count > 1)
     capability_boundaries = task_result.get("capability_boundaries") or {}
     capability_focus_issues = [
         str((row.get("focus") or {}).get("issue") or "")
@@ -631,6 +674,12 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "g45_cross_role_obligation_repetition_absent": (
             not cross_role_obligation_duplicates if is_g45_roommind else None
         ),
+        "g47_focus_question_targets_authorized": (
+            not focus_target_authority_violations if is_g47_roommind else None
+        ),
+        "g47_repeated_player_handoff_is_bounded": (
+            not bounded_handoff_violations if is_g47_roommind else None
+        ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
             and ledger_clock_sequence == sorted(ledger_clock_sequence)
@@ -681,6 +730,8 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "g45_incapable_obligation_targets": incapable_obligation_targets,
             "g45_expected_open_obligations": expected_open_obligations,
             "g45_recorded_open_obligations": recorded_open_obligations,
+            "g47_focus_target_authority_violations": focus_target_authority_violations,
+            "g47_bounded_handoff_violations": bounded_handoff_violations,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }

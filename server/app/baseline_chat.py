@@ -271,7 +271,12 @@ async def process_baseline_step(
         turn_id=turn_id,
         sequence_no=next_sequence,
         content=player_move.content,
-        meta={"intent": player_move.intent, "generation_model": player_move.model_label},
+        meta={
+            "intent": player_move.intent,
+            "generation_model": player_move.model_label,
+            "requested_end": player_move.requested_end,
+            "public_intent": player_move.public_intent,
+        },
         created_at=datetime.now(timezone.utc),
     ))
     emit(

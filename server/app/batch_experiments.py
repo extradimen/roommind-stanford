@@ -187,12 +187,27 @@ def _performance_summary(trace: list[dict[str, Any]]) -> dict[str, Any]:
             event.get("event") == "dialogue.cross_role_handoff.enforced"
             for event in events
         ),
+        "dialogue_cross_role_handoff_bounded_count": sum(
+            event.get("event") == "dialogue.cross_role_handoff.bounded"
+            for event in events
+        ),
         "dialogue_addressee_reconciliation_count": sum(
             event.get("event") == "dialogue.addressee.reconciled" for event in events
         ),
         "dialogue_speech_act_mismatch_rejection_count": sum(
             event.get("event") == "llm.public_output.rejected"
             and event.get("rejection_reason") == "speech_act_mismatch"
+            for event in events
+        ),
+        "dialogue_focus_authority_rejection_count": sum(
+            event.get("event") == "llm.public_output.rejected"
+            and event.get("rejection_reason")
+            == "question_target_lacks_focus_authority"
+            for event in events
+        ),
+        "dialogue_private_constraint_rejection_count": sum(
+            event.get("event") == "llm.public_output.rejected"
+            and event.get("rejection_reason") == "private_constraint_contradiction"
             for event in events
         ),
         "quote_confirmation_commit_count": sum(

@@ -462,6 +462,56 @@ def npc_directed_question_handoff_reason(
     return None
 
 
+def focus_question_target_mismatch_reason(
+    content: str,
+    *,
+    speaker_id: str,
+    focus: dict[str, object] | None,
+    public_intent: dict[str, object] | None = None,
+    participant_aliases: dict[str, list[str] | tuple[str, ...]] | None = None,
+) -> str | None:
+    """Keep a task-critical question with the role that owns its focus.
+
+    This is intentionally narrower than general role inference. It applies
+    only when the deterministic coordinator has registered owner ids and the
+    visible question repeats the focus subject/field. It therefore prevents a
+    compound repair from asking SRE to certify Security's forensic work while
+    leaving ordinary cross-role discussion untouched.
+    """
+    focus = focus or {}
+    if str(focus.get("kind") or "") not in {
+        "state_variable", "capability_boundary", "work_item",
+    }:
+        return None
+    owner_ids = {
+        str(value) for value in (focus.get("owner_ids") or []) if str(value)
+    }
+    if not owner_ids:
+        return None
+    target_id = resolve_direct_question_target(
+        content,
+        public_intent=public_intent,
+        participant_aliases=participant_aliases,
+    )
+    if not target_id or target_id == "user" or target_id in owner_ids:
+        return None
+    focus_text = " ".join(str(focus.get(key) or "") for key in (
+        "issue", "subject", "field",
+    )).casefold().replace("_", " ")
+    ignored = {
+        "the", "a", "an", "and", "or", "of", "for", "to", "current",
+        "status", "issue", "work", "item", "confirmation", "confirm",
+    }
+    focus_tokens = {
+        token for token in re.findall(r"[a-z0-9]+", focus_text)
+        if len(token) >= 3 and token not in ignored
+    }
+    content_tokens = set(re.findall(r"[a-z0-9]+", (content or "").casefold()))
+    if not focus_tokens.intersection(content_tokens):
+        return None
+    return "question_target_lacks_focus_authority"
+
+
 def normalized_public_propositions(content: str) -> list[dict[str, str]]:
     """Normalize visible completion claims before applying source policy.
 
@@ -921,10 +971,60 @@ def retain_safe_public_clauses(
     return " ".join(kept).strip()
 
 
+def private_constraint_contradiction_reason(
+    content: str, *, private_constraints: list[str] | None = None,
+) -> str | None:
+    """Reject a categorical positive claim that contradicts a known constraint.
+
+    The check never reveals the private fact and does not treat preferences or
+    redlines as facts. Callers pass only discoverable information and hidden
+    factual agenda entries. It catches high-confidence contradictions such as
+    saying all staff are fully trained when the role knows specialists are
+    missing, without attempting open-ended semantic inference.
+    """
+    text = " ".join((content or "").casefold().split())
+    if not re.search(
+        r"\b(?:all|fully|sufficient|complete(?:d)?|ready|no\s+(?:gap|shortage)s?|"
+        r"in\s+place)\b",
+        text,
+    ):
+        return None
+
+    def stems(value: str) -> set[str]:
+        ignored = {
+            "the", "a", "an", "and", "or", "to", "for", "of", "is", "are",
+            "be", "been", "our", "we", "with", "two", "one", "this", "that",
+        }
+        result: set[str] = set()
+        for token in re.findall(r"[a-z0-9]+", value.casefold()):
+            if token in ignored or len(token) < 4:
+                continue
+            for suffix in ("ists", "ers", "ing", "ied", "ed", "es", "s"):
+                if token.endswith(suffix) and len(token) - len(suffix) >= 4:
+                    token = token[:-len(suffix)]
+                    break
+            result.add(token)
+        return result
+
+    public_terms = stems(text)
+    for raw in private_constraints or []:
+        constraint = " ".join(str(raw or "").casefold().split())
+        if not re.search(
+            r"\b(?:short|missing|lack(?:s|ing)?|insufficient|unavailable|pending|"
+            r"not\s+(?:ready|trained|complete)|without)\b",
+            constraint,
+        ):
+            continue
+        if len(public_terms.intersection(stems(constraint))) >= 1:
+            return "private_constraint_contradiction"
+    return None
+
+
 def speech_rejection_reason(
     content: str, *, active_plan_text: str = "", public_context: str = "",
     validated_intent: dict | None = None,
     protected_secrets: list[str] | None = None,
+    private_constraints: list[str] | None = None,
     public_draft_text: str = "",
     participant_aliases: dict[str, list[str] | tuple[str, ...]] | None = None,
 ) -> str | None:
@@ -952,6 +1052,12 @@ def speech_rejection_reason(
     )
     if protected_reason:
         return protected_reason
+
+    contradiction_reason = private_constraint_contradiction_reason(
+        text, private_constraints=private_constraints,
+    )
+    if contradiction_reason:
+        return contradiction_reason
 
     intent = validated_intent or {}
     assignment_reason = unregistered_participant_assignment_reason(

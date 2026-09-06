@@ -97,6 +97,15 @@ async def main() -> None:
         {"event": "dialogue.safe_fallback.used"},
         {"event": "llm.degraded_fallback"},
         {"event": "dialogue.cross_role_handoff.enforced"},
+        {"event": "dialogue.cross_role_handoff.bounded"},
+        {
+            "event": "llm.public_output.rejected",
+            "rejection_reason": "question_target_lacks_focus_authority",
+        },
+        {
+            "event": "llm.public_output.rejected",
+            "rejection_reason": "private_constraint_contradiction",
+        },
         {
             "event": "llm.public_output.rejected",
             "rejection_reason": "unregistered_participant_assignment",
@@ -109,6 +118,9 @@ async def main() -> None:
     assert performance["dialogue_safe_fallback_count"] == 1
     assert performance["llm_degraded_fallback_count"] == 1
     assert performance["dialogue_cross_role_handoff_enforced_count"] == 1
+    assert performance["dialogue_cross_role_handoff_bounded_count"] == 1
+    assert performance["dialogue_focus_authority_rejection_count"] == 1
+    assert performance["dialogue_private_constraint_rejection_count"] == 1
     assert performance["unregistered_owner_rejection_count"] == 1
     assert performance["current_world_grounding_rejection_count"] == 1
     assert performance["public_grounding_rejection_count"] == 1
@@ -242,6 +254,39 @@ async def main() -> None:
     assert enforced_handoff.intent == "enforced_cross_role_handoff"
     assert enforced_handoff.public_intent["target_id"] == "advisor"
     assert enforced_handoff.content.startswith("Avery Chen")
+
+    repeated_messages = [
+        {"speaker_id": "user", "speaker_type": "user", "content": "Please continue."},
+        {
+            "speaker_id": "advisor", "speaker_type": "npc",
+            "content": "Avery, could you explain the operating constraint?",
+            "meta": {"public_intent": {"kind": "issue", "target_id": "advisor"}},
+        },
+        {
+            "speaker_id": "user", "speaker_type": "user",
+            "content": enforced_handoff.content,
+            "meta": {
+                "intent": "enforced_cross_role_handoff",
+                "public_intent": {"kind": "handoff", "target_id": "advisor"},
+            },
+        },
+        {
+            "speaker_id": "other", "speaker_type": "npc",
+            "content": "Avery, could you explain the operating constraint?",
+            "meta": {"public_intent": {"kind": "issue", "target_id": "advisor"}},
+        },
+    ]
+    with (
+        patch("app.player_agent.orch_support.get_llm_config", AsyncMock(return_value={})),
+        patch("app.player_agent.resolve_llm", return_value=resolved_player),
+        patch("app.player_agent.llm_client.chat_completion", dialogue_model),
+    ):
+        bounded_handoff = await generate_comparison_player_move(
+            None, handoff_session, handoff_scenario, repeated_messages,
+        )
+    assert bounded_handoff.intent == "bounded_cross_role_handoff"
+    assert bounded_handoff.requested_end is True
+    assert "leave this decision unresolved" in bounded_handoff.content
 
     artifact_content, artifact_intent = safe_comparison_player_fallback(
         evidence_mode="live_operation",
