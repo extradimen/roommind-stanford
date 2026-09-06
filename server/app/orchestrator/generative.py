@@ -42,6 +42,23 @@ from app.telemetry import emit
 from app.task_state import refresh_task_state_from_public_ledger
 
 
+def schedule_direct_response(
+    agent_queue: list[CharacterTemplate], *, queue_index: int,
+    target_id: str, character_by_id: dict[str, CharacterTemplate],
+    speak_quota: int, response_budget: int,
+) -> tuple[int, int, bool]:
+    """Reserve the next bounded tick for a visibly addressed NPC."""
+    if response_budget <= 0 or target_id not in character_by_id:
+        return speak_quota, response_budget, False
+    target = character_by_id[target_id]
+    agent_queue[queue_index:] = [
+        queued for queued in agent_queue[queue_index:]
+        if queued.character_id != target_id
+    ]
+    agent_queue.insert(queue_index, target)
+    return max(1, speak_quota), response_budget - 1, True
+
+
 class GenerativeOrchestrator:
     """
     Each NPC runs an independent memory stream.
@@ -244,7 +261,14 @@ class GenerativeOrchestrator:
         # ----------------------------------------------------------------
         # PERCEIVE → RETRIEVE → REACT → ACT  (per agent, sequential)
         # ----------------------------------------------------------------
-        for char in agent_order:
+        agent_queue = list(agent_order)
+        character_by_id = {char.character_id: char for char in characters}
+        direct_response_budget = 1
+        direct_response_routes: list[dict[str, str]] = []
+        queue_index = 0
+        while queue_index < len(agent_queue):
+            char = agent_queue[queue_index]
+            queue_index += 1
             cid   = char.character_id
             store = AgentMemoryStore(session_id, cid)
             nodes = await store.load_all(db)
@@ -325,6 +349,40 @@ class GenerativeOrchestrator:
                     and question_target_id not in directed_pending
                 ):
                     directed_pending.append(question_target_id)
+                if (
+                    question_target_id
+                    and question_target_id != "user"
+                    and question_target_id != cid
+                    and question_target_id in character_by_id
+                    and direct_response_budget > 0
+                ):
+                    # A visible NPC-to-NPC question owns one bounded response
+                    # slot in the same autonomous turn.  The ordinary speaker
+                    # quota and the turn-start ordering must not force the
+                    # player to relay a question between two present roles.
+                    # Put the answerer next, even when it appeared later in
+                    # the original order.  If it already spoke, append one
+                    # bounded response tick.
+                    speak_quota, direct_response_budget, scheduled = schedule_direct_response(
+                        agent_queue, queue_index=queue_index,
+                        target_id=question_target_id,
+                        character_by_id=character_by_id,
+                        speak_quota=speak_quota,
+                        response_budget=direct_response_budget,
+                    )
+                    if scheduled:
+                        mentioned.add(question_target_id)
+                        direct_response_routes.append({
+                            "source_id": cid,
+                            "target_id": question_target_id,
+                        })
+                        emit(
+                            "dialogue.direct_response.scheduled",
+                            component="generative_orchestrator",
+                            character_id=cid,
+                            target_id=question_target_id,
+                            turn_id=turn_id,
+                        )
                 if action_result.public_intent is not None:
                     structured_target = str(action_result.public_intent.get("target_id") or "")
                     if question_target_id and structured_target != question_target_id:
@@ -476,7 +534,8 @@ class GenerativeOrchestrator:
             "world_events_this_turn":   len([e for e in timeline.events if e.turn_id == turn_id]),
             "mentioned":                list(mentioned),
             "rule_hits":                rule_hits,
-            "agent_order":              [c.character_id for c in agent_order],
+            "agent_order":              [c.character_id for c in agent_queue],
+            "direct_response_routes":   direct_response_routes,
             "coordinator_focus":         focus,
             "floor_handed_to_player":   floor_handed_to_player,
             "terminal_floor_locked":    terminal_floor_locked,

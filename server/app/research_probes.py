@@ -76,15 +76,16 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     is_g38_roommind = session_mode == "test" and architecture_version.startswith(("g3.8", "g3.9", "g4"))
     is_g39_roommind = session_mode == "test" and architecture_version.startswith(("g3.9", "g4"))
     is_g4_roommind = session_mode == "test" and architecture_version.startswith("g4")
-    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10"))
-    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10"))
-    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10"))
-    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10"))
-    is_g45_roommind = session_mode == "test" and architecture_version.startswith(("g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10"))
-    is_g47_roommind = session_mode == "test" and architecture_version.startswith(("g4.7", "g4.8", "g4.9", "g4.10"))
-    is_g48_roommind = session_mode == "test" and architecture_version.startswith(("g4.8", "g4.9", "g4.10"))
-    is_g49_roommind = session_mode == "test" and architecture_version.startswith(("g4.9", "g4.10"))
-    is_g410_roommind = session_mode == "test" and architecture_version.startswith("g4.10")
+    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11"))
+    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11"))
+    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11"))
+    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11"))
+    is_g45_roommind = session_mode == "test" and architecture_version.startswith(("g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11"))
+    is_g47_roommind = session_mode == "test" and architecture_version.startswith(("g4.7", "g4.8", "g4.9", "g4.10", "g4.11"))
+    is_g48_roommind = session_mode == "test" and architecture_version.startswith(("g4.8", "g4.9", "g4.10", "g4.11"))
+    is_g49_roommind = session_mode == "test" and architecture_version.startswith(("g4.9", "g4.10", "g4.11"))
+    is_g410_roommind = session_mode == "test" and architecture_version.startswith(("g4.10", "g4.11"))
+    is_g411_roommind = session_mode == "test" and architecture_version.startswith("g4.11")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -450,6 +451,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     player_floor_violations: list[dict[str, Any]] = []
     question_target_mismatches: list[dict[str, Any]] = []
     cross_role_question_violations: list[dict[str, Any]] = []
+    direct_response_violations: list[dict[str, Any]] = []
     rows_by_turn: dict[int, list[dict[str, Any]]] = {}
     for row in sorted(messages, key=lambda item: int(item.get("sequence_no") or 0)):
         rows_by_turn.setdefault(int(row.get("turn_id") or 0), []).append(row)
@@ -524,6 +526,38 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
                     "reason": reason,
                 })
             break
+        following = ordered_messages[index + 1] if index + 1 < len(ordered_messages) else None
+        if (
+            following is None
+            or int(following.get("turn_id") or 0) != int(row.get("turn_id") or 0)
+            or str(following.get("speaker_id") or "") != target_id
+        ):
+            direct_response_violations.append({
+                "question_sequence_no": int(row.get("sequence_no") or 0),
+                "question_speaker_id": source_id,
+                "target_id": target_id,
+                "following_sequence_no": (
+                    int(following.get("sequence_no") or 0) if following else None
+                ),
+                "following_speaker_id": (
+                    str(following.get("speaker_id") or "") if following else ""
+                ),
+            })
+    rejected_transition_surface_violations = [
+        {
+            "sequence_no": int(row.get("sequence_no") or 0),
+            "speaker_id": str(row.get("speaker_id") or ""),
+            "validation_reason": str(intent.get("validation_reason") or ""),
+        }
+        for row in ordered_messages
+        if row.get("speaker_type") == "npc"
+        for intent in [((row.get("meta") or {}).get("public_intent") or {})]
+        if intent.get("commit_allowed") is False
+        and speech_rejection_reason(
+            str(row.get("content") or ""), validated_intent=intent,
+            participant_aliases=participant_aliases,
+        ) == "speech_exceeds_validated_lifecycle"
+    ]
     focus_target_authority_violations: list[dict[str, Any]] = []
     bounded_handoff_violations: list[dict[str, Any]] = []
     bounded_handoffs_by_target: dict[str, int] = {}
@@ -866,6 +900,12 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "g410_terminal_confirmation_locks_floor": (
             not post_terminal_confirmation_speech if is_g410_roommind else None
         ),
+        "g411_npc_questions_receive_direct_same_turn_response": (
+            not direct_response_violations if is_g411_roommind else None
+        ),
+        "g411_rejected_transitions_not_reintroduced_in_speech": (
+            not rejected_transition_surface_violations if is_g411_roommind else None
+        ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
             and ledger_clock_sequence == sorted(ledger_clock_sequence)
@@ -926,6 +966,8 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "g49_retrospective_authorship_violations": retrospective_authorship_violations,
             "g410_conditional_acceptance_events": conditional_acceptance_events,
             "g410_post_terminal_confirmation_speech": post_terminal_confirmation_speech,
+            "g411_direct_response_violations": direct_response_violations,
+            "g411_rejected_transition_surface_violations": rejected_transition_surface_violations,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }

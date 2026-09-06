@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G4.10"
+    assert CURRENT_GENERATION_ID == "G4.11"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g4.10-prerequisite-and-terminal-floor-governance"
+        "g4.11-direct-routing-and-state-surface-convergence"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -636,6 +636,48 @@ def main() -> None:
     )
     bad_g49_authorship = run_integrity_probes(g49_bundle)
     assert bad_g49_authorship["checks"]["g49_retrospective_authorship_preserved"] is False
+
+    g411_bundle = deepcopy(g49_bundle)
+    g411_bundle["messages"] = [
+        {
+            "sequence_no": 1, "turn_id": 1, "speaker_id": "ceo",
+            "speaker_type": "npc", "speaker_source": "ai",
+            "content": "Noah, can you confirm the current capacity limit?",
+            "meta": {"public_intent": {"kind": "handoff", "transition": "proposed", "target_id": "advisor"}},
+        },
+        {
+            "sequence_no": 2, "turn_id": 1, "speaker_id": "advisor",
+            "speaker_type": "npc", "speaker_source": "ai",
+            "content": "The currently stated limit is 5,000 users per minute.",
+            "meta": {"public_intent": {"kind": "statement", "transition": "proposed"}},
+        },
+    ]
+    clean_g411 = run_integrity_probes(g411_bundle)
+    assert clean_g411["checks"][
+        "g411_npc_questions_receive_direct_same_turn_response"
+    ] is True
+    g411_bundle["messages"][1].update(
+        speaker_id="user", speaker_type="user", content="Noah, the floor is yours.",
+    )
+    bad_g411_route = run_integrity_probes(g411_bundle)
+    assert bad_g411_route["checks"][
+        "g411_npc_questions_receive_direct_same_turn_response"
+    ] is False
+    g411_bundle["messages"] = [{
+        "sequence_no": 1, "turn_id": 1, "speaker_id": "ceo",
+        "speaker_type": "npc", "speaker_source": "ai",
+        "content": "I approve the recovery plan.",
+        "meta": {"public_intent": {
+            "kind": "decision", "transition": "accepted",
+            "requested_transition": "accepted", "commit_allowed": False,
+            "validation": "downgraded",
+            "validation_reason": "field_lifecycle_repeat_by_actor",
+        }},
+    }]
+    bad_g411_surface = run_integrity_probes(g411_bundle)
+    assert bad_g411_surface["checks"][
+        "g411_rejected_transitions_not_reintroduced_in_speech"
+    ] is False
 
     g4_bundle["messages"].append({
         "sequence_no": 5,

@@ -127,6 +127,19 @@ def main() -> None:
         "We have completed the production deployment.",
         validated_intent=external,
     ) == "speech_exceeds_validated_lifecycle"
+    rejected_repeat = {
+        "kind": "decision", "transition": "accepted",
+        "requested_transition": "accepted", "validation": "downgraded",
+        "validation_reason": "field_lifecycle_repeat_by_actor",
+        "commit_allowed": False, "simulation_scope": "discussion",
+    }
+    assert speech_rejection_reason(
+        "I approve the recovery plan.", validated_intent=rejected_repeat,
+    ) == "speech_exceeds_validated_lifecycle"
+    assert speech_rejection_reason(
+        "The recovery plan was already approved by the incident owner.",
+        validated_intent=rejected_repeat,
+    ) is None
     proposed_issue = {
         "kind": "issue", "transition": "proposed",
         "simulation_scope": "discussion",

@@ -40,7 +40,7 @@ from app.task_state import (
     set_progress_metadata,
     task_progress_signature,
 )
-from app.orchestrator.generative import generative_orchestrator
+from app.orchestrator.generative import generative_orchestrator, schedule_direct_response
 from app.player_agent import (
     normalize_player_content,
     pending_player_addressed_responses,
@@ -314,6 +314,20 @@ def main() -> None:
     assert accepted_state["variables"]["unit_price"]["status"] == "confirmed"
     assert set(accepted_state["variables"]["unit_price"]["confirmations"]) == {"user", "supplier_ceo"}
     assert accepted_state["completion_status"] == "completed"
+
+    # Governance repairs a stale read model from the canonical ledger before
+    # selecting focus.  A fully accepted field therefore cannot be reopened
+    # merely because an earlier variable snapshot still says "proposed".
+    accepted_state["variables"]["unit_price"].update(
+        value=85, status="proposed", confirmations=["user"],
+    )
+    atomic_governance = prepare_turn_governance(
+        accepted_state, task_config=accepted_config, characters=[supplier],
+        turn_id=2, safety_max_turns=10, max_stagnant_turns=6,
+    )
+    assert atomic_governance["variables"]["unit_price"]["status"] == "confirmed"
+    assert atomic_governance["obligation_graph"]["all_required_satisfied"] is True
+    assert (atomic_governance.get("progress") or {}).get("focus") is None
 
     # G3.5 commits each explicit confirmation from the grounded evaluator
     # evidence even while the aggregate field status is still proposed.
@@ -1246,6 +1260,18 @@ def main() -> None:
 
     # An authorized contradiction reopens the completion obligation and the
     # coordinator routes it to the still-required confirmer.
+    challenge = validate_public_intent(
+        character=owner, state=cross_state, task_config=cross_turn_config,
+        turn_id=4,
+        intent={
+            "kind": "decision", "subject": "outcome challenged",
+            "field": "outcome", "value": False, "transition": "rejected",
+        },
+    )
+    commit_public_intent(
+        cross_state, intent=challenge,
+        public_quote="I reject the prior outcome based on new evidence.", tick=0,
+    )
     cross_state["variables"]["outcome"].update(value=False, status="disputed")
     evaluate_conditions(cross_turn_config, cross_state)
     reopened = next(iter(cross_state["obligation_graph"]["obligations"].values()))
@@ -2161,6 +2187,24 @@ def main() -> None:
             chars, [], [], ["second"]
         )
     ] == ["second", "first"]
+    direct_queue = [*chars]
+    quota, budget, scheduled = schedule_direct_response(
+        direct_queue, queue_index=1, target_id="first",
+        character_by_id={char.character_id: char for char in chars},
+        speak_quota=0, response_budget=1,
+    )
+    assert scheduled is True
+    assert [char.character_id for char in direct_queue] == ["first", "first", "second"]
+    assert quota == 1 and budget == 0
+    unchanged = [*chars]
+    quota, budget, scheduled = schedule_direct_response(
+        unchanged, queue_index=1, target_id="first",
+        character_by_id={char.character_id: char for char in chars},
+        speak_quota=0, response_budget=0,
+    )
+    assert scheduled is False
+    assert [char.character_id for char in unchanged] == ["first", "second"]
+    assert quota == 0 and budget == 0
     print("NPC speech safety and task-state smoke test: ok")
 
 

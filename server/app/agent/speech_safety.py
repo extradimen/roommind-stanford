@@ -860,6 +860,17 @@ def _speech_exceeds_validated_lifecycle(text: str, intent: dict) -> bool:
         and retrospective_claim_grounded(text)
     ):
         return False
+    if intent.get("commit_allowed") is False and re.search(
+        r"\b(?:i|we)\s+(?:(?:can|hereby|now|fully|explicitly|formally)\s+)*"
+        r"(?:confirm|accept|approve|agree(?:\s+to)?|endorse|sign\s+off(?:\s+on)?)\b|"
+        r"\b(?:i|we)\s+consider\b[^.!?;]{0,120}\bcomplete\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        # A structurally rejected transition cannot be reintroduced by the
+        # visible quote, even when the canonical entity had already reached
+        # that lifecycle through another actor's earlier event.
+        return True
     transition = str(intent.get("transition") or "proposed")
     allowed_rank = _LIFECYCLE_RANK.get(transition, 0)
     for sentence in re.split(r"(?<=[.!?])\s+|[;]\s*", text):

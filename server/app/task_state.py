@@ -833,7 +833,12 @@ def prepare_turn_governance(
     state = deepcopy(task_state)
     _project_public_ledger(state)
     if task_config is not None:
-        _sync_obligation_graph(task_config, state, turn_id=turn_id)
+        # Governance, completion, and obligations must observe one atomic
+        # projection of the canonical ledger.  Rebuilding obligations from
+        # stale variables can otherwise reopen a field already accepted in
+        # the immediately preceding public event.
+        _project_field_ledger(task_config, state, characters)
+        evaluate_conditions(task_config, state)
     progress = dict(state.get("progress") or {})
     stagnant_turns = max(0, int(progress.get("stagnant_turns") or 0))
     remaining_turns = max(0, int(safety_max_turns) - int(turn_id) + 1)
