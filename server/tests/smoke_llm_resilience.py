@@ -459,7 +459,7 @@ async def main() -> None:
     with patch(
         "app.external_evaluator.llm_client.chat_completion",
         AsyncMock(side_effect=malformed_then_valid),
-    ):
+    ) as mocked_dimension_completion:
         strict_dimension = await _evaluate_dimension(
             dimension="role_strategic_fidelity",
             metrics=EVALUATOR_DIMENSIONS["role_strategic_fidelity"],
@@ -471,6 +471,10 @@ async def main() -> None:
         )
     assert strict_dimension["dimension_score"] == 5
     assert all(row["reason"] for row in strict_dimension["metrics"].values())
+    repair_prompt = mocked_dimension_completion.await_args_list[1].args[0][0]["content"]
+    assert '"dimension_score": 6.0' in repair_prompt
+    assert "Null scores, blank reasons, empty evidence arrays" in repair_prompt
+    assert all(metric in repair_prompt for metric in EVALUATOR_DIMENSIONS["role_strategic_fidelity"])
     generation_session = SimpleNamespace(
         shared_state={},
         run_config={"working_message_limit": 5, "comparison_lock_model": True},

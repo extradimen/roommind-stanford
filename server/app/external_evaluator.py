@@ -14,7 +14,7 @@ from app.models.db import ScenarioTemplate
 from app.orchestrator.common import orch_support
 from app.orchestrator.llm_binding import resolve_llm
 
-EVALUATOR_ATTEMPTS = 2
+EVALUATOR_ATTEMPTS = 3
 DIMENSION_TIMEOUT_SECONDS = 240
 DIMENSION_CONCURRENCY = 2
 
@@ -232,7 +232,21 @@ most relevant exchange that demonstrates the absence):
 Do not add metrics or omit metrics."""
     last_preview = ""
     for attempt in range(EVALUATOR_ATTEMPTS):
-        suffix = "" if not attempt else "\nReturn one complete JSON object only; no Markdown or prose."
+        suffix = ""
+        if attempt:
+            suffix = f"""
+
+Your previous response was rejected because it was incomplete or invalid:
+{last_preview}
+
+Repair it by returning the entire JSON object again. Every one of these metrics
+must be present exactly once: {json.dumps(metrics, ensure_ascii=False)}. For every
+metric, score must be a number from 1 through 7, reason must be non-empty, and
+evidence_sequence_nos must contain at least one sequence number that exists in
+the public transcript. Null scores, blank reasons, empty evidence arrays,
+Markdown, commentary, and omitted metrics are forbidden. Do not merely repeat
+the dimension_score; independently fill every metric row.
+"""
         raw = await asyncio.wait_for(
             llm_client.chat_completion(
                 [{"role": "user", "content": prompt + suffix}],
