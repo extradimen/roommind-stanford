@@ -104,6 +104,49 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
     prepared_shared = dict(session.shared_state or {})
     prepared_shared["task_state"] = before_task_state
     session.shared_state = prepared_shared
+    prepared_completion = str(
+        before_task_state.get("completion_status") or "in_progress"
+    )
+    if prepared_completion in TERMINAL_OUTCOMES:
+        # A recovered or previously stale session can already satisfy its
+        # terminal conditions before the autonomous player is invoked. Lock
+        # the floor at this boundary so no new player/NPC turn is generated.
+        stop_reason = (
+            "completion_conditions_met"
+            if prepared_completion == "completed"
+            else f"terminal_outcome_{prepared_completion}"
+        )
+        session.status = (
+            "completed"
+            if prepared_completion in {"completed", "conditional"}
+            else "stopped"
+        )
+        prepared_shared["_test_state"] = {
+            "completed_turns": completed_turns - 1,
+            "safety_max_turns": safety_max_turns,
+            "stop_reason": stop_reason,
+            "last_player_intent": None,
+            "stagnant_turns": int(
+                ((prepared_shared.get("_test_state") or {}).get("stagnant_turns") or 0)
+            ),
+            "max_stagnant_turns": max_stagnant_turns,
+            "progress_made": False,
+            "completion_status": prepared_completion,
+        }
+        session.shared_state = prepared_shared
+        emit(
+            "dialogue.terminal_floor.locked",
+            component="autonomous_test_runner",
+            session_uuid=session_uuid,
+            reason="preexisting_terminal_task_state",
+        )
+        await db.flush()
+        return {
+            "player_move": None,
+            "turn_result": {},
+            "status": session.status,
+            "test_state": prepared_shared["_test_state"],
+        }
     before_signature = task_progress_signature(before_task_state)
     if (session.run_config or {}).get("comparison_protocol"):
         move = await generate_comparison_player_move(db, session, scenario, messages)
@@ -186,10 +229,10 @@ async def _run_test_step(db: AsyncSession, session_uuid: str, locale: str | None
                 turn_result = {k: v for k, v in event.items() if k != "_result"}
 
     stop_reason = None
-    after_task_state = ((session.shared_state or {}).get("task_state") or {})
-    after_signature = task_progress_signature(after_task_state)
-    previous_test_state = dict((session.shared_state or {}).get("_test_state") or {})
     shared_after_turn = dict(session.shared_state or {})
+    after_task_state = (shared_after_turn.get("task_state") or {})
+    after_signature = task_progress_signature(after_task_state)
+    previous_test_state = dict(shared_after_turn.get("_test_state") or {})
     pending_player_response = bool(shared_after_turn.get("_pending_player_response"))
     previous_player_response = bool(prepared_shared.get("_pending_player_response"))
     interaction_progress = (

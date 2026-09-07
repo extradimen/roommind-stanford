@@ -76,17 +76,18 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     is_g38_roommind = session_mode == "test" and architecture_version.startswith(("g3.8", "g3.9", "g4"))
     is_g39_roommind = session_mode == "test" and architecture_version.startswith(("g3.9", "g4"))
     is_g4_roommind = session_mode == "test" and architecture_version.startswith("g4")
-    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11"))
-    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12"))
-    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12"))
-    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12"))
-    is_g45_roommind = session_mode == "test" and architecture_version.startswith(("g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12"))
-    is_g47_roommind = session_mode == "test" and architecture_version.startswith(("g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12"))
-    is_g48_roommind = session_mode == "test" and architecture_version.startswith(("g4.8", "g4.9", "g4.10", "g4.11", "g4.12"))
-    is_g49_roommind = session_mode == "test" and architecture_version.startswith(("g4.9", "g4.10", "g4.11", "g4.12"))
-    is_g410_roommind = session_mode == "test" and architecture_version.startswith(("g4.10", "g4.11", "g4.12"))
-    is_g411_roommind = session_mode == "test" and architecture_version.startswith(("g4.11", "g4.12"))
-    is_g412_roommind = session_mode == "test" and architecture_version.startswith("g4.12")
+    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13"))
+    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13"))
+    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13"))
+    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13"))
+    is_g45_roommind = session_mode == "test" and architecture_version.startswith(("g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13"))
+    is_g47_roommind = session_mode == "test" and architecture_version.startswith(("g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13"))
+    is_g48_roommind = session_mode == "test" and architecture_version.startswith(("g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13"))
+    is_g49_roommind = session_mode == "test" and architecture_version.startswith(("g4.9", "g4.10", "g4.11", "g4.12", "g4.13"))
+    is_g410_roommind = session_mode == "test" and architecture_version.startswith(("g4.10", "g4.11", "g4.12", "g4.13"))
+    is_g411_roommind = session_mode == "test" and architecture_version.startswith(("g4.11", "g4.12", "g4.13"))
+    is_g412_roommind = session_mode == "test" and architecture_version.startswith(("g4.12", "g4.13"))
+    is_g413_roommind = session_mode == "test" and architecture_version.startswith("g4.13")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -946,6 +947,14 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         ),
         "g412_player_addressed_response_lock_respected": (
             not player_response_lock_violations if is_g412_roommind else None
+        ),
+        "g413_response_terminal_and_grounding_converged": (
+            not player_response_lock_violations
+            and not direct_response_violations
+            and not post_terminal_confirmation_speech
+            and not rejected_transition_surface_violations
+            and not unsupported_visible_current_world_actions
+            if is_g413_roommind else None
         ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events

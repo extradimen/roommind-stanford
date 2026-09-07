@@ -186,6 +186,7 @@ async def render_npc_speech(
     coordinator_focus: dict[str, Any] | None = None,
     participant_aliases: dict[str, list[str]] | None = None,
     interview_mode: bool = False,
+    required_response: bool = False,
 ) -> tuple[str, str, str, bool]:
     """
     Stanford: NPC speech is grounded in the agent's active plan.
@@ -520,6 +521,66 @@ Requirements:
         )
         if fallback_rejection:
             fallback = ""
+    if not fallback and required_response:
+        # An explicitly addressed participant owns the public floor.  Letting
+        # a rejected renderer collapse to silence permits a later participant
+        # (or the autonomous player) to answer on their behalf.  Use the same
+        # bounded, role-aware fallback and pass it through the full publication
+        # boundary before allowing that floor to advance.
+        fallback_subject = str(
+            (validated_intent or {}).get("subject") or "the current question"
+        ).replace("_", " ")
+        candidates = [
+            contextual_public_fallback(character, validated_intent),
+            (
+                f"For {fallback_subject}, I do not have a new verified fact to add. "
+                "I can answer a narrower question within my responsibility."
+            ),
+            (
+                f"I cannot confirm anything further about {fallback_subject} from "
+                "the evidence currently stated. The remaining point should stay "
+                "unresolved until it is supported."
+            ),
+        ]
+        for candidate in candidates:
+            candidate_rejection = (
+                "near_duplicate_same_speaker"
+                if near_duplicate_public_utterance(candidate, prior_utterances or [])
+                else ""
+            ) or (
+                "near_duplicate_obligation"
+                if near_duplicate_obligation_utterance(
+                    candidate,
+                    prior_public_utterances or [],
+                    speaker_id=character.character_id,
+                    focus=coordinator_focus,
+                    public_intent=validated_intent,
+                )
+                else ""
+            ) or speech_rejection_reason(
+                candidate,
+                active_plan_text=active_plan_text,
+                public_draft_text=draft,
+                public_context=f"{conversation_context}\n{user_input}",
+                validated_intent=validated_intent,
+                protected_secrets=list(
+                    (character.private_state or {}).get("protected_secrets") or []
+                ),
+                private_constraints=[
+                    *list((character.private_state or {}).get("discoverable_information") or []),
+                    *list((character.private_state or {}).get("hidden_agenda") or []),
+                ],
+                participant_aliases=participant_aliases,
+            ) or focus_question_target_mismatch_reason(
+                candidate,
+                speaker_id=character.character_id,
+                focus=coordinator_focus,
+                public_intent=validated_intent,
+                participant_aliases=participant_aliases,
+            )
+            if not candidate_rejection:
+                fallback = candidate
+                break
     if not fallback:
         # A reusable deterministic sentence is visibly artificial and became
         # the dominant G3.4/G3.5 dialogue failure.  After two bounded repairs,
@@ -590,6 +651,7 @@ async def _apply_speak(
     task_state: dict[str, Any] | None = None,
     participant_aliases: dict[str, list[str]] | None = None,
     interview_mode: bool = False,
+    required_response: bool = False,
 ) -> ActionResult:
     plan = active_plan(nodes)
     prior_utterances = [
@@ -626,6 +688,7 @@ async def _apply_speak(
         coordinator_focus=coordinator_focus,
         participant_aliases=participant_aliases,
         interview_mode=interview_mode,
+        required_response=required_response,
     )
     if decision.public_intent and content.strip():
         decision.public_intent = ground_public_intent_in_quote(
@@ -1055,6 +1118,7 @@ async def execute_plan_fallback_speak(
     reply_language: str = "en",
     task_state: dict[str, Any] | None = None,
     allow_retrospective: bool = False,
+    required_response: bool = False,
 ) -> ActionResult | None:
     """When no NPC spoke this turn, force one reply from the active plan."""
     plan = active_plan(nodes)
@@ -1110,6 +1174,7 @@ async def execute_plan_fallback_speak(
         task_state=task_state,
         participant_aliases=public_participant_aliases(scenario),
         interview_mode=allow_retrospective,
+        required_response=required_response,
     )
 
 

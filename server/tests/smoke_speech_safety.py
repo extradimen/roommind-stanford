@@ -929,6 +929,28 @@ def main() -> None:
         "Containment is now active at the edge firewall.",
         validated_intent=mislabeled_statement,
     ) == "current_world_completion_requires_simulated_tool_result"
+    # Frozen G4.12 run 536: retrospective interview mode cannot turn a claim
+    # about a currently stored dashboard into historical evidence.
+    assert player_speech_rejection_reason(
+        "All results are stored in the sprint performance dashboard, including "
+        "the A/B test metrics and stakeholder interview findings.",
+        validated_intent={
+            **mislabeled_statement,
+            "simulation_scope": "retrospective",
+        },
+    ) == "current_world_completion_requires_simulated_tool_result"
+    # Frozen G4.12 run 534: a rejected repeated lifecycle transition used the
+    # polite form "I'm pleased to confirm" and escaped the atomic speech lock.
+    assert speech_rejection_reason(
+        "I’m pleased to confirm the phased national launch. Let’s proceed.",
+        validated_intent={
+            "kind": "decision", "field": "launch_decision",
+            "transition": "accepted", "commit_allowed": False,
+            "validation": "downgraded",
+            "validation_reason": "field_lifecycle_repeat_by_actor",
+            "simulation_scope": "discussion",
+        },
+    ) == "speech_exceeds_validated_lifecycle"
     passive = normalized_public_propositions(
         "All traffic to the affected service has been blocked."
     )

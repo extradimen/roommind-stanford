@@ -174,7 +174,8 @@ async def main() -> None:
     direct_character = SimpleNamespace(
         character_id="operations_lead", display_name="Operations Lead",
         persona="Concise and evidence-led", authority={}, private_state={},
-        system_prompt="",
+        system_prompt="", fallback_actions={}, responsibility="Validate capacity",
+        relationship_to_player="counterpart",
     )
     direct_reply, _, _, direct_used = await render_npc_speech(
         character=direct_character,
@@ -193,6 +194,32 @@ async def main() -> None:
     )
     assert direct_used is True
     assert direct_reply == "I propose a limited pilot while the remaining evidence is reviewed."
+    # G4.12 run 532/534/536: a named response owner whose generated speech was
+    # rejected became silent, allowing another role or the player to consume
+    # the floor. Required response mode must close that gap deterministically.
+    with patch(
+        "app.agent.act.llm_client.chat_completion",
+        AsyncMock(return_value='{"content":""}'),
+    ):
+        required_reply, _, _, required_used = await render_npc_speech(
+            character=direct_character,
+            conversation_context="The team is discussing pilot readiness.",
+            user_input="Operations Lead, what can you verify?",
+            reasoning="Respond because the character was explicitly addressed",
+            draft="Respond from the current plan",
+            npc_llm=SimpleNamespace(
+                provider="ollama", model="fixture", temperature=0.0, max_tokens=512,
+            ),
+            validated_intent={
+                "kind": "statement", "subject": "pilot readiness",
+                "transition": "proposed", "simulation_scope": "discussion",
+                "evidence_source": "public_statement",
+            },
+            required_response=True,
+        )
+    assert required_used is True
+    assert required_reply
+    assert "pilot readiness" in required_reply
     outcome_fallback = contextual_public_fallback(
         direct_character,
         {"kind": "outcome", "subject": "the launch decision", "transition": "blocked"},

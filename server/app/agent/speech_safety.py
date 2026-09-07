@@ -879,6 +879,9 @@ def _speech_exceeds_validated_lifecycle(text: str, intent: dict) -> bool:
     if intent.get("commit_allowed") is False and re.search(
         r"\b(?:i|we)\s+(?:(?:can|hereby|now|fully|explicitly|formally)\s+)*"
         r"(?:confirm|accept|approve|agree(?:\s+to)?|endorse|sign\s+off(?:\s+on)?)\b|"
+        r"\b(?:i(?:['’]m| am)|we(?:['’]re| are))\s+"
+        r"(?:pleased|ready|able)\s+to\s+"
+        r"(?:confirm|accept|approve|agree(?:\s+to)?|endorse|sign\s+off(?:\s+on)?)\b|"
         r"\b(?:i|we)\s+consider\b[^.!?;]{0,120}\bcomplete\b",
         text,
         flags=re.IGNORECASE,

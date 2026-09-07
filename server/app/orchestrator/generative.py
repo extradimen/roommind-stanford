@@ -267,7 +267,10 @@ class GenerativeOrchestrator:
 
         context     = timeline.speech_context(limit=msg_limit)
         replies: list[NPCReply] = []
-        speak_quota = max_speakers
+        # Every participant explicitly addressed by the player owns one
+        # response slot.  The ordinary ambient-speaker cap must not silently
+        # drop the tail of an ordered multi-addressee question.
+        speak_quota = max(max_speakers, len(player_response_targets))
         floor_handed_to_player = False
         terminal_floor_locked = False
         directed_pending: list[str] = []
@@ -302,6 +305,7 @@ class GenerativeOrchestrator:
         character_by_id = {char.character_id: char for char in characters}
         direct_response_budget = 1
         direct_response_routes: list[dict[str, str]] = []
+        required_response_ids = set(player_response_targets)
         queue_index = 0
         while queue_index < len(agent_queue):
             char = agent_queue[queue_index]
@@ -347,6 +351,34 @@ class GenerativeOrchestrator:
             npc_llm_labels[cid] = npc_llm_for(char).label()
 
             action_result = loop_result.action_result
+            required_response_fallback = False
+            if cid in required_response_ids and (
+                not action_result or not action_result.spoke
+            ):
+                forced = await execute_plan_fallback_speak(
+                    db,
+                    character=char,
+                    scenario=scenario,
+                    store=store,
+                    nodes=nodes,
+                    user_input=user_input,
+                    turn_id=turn_id,
+                    tick=tick,
+                    conversation_context=context,
+                    current_phase=current_phase,
+                    npc_llm=npc_llm_for(char),
+                    timeline=timeline,
+                    reply_language=reply_language,
+                    task_state=task_state,
+                    allow_retrospective=(
+                        str((scenario.task_config or {}).get("evidence_mode") or "")
+                        == "retrospective_claim"
+                    ),
+                    required_response=True,
+                )
+                if forced and forced.spoke:
+                    action_result = forced
+                    required_response_fallback = True
             agent_debug[cid] = {
                 "action":            loop_result.action,
                 "reasoning":         loop_result.reasoning,
@@ -354,6 +386,7 @@ class GenerativeOrchestrator:
                 "retrieved":         loop_result.retrieved,
                 "decision_preview":  loop_result.decision_raw,
                 "world_events":      len(action_result.world_events) if action_result else 0,
+                "required_response_fallback": required_response_fallback,
             }
             if action_result and action_result.spoke:
                 agent_debug[cid]["spoke_content"] = action_result.content
@@ -366,7 +399,7 @@ class GenerativeOrchestrator:
             acc += sum(o.importance for o in loop_result.new_observations)
             accumulators[cid] = acc
 
-            if loop_result.spoke and speak_quota > 0 and action_result:
+            if action_result and action_result.spoke and speak_quota > 0:
                 # A role answering an earlier NPC-to-NPC question clears that
                 # obligation before any new question in its reply is recorded.
                 directed_pending = [target for target in directed_pending if target != cid]
@@ -409,6 +442,7 @@ class GenerativeOrchestrator:
                     )
                     if scheduled:
                         mentioned.add(question_target_id)
+                        required_response_ids.add(question_target_id)
                         direct_response_routes.append({
                             "source_id": cid,
                             "target_id": question_target_id,
@@ -436,7 +470,7 @@ class GenerativeOrchestrator:
                 # API/export layer.  Previously the reply was constructed
                 # first, which made this depend on incidental dict aliasing.
                 replies.append(action_to_npc_reply(char, action_result))
-                context += f"\n[{char.display_name}]: {loop_result.content}"
+                context += f"\n[{char.display_name}]: {action_result.content}"
 
                 async for evt in yield_speech_stream(char, action_result):
                     yield evt
