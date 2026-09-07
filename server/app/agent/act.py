@@ -627,12 +627,7 @@ async def _apply_speak(
         participant_aliases=participant_aliases,
         interview_mode=interview_mode,
     )
-    result.spoke = bool(content.strip())
-    result.content = content
-    result.emotion = emotion
-    result.gesture = gesture
-
-    if decision.public_intent and result.spoke:
+    if decision.public_intent and content.strip():
         decision.public_intent = ground_public_intent_in_quote(
             decision.public_intent, content
         )
@@ -644,6 +639,68 @@ async def _apply_speak(
                 field=decision.public_intent.get("field"),
                 transition=decision.public_intent.get("transition"),
             )
+
+        # Quote grounding can lower an apparently valid structured transition
+        # after the renderer has produced the final public words.  Re-run the
+        # public guard against that grounded state before publishing anything;
+        # otherwise rejected state could still leak as accepted speech.
+        rejection = speech_rejection_reason(
+            content,
+            active_plan_text=plan.content if plan else "",
+            public_context=f"{conversation_context}\n{user_input}",
+            validated_intent=decision.public_intent,
+            participant_aliases=participant_aliases,
+        )
+        if rejection:
+            repaired = retain_safe_public_clauses(
+                content, validated_intent=decision.public_intent,
+            )
+            repaired_rejection = (
+                speech_rejection_reason(
+                    repaired,
+                    active_plan_text=plan.content if plan else "",
+                    public_context=f"{conversation_context}\n{user_input}",
+                    validated_intent=decision.public_intent,
+                    participant_aliases=participant_aliases,
+                )
+                if repaired else rejection
+            )
+            if repaired and not repaired_rejection:
+                content = repaired
+                decision.public_intent = ground_public_intent_in_quote(
+                    decision.public_intent, content
+                )
+                emit(
+                    "llm.public_output.clause_repaired",
+                    component="agent_act",
+                    character_id=character.character_id,
+                    turn_id=turn_id,
+                    reason=rejection,
+                )
+            else:
+                emit(
+                    "llm.public_output.rejected",
+                    component="agent_act",
+                    character_id=character.character_id,
+                    turn_id=turn_id,
+                    reason=rejection,
+                )
+                emit(
+                    "dialogue.silent_recovery.used",
+                    component="agent_act",
+                    character_id=character.character_id,
+                    turn_id=turn_id,
+                    reason="post_grounding_public_output_rejected",
+                )
+                content = ""
+                intent_rendered = False
+
+    result.spoke = bool(content.strip())
+    result.content = content
+    result.emotion = emotion
+    result.gesture = gesture
+
+    if decision.public_intent and result.spoke:
         # Preserve the validated conversational target even when an ordinary
         # question/statement does not create a public-ledger event.  G4.1 lost
         # this metadata and had to guess floor ownership from display text.
@@ -748,6 +805,13 @@ async def execute_decision(
         task_config=task_config,
         allow_retrospective=allow_retrospective,
     )
+    if decision.action.lower() == "speak" and decision.speak_draft.strip():
+        # Ground the model's own proposed quote before rendering.  This makes
+        # transition validation and public wording one atomic decision, while
+        # the second check in ``_apply_speak`` protects the final paraphrase.
+        decision.public_intent = ground_public_intent_in_quote(
+            decision.public_intent, decision.speak_draft,
+        )
     emit(
         "public_ledger.intent.validated",
         actor_id=character.character_id,

@@ -14,9 +14,9 @@ from app.research_probes import run_integrity_probes
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G4.11"
+    assert CURRENT_GENERATION_ID == "G4.12"
     assert CURRENT_ARCHITECTURE_VERSION == (
-        "g4.11-direct-routing-and-state-surface-convergence"
+        "g4.12-player-response-lock-and-atomic-speech-grounding"
     )
     manifest = experiment_manifest(study_phase="exploration", random_seed=20260902)
     assert manifest["generation_id"] == CURRENT_GENERATION_ID
@@ -678,6 +678,29 @@ def main() -> None:
     assert bad_g411_surface["checks"][
         "g411_rejected_transitions_not_reintroduced_in_speech"
     ] is False
+
+    g412_bundle = deepcopy(g49_bundle)
+    g412_bundle["messages"] = [{
+        "sequence_no": 1, "turn_id": 1, "speaker_id": "user",
+        "speaker_type": "user", "speaker_source": "ai",
+        "content": "Avery, the floor is yours.", "meta": {},
+    }, {
+        "sequence_no": 2, "turn_id": 1, "speaker_id": "advisor",
+        "speaker_type": "npc", "speaker_source": "ai",
+        "content": "I can answer instead.", "meta": {},
+    }]
+    bad_g412_lock = run_integrity_probes(g412_bundle)
+    assert bad_g412_lock["checks"][
+        "g412_player_addressed_response_lock_respected"
+    ] is False
+    assert bad_g412_lock["diagnostics"][
+        "g412_player_response_lock_violations"
+    ]
+    g412_bundle["messages"][1]["speaker_id"] = "ceo"
+    clean_g412_lock = run_integrity_probes(g412_bundle)
+    assert clean_g412_lock["checks"][
+        "g412_player_addressed_response_lock_respected"
+    ] is True
 
     g4_bundle["messages"].append({
         "sequence_no": 5,

@@ -1,5 +1,7 @@
 """Regression checks for public NPC speech safety."""
 
+import asyncio
+
 from app.agent.speech_safety import (
     PUBLIC_RESPONSE_DRAFT,
     direct_question_to_player,
@@ -23,7 +25,8 @@ from app.agent.speech_safety import (
 )
 from types import SimpleNamespace
 
-from app.agent.act import configured_public_fallback
+from app.agent import act as agent_act
+from app.agent.act import ActionResult, AgentDecision, configured_public_fallback
 from app.api import game as game_api
 from app.orchestrator.common import orch_support
 from app.task_state import (
@@ -40,7 +43,11 @@ from app.task_state import (
     set_progress_metadata,
     task_progress_signature,
 )
-from app.orchestrator.generative import generative_orchestrator, schedule_direct_response
+from app.orchestrator.generative import (
+    generative_orchestrator,
+    lock_player_response_order,
+    schedule_direct_response,
+)
 from app.player_agent import (
     normalize_player_content,
     pending_player_addressed_responses,
@@ -92,6 +99,25 @@ def main() -> None:
         participant_aliases=multi_addressee_aliases,
     )
     assert [row["target_id"] for row in pending_across_handoff] == ["cfo"]
+    assert resolve_direct_question_targets(
+        "Dana Kim, the floor is yours.",
+        participant_aliases=multi_addressee_aliases,
+    ) == ["cfo"]
+
+    routing_chars = [
+        SimpleNamespace(character_id=cid)
+        for cid in ("sales_vp", "operations_director", "cfo")
+    ]
+    assert [
+        character.character_id
+        for character in lock_player_response_order(
+            routing_chars, ["operations_director", "cfo"],
+        )
+    ] == ["operations_director", "cfo"]
+    assert [
+        character.character_id
+        for character in lock_player_response_order(routing_chars, ["cfo"])
+    ] == ["cfo"], "an explicit named floor cannot be consumed by another role"
 
     conditional_acceptance = validate_public_intent(
         character={"character_id": "cfo", "authority": {"can_confirm": ["budget_approved"]}},
@@ -108,6 +134,49 @@ def main() -> None:
     )
     assert conditional_acceptance["commit_allowed"] is False
     assert "public_quote_does_not_support_transition" in conditional_acceptance["validation_reason"]
+
+    async def assert_rejected_transition_cannot_publish() -> None:
+        original_renderer = agent_act.render_npc_speech
+
+        async def unsafe_renderer(**_kwargs):
+            return "I approve the budget.", "neutral", "talking", True
+
+        agent_act.render_npc_speech = unsafe_renderer
+        try:
+            result = await agent_act._apply_speak(
+                ActionResult(character_id="cfo", action="speak"),
+                db=None,
+                store=None,
+                nodes=[],
+                character=SimpleNamespace(character_id="cfo", display_name="Dana Kim"),
+                conversation_context="The budget remains pending.",
+                user_input="Can we proceed?",
+                reasoning="Respond",
+                draft="I approve the budget.",
+                npc_llm=None,
+                decision=AgentDecision(
+                    action="speak",
+                    speak_draft="I approve the budget.",
+                    public_intent={
+                        "kind": "decision", "field": "budget_approved",
+                        "subject": "budget", "value": True,
+                        "transition": "accepted", "commit_allowed": False,
+                        "validation": "rejected",
+                        "validation_reason": "public_quote_does_not_support_transition",
+                    },
+                ),
+                turn_id=1,
+                tick=1,
+                timeline=None,
+                task_state={},
+                participant_aliases={"cfo": ["Dana Kim"]},
+            )
+        finally:
+            agent_act.render_npc_speech = original_renderer
+        assert result.spoke is False
+        assert result.content == ""
+
+    asyncio.run(assert_rejected_transition_cannot_publish())
 
     prerequisite_config = {
         "state_schema": {
@@ -944,6 +1013,27 @@ def main() -> None:
         "I've just emailed you the historical scorecard.",
         validated_intent=retrospective,
     ) == "unsupported_artifact_claim"
+    # Frozen G4.11 counterexamples: current claims about files in an implied
+    # shared workspace are live side effects even when no attachment verb is
+    # used. A future promise remains valid.
+    for fabricated_workspace_claim in (
+        "I've added the findings to the shared product folder.",
+        "I've just placed the plan in the shared engineering folder.",
+        "The detailed roadmap is now in the shared engineering drive.",
+        "In the shared folder you'll find the revised design spec.",
+        "I documented the decision in the shared design spec, now in the repo.",
+    ):
+        assert speech_rejection_reason(
+            fabricated_workspace_claim,
+            validated_intent={"simulation_scope": "discussion", "transition": "proposed"},
+        ) in {
+            "unsupported_artifact_claim",
+            "current_world_completion_requires_simulated_tool_result",
+        }, fabricated_workspace_claim
+    assert speech_rejection_reason(
+        "I will add the findings to the shared product folder after this meeting.",
+        validated_intent={"simulation_scope": "discussion", "transition": "committed"},
+    ) is None
     assert speech_rejection_reason(
         "The supporting file is at https://invented.example/interview-evidence.",
         validated_intent=retrospective,

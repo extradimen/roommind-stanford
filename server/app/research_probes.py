@@ -77,15 +77,16 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     is_g39_roommind = session_mode == "test" and architecture_version.startswith(("g3.9", "g4"))
     is_g4_roommind = session_mode == "test" and architecture_version.startswith("g4")
     is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11"))
-    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11"))
-    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11"))
-    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11"))
-    is_g45_roommind = session_mode == "test" and architecture_version.startswith(("g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11"))
-    is_g47_roommind = session_mode == "test" and architecture_version.startswith(("g4.7", "g4.8", "g4.9", "g4.10", "g4.11"))
-    is_g48_roommind = session_mode == "test" and architecture_version.startswith(("g4.8", "g4.9", "g4.10", "g4.11"))
-    is_g49_roommind = session_mode == "test" and architecture_version.startswith(("g4.9", "g4.10", "g4.11"))
-    is_g410_roommind = session_mode == "test" and architecture_version.startswith(("g4.10", "g4.11"))
-    is_g411_roommind = session_mode == "test" and architecture_version.startswith("g4.11")
+    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12"))
+    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12"))
+    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12"))
+    is_g45_roommind = session_mode == "test" and architecture_version.startswith(("g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12"))
+    is_g47_roommind = session_mode == "test" and architecture_version.startswith(("g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12"))
+    is_g48_roommind = session_mode == "test" and architecture_version.startswith(("g4.8", "g4.9", "g4.10", "g4.11", "g4.12"))
+    is_g49_roommind = session_mode == "test" and architecture_version.startswith(("g4.9", "g4.10", "g4.11", "g4.12"))
+    is_g410_roommind = session_mode == "test" and architecture_version.startswith(("g4.10", "g4.11", "g4.12"))
+    is_g411_roommind = session_mode == "test" and architecture_version.startswith(("g4.11", "g4.12"))
+    is_g412_roommind = session_mode == "test" and architecture_version.startswith("g4.12")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -314,6 +315,43 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         if isinstance(speaker, dict)
     }
     ordered_messages = sorted(messages, key=lambda item: int(item.get("sequence_no") or 0))
+    player_response_lock_violations: list[dict[str, Any]] = []
+    for index, row in enumerate(ordered_messages):
+        if row.get("speaker_type") != "user":
+            continue
+        targets = [
+            target for target in resolve_direct_question_targets(
+                str(row.get("content") or ""),
+                public_intent=((row.get("meta") or {}).get("public_intent") or {}),
+                participant_aliases=participant_aliases,
+            )
+            if target not in {"", "user"}
+        ]
+        if not targets:
+            continue
+        following_npcs: list[str] = []
+        remaining_targets = list(targets)
+        unexpected: list[str] = []
+        for candidate in ordered_messages[index + 1:]:
+            if candidate.get("speaker_type") == "user":
+                break
+            if candidate.get("speaker_type") == "npc":
+                speaker_id = str(candidate.get("speaker_id") or "")
+                following_npcs.append(speaker_id)
+                if remaining_targets and speaker_id == remaining_targets[0]:
+                    remaining_targets.pop(0)
+                    if not remaining_targets:
+                        break
+                elif remaining_targets:
+                    unexpected.append(speaker_id)
+        if remaining_targets or unexpected:
+            player_response_lock_violations.append({
+                "sequence_no": int(row.get("sequence_no") or 0),
+                "target_ids": targets,
+                "following_npc_ids": following_npcs,
+                "missing_target_ids": remaining_targets,
+                "unexpected_speaker_ids": unexpected,
+            })
     multi_addressee_response_violations: list[dict[str, Any]] = []
     for index, row in enumerate(ordered_messages):
         if row.get("speaker_type") != "user":
@@ -906,6 +944,9 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         "g411_rejected_transitions_not_reintroduced_in_speech": (
             not rejected_transition_surface_violations if is_g411_roommind else None
         ),
+        "g412_player_addressed_response_lock_respected": (
+            not player_response_lock_violations if is_g412_roommind else None
+        ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
             and ledger_clock_sequence == sorted(ledger_clock_sequence)
@@ -968,6 +1009,7 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "g410_post_terminal_confirmation_speech": post_terminal_confirmation_speech,
             "g411_direct_response_violations": direct_response_violations,
             "g411_rejected_transition_surface_violations": rejected_transition_surface_violations,
+            "g412_player_response_lock_violations": player_response_lock_violations,
         },
         "transcript_provenance": transcript_provenance(full_bundle),
     }

@@ -59,6 +59,27 @@ def schedule_direct_response(
     return max(1, speak_quota), response_budget - 1, True
 
 
+def lock_player_response_order(
+    agent_order: list[CharacterTemplate], target_ids: list[str],
+) -> list[CharacterTemplate]:
+    """Restrict a player-addressed turn to the visible addressees.
+
+    A direct player question creates a public response obligation.  Courtesy
+    mentions, dispatch rules, and coordinator focus must not let an unrelated
+    role consume the floor before that obligation is answered.  Targets stay
+    in the order in which the player addressed them; unanswered targets are
+    carried into ``_pending_responses`` by the caller.
+    """
+    if not target_ids:
+        return list(agent_order)
+    by_id = {character.character_id: character for character in agent_order}
+    return [
+        by_id[target_id]
+        for target_id in dict.fromkeys(target_ids)
+        if target_id in by_id
+    ]
+
+
 class GenerativeOrchestrator:
     """
     Each NPC runs an independent memory stream.
@@ -166,7 +187,10 @@ class GenerativeOrchestrator:
             )
             if target != "user"
         ]
-        pending = [cid for cid in updated_state.get("_pending_responses", []) if cid not in mentioned_list]
+        pending = [
+            cid for cid in updated_state.get("_pending_responses", [])
+            if cid not in directed_mentions
+        ]
         # Interrogative/request addressees outrank courtesy mentions and older
         # queued responses. Preserve every addressee in public order.
         priority_mentions = list(dict.fromkeys([
@@ -181,6 +205,19 @@ class GenerativeOrchestrator:
         agent_order = self._agent_order(
             characters, priority_mentions, rule_hits, focus_owner_ids
         )
+        player_response_targets = list(dict.fromkeys([
+            *directed_mentions, *pending,
+        ]))
+        agent_order = lock_player_response_order(
+            agent_order, player_response_targets,
+        )
+        if player_response_targets:
+            emit(
+                "dialogue.player_response.locked",
+                component="generative_orchestrator",
+                turn_id=turn_id,
+                target_ids=player_response_targets,
+            )
 
         yield {
             "type": "processing",
@@ -520,7 +557,7 @@ class GenerativeOrchestrator:
         updated_state[WorldTimeline.KEY] = timeline.to_list()
         spoken_ids = {reply.character_id for reply in replies}
         updated_state["_pending_responses"] = list(dict.fromkeys([
-            *(cid for cid in priority_mentions if cid not in spoken_ids),
+            *(cid for cid in player_response_targets if cid not in spoken_ids),
             *directed_pending,
         ]))
         # The test runner must not interpret a fresh, directed player question

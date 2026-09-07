@@ -43,8 +43,17 @@ _UNSUPPORTED_ARTIFACT_PATTERNS = (
     r"\b(?:checksum|hash)(?:es)?\s+(?:has|have)?\s*(?:been\s+)?(?:verified|validated|matched|confirmed)\b",
     r"\b(?:checksum|hash)(?:es)?\s+match(?:es|ed)?\b",
     r"\b(?:hash|checksum)\s+signatures?\s+match(?:es|ed)?\b",
-    r"\b(?:i(?:['’]ve| have)|we(?:['’]ve| have))\s+(?:placed|put)\b"
-    r"[^.!?]{0,160}\b(?:bucket|store|repository|channel)\b",
+    r"\b(?:i(?:['’]ve| have)|we(?:['’]ve| have))\s+(?:just\s+)?(?:placed|put)\b"
+    r"[^.!?]{0,160}\b(?:bucket|store|repository|repo|channel|folder|drive)\b",
+    r"\b(?:i(?:['’]ve| have)|we(?:['’]ve| have))\s+(?:just\s+)?(?:added|posted|shared)\b"
+    r"[^.!?]{0,160}\b(?:repository|repo|channel|folder|drive)\b",
+    r"\b(?:file|document|report|roadmap|spec|plan|brief|draft)\s+(?:is|are)\s+now\s+"
+    r"(?:in|on)\b[^.!?]{0,80}\b(?:repository|repo|channel|folder|drive)\b",
+    r"\b(?:in|on)\s+(?:the\s+)?(?:shared\s+)?(?:repository|repo|channel|folder|drive)\b"
+    r"[^.!?]{0,100}\byou(?:['’]ll| will)\s+find\b",
+    r"\b(?:i|we)\s+(?:have\s+|['’]ve\s+)?(?:documented|recorded)\b"
+    r"[^.!?]{0,180}\b(?:now\s+)?(?:in|on)\s+(?:the\s+)?(?:shared\s+)?"
+    r"(?:repository|repo|channel|folder|drive)\b",
     r"\b(?:i(?:['’]ve| have)|we(?:['’]ve| have))\s+(?:received|got)\b"
     r"[^.!?]{0,120}\b(?:log|logs|hash|hashes|checksum|checksums|snapshot|snapshots)\b",
 )
@@ -64,7 +73,8 @@ _CURRENT_WORLD_OBJECT_RE = re.compile(
     r"\b(?:containment|isolation|firewall|traffic(?:\s+shift)?|rollback|rollout|"
     r"deployment|release|service|system|server|cluster|pod|node|snapshot|"
     r"memory\s+dump|health\s+check|status(?:[- ]page)?|public\s+update|"
-    r"archive|upload|attachment|email|file|document|report|hash(?:es)?|checksum(?:s)?|log(?:s)?|"
+    r"archive|upload|attachment|email|file|document|report|roadmap|spec|plan|brief|draft|"
+    r"hash(?:es)?|checksum(?:s)?|log(?:s)?|"
     r"transaction(?:s)?|monitoring|metrics|telemetry)\b",
     flags=re.IGNORECASE,
 )
@@ -323,6 +333,8 @@ _PLAYER_RESPONSE_REASONING_RE = re.compile(
 )
 _VISIBLE_RESPONSE_REQUEST_RE = re.compile(
     r"(?:\?|？)|\b(?:can|could|would|will)\s+you\b|"
+    r"\bthe\s+floor\s+is\s+yours\b|"
+    r"(?:^|[.!?]\s+)\s*[\w .'-]{2,60}[,—:-]\s*(?:the\s+)?floor\s+is\s+yours\b|"
     r"(?:^|[.!?]\s+)\s*(?:please\s+)?"
     r"(?:tell|describe|explain|share|walk|give|answer|respond|address|confirm|provide)\b|"
     r"(?:^|[.!?]\s+)\s*[\w .'-]{2,60}[,—:-]\s*please\s+"
@@ -662,7 +674,11 @@ def normalized_public_propositions(content: str) -> list[dict[str, str]]:
             "modality": modality,
             "kind": (
                 "artifact"
-                if re.search(r"\b(?:attachment|email|file|document|report|log)\b", object_text)
+                if re.search(
+                    r"\b(?:attachment|email|file|document|report|roadmap|spec|plan|brief|draft|"
+                    r"repository|repo|folder|drive|log)\b",
+                    object_text,
+                )
                 else "action"
             ),
         })
@@ -932,7 +948,7 @@ def _contains_unsupported_artifact_claim(text: str) -> bool:
     sentences = re.split(r"(?<=[.!?])\s+|[;]\s*", text)
     for sentence in sentences:
         if _TERSE_TERMINAL_RE.search(sentence) and re.search(
-            r"\b(?:log|attachment|email|file|document|report)\b",
+            r"\b(?:log|attachment|email|file|document|report|roadmap|spec|plan|brief|draft)\b",
             sentence,
             flags=re.IGNORECASE,
         ):
@@ -963,6 +979,12 @@ def _contains_live_artifact_presentation(text: str) -> bool:
         r"\b(?:here(?:'s| is| are)|please find)\b[^.!?]{0,100}\battached\b",
         r"\b(?:i|we)(?:'ve| have)\s+(?:just\s+)?(?:attached|uploaded|emailed|sent)\b",
         r"\b(?:i|we)\s+just\s+(?:attached|uploaded|emailed|sent)\b",
+        r"\b(?:i|we)(?:['’]ve| have)\s+(?:just\s+)?(?:added|placed|put|posted|shared)\b"
+        r"[^.!?]{0,160}\b(?:repository|repo|channel|folder|drive)\b",
+        r"\b(?:file|document|report|roadmap|spec|plan|brief|draft)\s+(?:is|are)\s+now\s+"
+        r"(?:in|on)\b[^.!?]{0,80}\b(?:repository|repo|channel|folder|drive)\b",
+        r"\b(?:in|on)\s+(?:the\s+)?(?:shared\s+)?(?:repository|repo|channel|folder|drive)\b"
+        r"[^.!?]{0,100}\byou(?:['’]ll| will)\s+find\b",
     )
     return any(re.search(pattern, lowered) for pattern in patterns)
 
