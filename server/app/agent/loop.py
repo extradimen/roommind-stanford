@@ -164,6 +164,7 @@ async def run_agent_tick(
     timeline: WorldTimeline | None = None,
     reply_language: str = "en",
     task_state: dict[str, Any] | None = None,
+    required_response: bool = False,
 ) -> AgentLoopResult:
     """
     Stanford Generative Agent perceive → retrieve → react → act loop.
@@ -481,6 +482,7 @@ Output strict JSON only:
         task_config=scenario.task_config or {},
         allow_retrospective=evidence_mode == "retrospective_claim",
         participant_aliases=public_participant_aliases(scenario),
+        required_response=required_response,
     )
 
     return _loop_result_from_action(

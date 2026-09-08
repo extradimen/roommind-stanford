@@ -56,6 +56,15 @@ _UNSUPPORTED_ARTIFACT_PATTERNS = (
     r"(?:repository|repo|channel|folder|drive)\b",
     r"\b(?:i(?:['’]ve| have)|we(?:['’]ve| have))\s+(?:received|got)\b"
     r"[^.!?]{0,120}\b(?:log|logs|hash|hashes|checksum|checksums|snapshot|snapshots)\b",
+    r"\b(?:i(?:['’]ve| have)|we(?:['’]ve| have))\s+(?:reviewed|verified|examined)\b"
+    r"[^.!?]{0,180}\b(?:you|the team)\s+(?:just\s+)?(?:uploaded|shared|submitted|posted)\b",
+    r"\b(?:fully\s+)?documented\s+(?:and\s+available\s+)?(?:in|on)\b"
+    r"[^.!?]{0,100}\b(?:repository|repo|confluence|channel|folder|drive)\b",
+    r"\b(?:roadmap|report|document|deck|guidelines?|metrics?|results?|checklist|brief)\b"
+    r"[^.!?]{0,100}\b(?:is|are)\s+(?:now\s+)?available\s+(?:in|on)\b"
+    r"[^.!?]{0,80}\b(?:repository|repo|confluence|channel|folder|drive)\b",
+    r"\b(?:logs?|memory\s+dumps?|snapshots?|artifacts?)\b[^.!?]{0,120}"
+    r"\b(?:have|has)\s+been\s+copied\s+to\b[^.!?]{0,100}\b(?:archive|bucket|store)\b",
 )
 _URL_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:https?|ftp|s3|repo|file)://[^\s<>\]\[\)\(]+",
@@ -73,7 +82,8 @@ _CURRENT_WORLD_OBJECT_RE = re.compile(
     r"\b(?:containment|isolation|firewall|traffic(?:\s+shift)?|rollback|rollout|"
     r"deployment|release|service|system|server|cluster|pod|node|snapshot|"
     r"memory\s+dump|health\s+check|status(?:[- ]page)?|public\s+update|"
-    r"archive|upload|attachment|email|file|document|report|roadmap|spec|plan|brief|draft|"
+    r"archive|bucket|upload|attachment|email|file|document|report|roadmap|spec|plan|brief|draft|"
+    r"manifest|"
     r"hash(?:es)?|checksum(?:s)?|log(?:s)?|"
     r"transaction(?:s)?|monitoring|metrics|telemetry)\b",
     flags=re.IGNORECASE,
@@ -84,15 +94,15 @@ _CURRENT_WORLD_TERMINAL_RE = re.compile(
     r"complete|completed|finished|deployed|published|posted|shared|uploaded|attached|sent|delivered|"
     r"blocked|isolated|disabled|enabled|redirected|shifted|"
     r"archived|captured|stored|restored|rolled\s+back|verified|validated|reviewed|"
-    r"matched|secured|immutable|healthy|stable|green|applied|terminated)\b|"
+    r"matched|secured|immutable|healthy|stable|green|available|copied|generated|applied|terminated)\b|"
     r"\b(?:has|have)\s+(?:already\s+|now\s+|fully\s+|all\s+)?"
     r"(?:completed|finished|deployed|published|posted|shared|uploaded|attached|sent|archived|"
     r"captured|stored|restored|rolled\s+back|verified|validated|reviewed|matched|secured|executed|"
-    r"blocked|isolated|disabled|enabled|redirected|shifted|delivered)\b|"
+    r"blocked|isolated|disabled|enabled|redirected|shifted|delivered|copied|generated)\b|"
     r"\b(?:i|we)\s+(?:have\s+|['’]ve\s+)?(?:activated|deactivated|completed|"
     r"finished|deployed|published|posted|shared|uploaded|attached|sent|archived|captured|"
     r"stored|restored|rolled\s+back|verified|validated|reviewed|matched|secured|executed|blocked|isolated|"
-    r"disabled|enabled|redirected|shifted|delivered|applied|terminated)\b",
+    r"disabled|enabled|redirected|shifted|delivered|copied|generated|applied|terminated)\b",
     flags=re.IGNORECASE,
 )
 
@@ -988,6 +998,13 @@ def _contains_live_artifact_presentation(text: str) -> bool:
         r"(?:in|on)\b[^.!?]{0,80}\b(?:repository|repo|channel|folder|drive)\b",
         r"\b(?:in|on)\s+(?:the\s+)?(?:shared\s+)?(?:repository|repo|channel|folder|drive)\b"
         r"[^.!?]{0,100}\byou(?:['’]ll| will)\s+find\b",
+        r"\b(?:i|we)(?:['’]ve| have)\s+(?:reviewed|verified|examined)\b"
+        r"[^.!?]{0,180}\b(?:you|the team)\s+(?:just\s+)?(?:uploaded|shared|submitted|posted)\b",
+        r"\b(?:roadmap|report|document|deck|guidelines?|metrics?|results?|checklist|brief)\b"
+        r"[^.!?]{0,100}\b(?:is|are)\s+(?:now\s+)?available\s+(?:in|on)\b"
+        r"[^.!?]{0,80}\b(?:repository|repo|confluence|channel|folder|drive)\b",
+        r"\b(?:logs?|memory\s+dumps?|snapshots?|artifacts?)\b[^.!?]{0,120}"
+        r"\b(?:have|has)\s+been\s+copied\s+to\b[^.!?]{0,100}\b(?:archive|bucket|store)\b",
     )
     return any(re.search(pattern, lowered) for pattern in patterns)
 

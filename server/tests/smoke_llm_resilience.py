@@ -11,7 +11,11 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 from app.llm.client import LLMClient, LLMEmptyContentError, llm_provider_failover_enabled
-from app.agent.act import contextual_public_fallback, render_npc_speech
+from app.agent.act import (
+    contextual_public_fallback,
+    render_npc_speech,
+    required_response_public_fallback,
+)
 from app.player_agent import (
     bounded_dialogue,
     generate_comparison_player_move,
@@ -173,6 +177,7 @@ async def main() -> None:
     assert "highest-priority open issue" not in npc_fallback
     direct_character = SimpleNamespace(
         character_id="operations_lead", display_name="Operations Lead",
+        job_title="Operations Lead",
         persona="Concise and evidence-led", authority={}, private_state={},
         system_prompt="", fallback_actions={}, responsibility="Validate capacity",
         relationship_to_player="counterpart",
@@ -220,6 +225,46 @@ async def main() -> None:
     assert required_used is True
     assert required_reply
     assert "pilot readiness" in required_reply
+    contextual_candidates = [
+        contextual_public_fallback(
+            direct_character,
+            {
+                "kind": "statement", "subject": "pilot readiness",
+                "transition": "proposed", "simulation_scope": "discussion",
+                "evidence_source": "public_statement",
+            },
+        ),
+        "For pilot readiness, I do not have a new verified fact to add. "
+        "I can answer a narrower question within my responsibility.",
+        "I cannot confirm anything further about pilot readiness from the "
+        "evidence currently stated. The remaining point should stay unresolved "
+        "until it is supported.",
+    ]
+    with patch(
+        "app.agent.act.llm_client.chat_completion",
+        AsyncMock(return_value='{"content":""}'),
+    ):
+        final_required_reply, _, _, final_required_intent_rendered = (
+            await render_npc_speech(
+                character=direct_character,
+                conversation_context="The team is discussing pilot readiness.",
+                user_input="Operations Lead, what can you verify?",
+                reasoning="Respond because the character was explicitly addressed",
+                draft="Respond from the current plan",
+                npc_llm=SimpleNamespace(
+                    provider="ollama", model="fixture", temperature=0.0, max_tokens=512,
+                ),
+                validated_intent={
+                    "kind": "statement", "subject": "pilot readiness",
+                    "transition": "proposed", "simulation_scope": "discussion",
+                    "evidence_source": "public_statement",
+                },
+                prior_utterances=contextual_candidates,
+                required_response=True,
+            )
+        )
+    assert final_required_reply == required_response_public_fallback(direct_character)
+    assert final_required_intent_rendered is False
     outcome_fallback = contextual_public_fallback(
         direct_character,
         {"kind": "outcome", "subject": "the launch decision", "transition": "blocked"},

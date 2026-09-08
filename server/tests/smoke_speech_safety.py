@@ -26,7 +26,12 @@ from app.agent.speech_safety import (
 from types import SimpleNamespace
 
 from app.agent import act as agent_act
-from app.agent.act import ActionResult, AgentDecision, configured_public_fallback
+from app.agent.act import (
+    ActionResult,
+    AgentDecision,
+    configured_public_fallback,
+    required_response_public_fallback,
+)
 from app.api import game as game_api
 from app.orchestrator.common import orch_support
 from app.task_state import (
@@ -103,6 +108,18 @@ def main() -> None:
         "Dana Kim, the floor is yours.",
         participant_aliases=multi_addressee_aliases,
     ) == ["cfo"]
+    # G4.13 run 544 carried the addressee in the player's structured public
+    # intent even though the surface request used a role label that the
+    # conservative text parser did not reliably resolve.  The orchestrator
+    # must preserve that public routing evidence.
+    assert resolve_direct_question_targets(
+        "Thanks, Avery. Could you please share the Confluence link?",
+        public_intent={"target_id": "product_vp"},
+        participant_aliases={
+            "user": ["Morgan Lee"],
+            "product_vp": ["Avery Chen", "Avery", "Product VP"],
+        },
+    ) == ["product_vp"]
 
     routing_chars = [
         SimpleNamespace(character_id=cid)
@@ -1056,6 +1073,19 @@ def main() -> None:
         "I will add the findings to the shared product folder after this meeting.",
         validated_intent={"simulation_scope": "discussion", "transition": "committed"},
     ) is None
+    for fabricated_live_artifact in (
+        "I've reviewed the workshop files you just uploaded.",
+        "The full roadmap is available in our product Confluence space.",
+        "The logs and memory dumps have been copied to the read-only archive bucket.",
+        "The verification manifest has been generated.",
+    ):
+        assert speech_rejection_reason(
+            fabricated_live_artifact,
+            validated_intent={"simulation_scope": "retrospective", "transition": "proposed"},
+        ) in {
+            "unsupported_artifact_claim",
+            "current_world_completion_requires_simulated_tool_result",
+        }, fabricated_live_artifact
     assert speech_rejection_reason(
         "The supporting file is at https://invented.example/interview-evidence.",
         validated_intent=retrospective,
@@ -2317,6 +2347,23 @@ def main() -> None:
     assert scheduled is False
     assert [char.character_id for char in unchanged] == ["first", "second"]
     assert quota == 0 and budget == 0
+    chained = [*chars]
+    quota, budget, scheduled = schedule_direct_response(
+        chained, queue_index=1, target_id="first",
+        character_by_id={char.character_id: char for char in chars},
+        speak_quota=0, response_budget=2,
+    )
+    assert scheduled is True
+    quota, budget, scheduled = schedule_direct_response(
+        chained, queue_index=2, target_id="second",
+        character_by_id={char.character_id: char for char in chars},
+        speak_quota=quota, response_budget=budget,
+    )
+    assert scheduled is True
+    assert budget == 0
+    forced_owner_reply = required_response_public_fallback(chars[0])
+    assert forced_owner_reply
+    assert speech_rejection_reason(forced_owner_reply) is None
     print("NPC speech safety and task-state smoke test: ok")
 
 

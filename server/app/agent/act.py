@@ -168,6 +168,21 @@ def contextual_public_fallback(
     )
 
 
+def required_response_public_fallback(character: CharacterTemplate) -> str:
+    """Last-resort public answer for a role that owns the current floor.
+
+    This sentence deliberately carries no lifecycle transition or external
+    evidence claim. It is safe to publish without a ledger commit and prevents
+    a rejected model draft from silently transferring the role's floor.
+    """
+    role = " ".join(str(getattr(character, "job_title", None) or "participant").split())
+    return (
+        f"From my role as {role}, I cannot confirm the requested point beyond "
+        "the public evidence already stated. It should remain unresolved until "
+        "the responsible evidence is available."
+    )
+
+
 async def render_npc_speech(
     *,
     character: CharacterTemplate,
@@ -473,6 +488,7 @@ Requirements:
     # Older code exposed that instruction verbatim after two rejected model
     # candidates.  Only an explicitly authored public reply may be spoken.
     fallback = configured_public_fallback(configured)
+    fallback_intent_rendered = True
     if fallback and near_duplicate_public_utterance(fallback, prior_utterances or []):
         emit(
             "dialogue.near_duplicate.suppressed",
@@ -581,6 +597,42 @@ Requirements:
             if not candidate_rejection:
                 fallback = candidate
                 break
+        if not fallback:
+            # The validated lifecycle intent can itself be the reason every
+            # contextual candidate is rejected.  The addressed role still
+            # owns this floor, so make one final publication-only attempt
+            # with no state transition attached.  ``_apply_speak`` repeats
+            # this boundary after quote grounding and clears the intent,
+            # ensuring this answer cannot mutate the public ledger.
+            candidate = required_response_public_fallback(character)
+            candidate_rejection = (
+                "near_duplicate_same_speaker"
+                if near_duplicate_public_utterance(candidate, prior_utterances or [])
+                else ""
+            ) or speech_rejection_reason(
+                candidate,
+                active_plan_text=active_plan_text,
+                public_draft_text=draft,
+                public_context=f"{conversation_context}\n{user_input}",
+                validated_intent=None,
+                protected_secrets=list(
+                    (character.private_state or {}).get("protected_secrets") or []
+                ),
+                private_constraints=[
+                    *list((character.private_state or {}).get("discoverable_information") or []),
+                    *list((character.private_state or {}).get("hidden_agenda") or []),
+                ],
+                participant_aliases=participant_aliases,
+            )
+            if not candidate_rejection:
+                fallback = candidate
+                fallback_intent_rendered = False
+                emit(
+                    "dialogue.required_response.fallback_used",
+                    component="npc_speech_render",
+                    character_id=character.character_id,
+                    reason=rejection or "contextual_candidates_rejected",
+                )
     if not fallback:
         # A reusable deterministic sentence is visibly artificial and became
         # the dominant G3.4/G3.5 dialogue failure.  After two bounded repairs,
@@ -600,7 +652,7 @@ Requirements:
         rejection_reason=rejection or "configured_reply_unavailable",
         fallback_kind="configured_public_reply",
     )
-    return fallback, emotion, gesture, True
+    return fallback, emotion, gesture, fallback_intent_rendered
 
 
 async def _record_action_memory(
@@ -748,15 +800,40 @@ async def _apply_speak(
                     turn_id=turn_id,
                     reason=rejection,
                 )
-                emit(
-                    "dialogue.silent_recovery.used",
-                    component="agent_act",
-                    character_id=character.character_id,
-                    turn_id=turn_id,
-                    reason="post_grounding_public_output_rejected",
-                )
-                content = ""
-                intent_rendered = False
+                if required_response:
+                    last_resort = required_response_public_fallback(character)
+                    last_resort_rejection = speech_rejection_reason(
+                        last_resort,
+                        active_plan_text=plan.content if plan else "",
+                        public_context=f"{conversation_context}\n{user_input}",
+                        validated_intent=None,
+                        participant_aliases=participant_aliases,
+                    )
+                    if not last_resort_rejection:
+                        content = last_resort
+                        decision.public_intent = {}
+                        intent_rendered = False
+                        emit(
+                            "dialogue.required_response.fallback_used",
+                            component="agent_act",
+                            character_id=character.character_id,
+                            turn_id=turn_id,
+                            reason=rejection,
+                        )
+                    else:
+                        content = ""
+                        intent_rendered = False
+                else:
+                    content = ""
+                    intent_rendered = False
+                if not content:
+                    emit(
+                        "dialogue.silent_recovery.used",
+                        component="agent_act",
+                        character_id=character.character_id,
+                        turn_id=turn_id,
+                        reason="post_grounding_public_output_rejected",
+                    )
 
     result.spoke = bool(content.strip())
     result.content = content
@@ -844,6 +921,7 @@ async def execute_decision(
     task_config: dict[str, Any] | None = None,
     allow_retrospective: bool = False,
     participant_aliases: dict[str, list[str]] | None = None,
+    required_response: bool = False,
 ) -> ActionResult:
     """Execute a structured decision: memory writes + optional speech on world line."""
 
@@ -954,6 +1032,7 @@ async def execute_decision(
                 task_state=task_state,
                 participant_aliases=participant_aliases,
                 interview_mode=allow_retrospective,
+                required_response=required_response,
             )
 
         if plan_text:
@@ -1007,6 +1086,7 @@ async def execute_decision(
                 task_state=task_state,
                 participant_aliases=participant_aliases,
                 interview_mode=allow_retrospective,
+                required_response=required_response,
             )
         if note:
             await _record_action_memory(
@@ -1044,6 +1124,7 @@ async def execute_decision(
             task_state=task_state,
             participant_aliases=participant_aliases,
             interview_mode=allow_retrospective,
+            required_response=required_response,
         )
 
     if action == "wait" and speak_quota_remaining > 0 and mentioned:
@@ -1069,6 +1150,7 @@ async def execute_decision(
             task_state=task_state,
             participant_aliases=participant_aliases,
             interview_mode=allow_retrospective,
+            required_response=required_response,
         )
 
     if action == "wait" and timeline is not None:

@@ -183,7 +183,12 @@ class GenerativeOrchestrator:
         }
         directed_mentions = [
             target for target in resolve_direct_question_targets(
-                user_input, participant_aliases=participant_aliases,
+                user_input,
+                public_intent=(
+                    ((messages[-1].get("meta") or {}).get("public_intent") or {})
+                    if messages else {}
+                ),
+                participant_aliases=participant_aliases,
             )
             if target != "user"
         ]
@@ -303,7 +308,11 @@ class GenerativeOrchestrator:
         # ----------------------------------------------------------------
         agent_queue = list(agent_order)
         character_by_id = {char.character_id: char for char in characters}
-        direct_response_budget = 1
+        # A bounded chain may legitimately require more than one direct
+        # response (A asks B, then B asks C). Each registered target may be
+        # scheduled at most once, preventing cycles without dropping C.
+        direct_response_budget = len(characters)
+        scheduled_response_ids: set[str] = set()
         direct_response_routes: list[dict[str, str]] = []
         required_response_ids = set(player_response_targets)
         queue_index = 0
@@ -347,6 +356,7 @@ class GenerativeOrchestrator:
                 timeline=timeline,
                 reply_language=reply_language,
                 task_state=task_state,
+                required_response=cid in required_response_ids,
             )
             npc_llm_labels[cid] = npc_llm_for(char).label()
 
@@ -425,6 +435,7 @@ class GenerativeOrchestrator:
                     and question_target_id != cid
                     and question_target_id in character_by_id
                     and direct_response_budget > 0
+                    and question_target_id not in scheduled_response_ids
                 ):
                     # A visible NPC-to-NPC question owns one bounded response
                     # slot in the same autonomous turn.  The ordinary speaker
@@ -441,6 +452,7 @@ class GenerativeOrchestrator:
                         response_budget=direct_response_budget,
                     )
                     if scheduled:
+                        scheduled_response_ids.add(question_target_id)
                         mentioned.add(question_target_id)
                         required_response_ids.add(question_target_id)
                         direct_response_routes.append({
