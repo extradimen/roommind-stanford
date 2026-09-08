@@ -15,11 +15,14 @@ from app.agent.speech_safety import (
     near_duplicate_obligation_utterance,
     near_duplicate_public_utterance,
     npc_directed_question_handoff_reason,
+    publication_claim_rejection_reason,
     resolve_direct_question_target,
     resolve_direct_question_targets,
     retrospective_role_substitution_reason,
     speech_rejection_reason,
+    synthetic_fallback_language_reason,
     terminal_current_world_action_reason,
+    terminal_phase_reentry_reason,
     unregistered_participant_assignment_reason,
     unsupported_evidence_reason,
 )
@@ -76,19 +79,20 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
     is_g38_roommind = session_mode == "test" and architecture_version.startswith(("g3.8", "g3.9", "g4"))
     is_g39_roommind = session_mode == "test" and architecture_version.startswith(("g3.9", "g4"))
     is_g4_roommind = session_mode == "test" and architecture_version.startswith("g4")
-    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13", "g4.14"))
-    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13", "g4.14"))
-    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13", "g4.14"))
-    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13", "g4.14"))
-    is_g45_roommind = session_mode == "test" and architecture_version.startswith(("g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13", "g4.14"))
-    is_g47_roommind = session_mode == "test" and architecture_version.startswith(("g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13", "g4.14"))
-    is_g48_roommind = session_mode == "test" and architecture_version.startswith(("g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13", "g4.14"))
-    is_g49_roommind = session_mode == "test" and architecture_version.startswith(("g4.9", "g4.10", "g4.11", "g4.12", "g4.13", "g4.14"))
-    is_g410_roommind = session_mode == "test" and architecture_version.startswith(("g4.10", "g4.11", "g4.12", "g4.13", "g4.14"))
-    is_g411_roommind = session_mode == "test" and architecture_version.startswith(("g4.11", "g4.12", "g4.13", "g4.14"))
-    is_g412_roommind = session_mode == "test" and architecture_version.startswith(("g4.12", "g4.13", "g4.14"))
-    is_g413_roommind = session_mode == "test" and architecture_version.startswith(("g4.13", "g4.14"))
-    is_g414_roommind = session_mode == "test" and architecture_version.startswith("g4.14")
+    is_g41_roommind = session_mode == "test" and architecture_version.startswith(("g4.1", "g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13", "g4.14", "g4.15"))
+    is_g42_roommind = session_mode == "test" and architecture_version.startswith(("g4.2", "g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13", "g4.14", "g4.15"))
+    is_g43_roommind = session_mode == "test" and architecture_version.startswith(("g4.3", "g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13", "g4.14", "g4.15"))
+    is_g44_roommind = session_mode == "test" and architecture_version.startswith(("g4.4", "g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13", "g4.14", "g4.15"))
+    is_g45_roommind = session_mode == "test" and architecture_version.startswith(("g4.5", "g4.6", "g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13", "g4.14", "g4.15"))
+    is_g47_roommind = session_mode == "test" and architecture_version.startswith(("g4.7", "g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13", "g4.14", "g4.15"))
+    is_g48_roommind = session_mode == "test" and architecture_version.startswith(("g4.8", "g4.9", "g4.10", "g4.11", "g4.12", "g4.13", "g4.14", "g4.15"))
+    is_g49_roommind = session_mode == "test" and architecture_version.startswith(("g4.9", "g4.10", "g4.11", "g4.12", "g4.13", "g4.14", "g4.15"))
+    is_g410_roommind = session_mode == "test" and architecture_version.startswith(("g4.10", "g4.11", "g4.12", "g4.13", "g4.14", "g4.15"))
+    is_g411_roommind = session_mode == "test" and architecture_version.startswith(("g4.11", "g4.12", "g4.13", "g4.14", "g4.15"))
+    is_g412_roommind = session_mode == "test" and architecture_version.startswith(("g4.12", "g4.13", "g4.14", "g4.15"))
+    is_g413_roommind = session_mode == "test" and architecture_version.startswith(("g4.13", "g4.14", "g4.15"))
+    is_g414_roommind = session_mode == "test" and architecture_version.startswith(("g4.14", "g4.15"))
+    is_g415_roommind = session_mode == "test" and architecture_version.startswith("g4.15")
     coordination_history = (full_bundle.get("task_result") or {}).get("coordination_history") or []
     coordination_turns = [
         int(row.get("turn_id") or 0) for row in coordination_history if isinstance(row, dict)
@@ -317,6 +321,70 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
         if isinstance(speaker, dict)
     }
     ordered_messages = sorted(messages, key=lambda item: int(item.get("sequence_no") or 0))
+    publication_claim_violations: list[dict[str, Any]] = []
+    terminal_phase_reentries: list[dict[str, Any]] = []
+    synthetic_fallback_fragments: list[dict[str, Any]] = []
+    candidate_questions_sequence = 0
+    for row in ordered_messages:
+        content = " ".join(str(row.get("content") or "").split())
+        meta = row.get("meta") or {}
+        intent = meta.get("public_intent") or {}
+        grounded = content in tool_grounded_quotes
+        claim_intent = (
+            {
+                **intent,
+                "evidence_source": "simulated_tool_result",
+                "tool_result_id": "registered",
+                "validation": "accepted",
+            }
+            if grounded else intent
+        )
+        claim_reason = unregistered_participant_assignment_reason(
+            content,
+            participant_aliases=participant_aliases,
+            validated_intent=claim_intent,
+        ) or publication_claim_rejection_reason(
+            content,
+            speaker_id=str(row.get("speaker_id") or ""),
+            participant_aliases=participant_aliases,
+            validated_intent=claim_intent,
+        )
+        if claim_reason:
+            publication_claim_violations.append({
+                "sequence_no": int(row.get("sequence_no") or 0),
+                "speaker_id": str(row.get("speaker_id") or ""),
+                "reason": claim_reason,
+            })
+        fallback_reason = synthetic_fallback_language_reason(content)
+        if fallback_reason:
+            synthetic_fallback_fragments.append({
+                "sequence_no": int(row.get("sequence_no") or 0),
+                "speaker_id": str(row.get("speaker_id") or ""),
+                "reason": fallback_reason,
+            })
+        if (
+            str(intent.get("field") or "") == "candidate_questions_complete"
+            and str(intent.get("transition") or "") == "accepted"
+            and intent.get("commit_allowed") is not False
+        ):
+            candidate_questions_sequence = int(row.get("sequence_no") or 0)
+            continue
+        if (
+            candidate_questions_sequence
+            and int(row.get("sequence_no") or 0) > candidate_questions_sequence
+            and row.get("speaker_type") == "npc"
+            and terminal_phase_reentry_reason(
+                content,
+                task_type=str(task_config.get("task_type") or ""),
+                current_phase="candidate_questions",
+            )
+        ):
+            terminal_phase_reentries.append({
+                "candidate_questions_sequence_no": candidate_questions_sequence,
+                "sequence_no": int(row.get("sequence_no") or 0),
+                "speaker_id": str(row.get("speaker_id") or ""),
+                "reason": "terminal_phase_reopened",
+            })
     player_response_lock_violations: list[dict[str, Any]] = []
     for index, row in enumerate(ordered_messages):
         if row.get("speaker_type") != "user":
@@ -965,6 +1033,16 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             and not unsupported_visible_current_world_actions
             if is_g414_roommind else None
         ),
+        "g415_typed_publication_and_terminal_phase_converged": (
+            not publication_claim_violations
+            and not terminal_phase_reentries
+            and not synthetic_fallback_fragments
+            and not malformed_public_fragments
+            and not player_response_lock_violations
+            and not direct_response_violations
+            and not post_terminal_confirmation_speech
+            if is_g415_roommind else None
+        ),
         "g3_simulation_clock_monotonic": (
             not future_ledger_events
             and ledger_clock_sequence == sorted(ledger_clock_sequence)
@@ -999,6 +1077,9 @@ def run_integrity_probes(full_bundle: dict[str, Any]) -> dict[str, Any]:
             "unsupported_terminal_g3_event_ids": unsupported_terminal_ledger_events,
             "unsupported_completed_action_source_event_ids": unsupported_completed_action_sources,
             "unsupported_visible_current_world_actions": unsupported_visible_current_world_actions,
+            "g415_publication_claim_violations": publication_claim_violations,
+            "g415_terminal_phase_reentries": terminal_phase_reentries,
+            "g415_synthetic_fallback_fragments": synthetic_fallback_fragments,
             "repeated_capability_focus_issues": repeated_capability_focus_issues,
             "unavailable_capability_boundary_fields": sorted(unavailable_boundary_fields),
             "future_g3_ledger_event_ids": future_ledger_events,

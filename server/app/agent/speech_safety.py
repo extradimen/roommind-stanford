@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
 
 PUBLIC_RESPONSE_DRAFT = (
@@ -118,9 +119,9 @@ _CURRENT_WORLD_METRIC_ASSERTION_RE = re.compile(
 
 _UNREGISTERED_OWNER_PATTERNS = (
     re.compile(
-        r"\b(?:assign(?:ing)?|designate|appoint)\s+"
-        r"(?P<name>[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+)+)\s+"
-        r"(?:\([^)]{1,80}\)\s+)?"
+        r"\b(?i:assign(?:ing)?|designate|appoint|confirm(?:ing)?)\s+"
+        r"(?P<name>[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+)+)(?=\s|,)\s*"
+        r"(?:(?:\([^)]{1,80}\)|,\s*[^,.;]{1,80},?)\s*)?"
         r"(?:as|to)\b"
     ),
     re.compile(
@@ -873,6 +874,249 @@ def retrospective_claim_grounded(text: str) -> bool:
     return bool(_RETROSPECTIVE_ANCHOR_RE.search(" ".join((text or "").split())))
 
 
+@dataclass(frozen=True)
+class PublicationClaim:
+    """A typed claim extracted from the final visible utterance.
+
+    The type is deliberately small and policy-facing. It lets the publication
+    boundary reason about the speaker, action, object, time, evidence source,
+    and authority without trusting a model-authored intent label.
+    """
+
+    clause: str
+    actor_id: str
+    claim_kind: str
+    object_type: str
+    predicate: str
+    temporal_scope: str
+    evidence_source: str
+    authority_scope: str
+
+
+_OPERATIONAL_READINESS_OBJECT_RE = re.compile(
+    r"\b(?:on[- ]call\s+coverage|support\s+coverage|staffing|specialists?|"
+    r"engineers?|monitoring(?:\s+dashboards?)?|dashboards?|rollback\s+criteria|"
+    r"safeguards?|operational\s+readiness|capacity)\b",
+    flags=re.IGNORECASE,
+)
+_OPERATIONAL_READY_ASSERTION_RE = re.compile(
+    r"\b(?:i|we)\s+(?:now\s+)?have\b|"
+    r"\b(?:is|are)\s+(?:already\s+|now\s+|fully\s+)?"
+    r"(?:in\s+place|ready|available|staffed|covered|contracted|active)\b|"
+    r"\b(?:ensur(?:e|es|ed|ing)|provid(?:e|es|ed|ing))\s+(?:full|24/7)\s+coverage\b",
+    flags=re.IGNORECASE,
+)
+_PRESENT_OPERATION_RE = re.compile(
+    r"\b(?:i(?:['’]m| am)|we(?:['’]re| are))\s+(?:now\s+)?"
+    r"(?P<predicate>initiating|toggling|capturing|archiving|copying|deploying|"
+    r"restarting|isolating|containing|rolling\s+back|publishing|posting|"
+    r"uploading|verifying|executing|applying)\b",
+    flags=re.IGNORECASE,
+)
+_ARTIFACT_REVIEW_RE = re.compile(
+    r"\b(?:i(?:['’]ve| have)|we(?:['’]ve| have))\s+"
+    r"(?P<predicate>reviewed|examined|verified|opened)\b[^.!?;]{0,180}\b"
+    r"(?P<object>backlog|design\s+doc(?:ument)?|document|report|roadmap|deck|"
+    r"artifact|file|attachment|dashboard|repository|confluence)\b",
+    flags=re.IGNORECASE,
+)
+_CROSS_ROLE_OPERATION_VERBS = (
+    r"capture|archive|copy|snapshot|toggle|isolate|contain|restart|deploy|"
+    r"roll\s+back|publish|post|upload|verify|execute|apply"
+)
+_INTERVIEW_PHASE_REENTRY_RE = re.compile(
+    r"(?:\?|？)|\b(?:can|could|would|will)\s+you\b",
+    flags=re.IGNORECASE,
+)
+_INTERVIEW_EVALUATION_PROMPT_RE = re.compile(
+    r"\b(?:walk\s+me\s+through|tell\s+me\s+about|describe|give\s+(?:me\s+)?"
+    r"a\s+(?:specific|concrete)\s+(?:example|moment)|how\s+did\s+you|"
+    r"what\s+(?:specific|concrete)|methodology\s+you\s+used|"
+    r"ensure\s+the\s+engineering\s+(?:lead|team))\b",
+    flags=re.IGNORECASE,
+)
+_SYNTHETIC_FALLBACK_RE = re.compile(
+    r"^(?:on|for)\s+(?:statement|question|proposal|response)\b|"
+    r"^from\s+my\s+role\s+as\b[^.!?]{0,160}\bpublic\s+evidence\s+already\s+stated\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _alias_owner(
+    clause: str,
+    participant_aliases: dict[str, list[str] | tuple[str, ...]] | None,
+) -> list[tuple[str, str]]:
+    """Return registered participant ids and aliases visibly named in a clause."""
+    normalized = " ".join((clause or "").casefold().split())
+    matches: list[tuple[str, str]] = []
+    for participant_id, values in (participant_aliases or {}).items():
+        for raw in values or []:
+            alias = " ".join(str(raw or "").casefold().split()).strip()
+            if len(alias) < 2:
+                continue
+            if re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", normalized):
+                matches.append((str(participant_id), alias))
+                break
+    return matches
+
+
+def classify_publication_claims(
+    content: str,
+    *,
+    speaker_id: str = "",
+    participant_aliases: dict[str, list[str] | tuple[str, ...]] | None = None,
+    validated_intent: dict | None = None,
+) -> list[PublicationClaim]:
+    """Extract policy-relevant claims from the exact final public wording."""
+    intent = validated_intent or {}
+    evidence_source = str(intent.get("evidence_source") or "public_statement")
+    claims: list[PublicationClaim] = []
+    text = " ".join((content or "").split()).strip()
+    for clause in re.split(r"(?<=[.!?])\s+|[;]\s*", text):
+        clause = clause.strip()
+        if not clause or clause.rstrip().endswith(("?", "？")):
+            continue
+        retrospective = retrospective_claim_grounded(clause)
+        conditional = bool(_FUTURE_OR_CONDITIONAL_RE.search(clause))
+        temporal = (
+            "retrospective" if retrospective
+            else ("conditional" if conditional else "asserted_current")
+        )
+
+        operation = _PRESENT_OPERATION_RE.search(clause)
+        if operation:
+            claims.append(PublicationClaim(
+                clause=clause,
+                actor_id=speaker_id,
+                claim_kind="operational_action",
+                object_type="current_world_operation",
+                predicate=operation.group("predicate").casefold(),
+                temporal_scope=("retrospective" if retrospective else "asserted_current"),
+                evidence_source=evidence_source,
+                authority_scope="self",
+            ))
+
+        artifact_review = _ARTIFACT_REVIEW_RE.search(clause)
+        if artifact_review and not retrospective_claim_grounded(clause):
+            claims.append(PublicationClaim(
+                clause=clause,
+                actor_id=speaker_id,
+                claim_kind="artifact_review",
+                object_type=artifact_review.group("object").casefold(),
+                predicate=artifact_review.group("predicate").casefold(),
+                temporal_scope="asserted_current",
+                evidence_source=evidence_source,
+                authority_scope="self",
+            ))
+
+        readiness_object = _OPERATIONAL_READINESS_OBJECT_RE.search(clause)
+        readiness_assertion = _OPERATIONAL_READY_ASSERTION_RE.search(clause)
+        readiness_conditional = bool(
+            readiness_assertion
+            and _FUTURE_OR_CONDITIONAL_RE.search(clause[:readiness_assertion.start()])
+        )
+        if readiness_object and readiness_assertion and not readiness_conditional:
+            claims.append(PublicationClaim(
+                clause=clause,
+                actor_id=speaker_id,
+                claim_kind="operational_readiness",
+                object_type=(
+                    readiness_object.group(0).casefold()
+                ),
+                predicate="ready",
+                temporal_scope=("retrospective" if retrospective else "asserted_current"),
+                evidence_source=evidence_source,
+                authority_scope="self",
+            ))
+
+        normalized_clause = " ".join(clause.casefold().split())
+        for participant_id, alias in _alias_owner(clause, participant_aliases):
+            if participant_id in {"", speaker_id}:
+                continue
+            if re.search(
+                rf"\b(?:i|we)(?:['’]ll|\s+will|\s+can)?\s+"
+                rf"(?:have|ask|direct|tell)\s+{re.escape(alias)}\s+"
+                rf"(?:to\s+)?(?P<predicate>{_CROSS_ROLE_OPERATION_VERBS})\b",
+                normalized_clause,
+                flags=re.IGNORECASE,
+            ):
+                predicate = re.search(
+                    rf"(?:to\s+)?(?P<predicate>{_CROSS_ROLE_OPERATION_VERBS})\b",
+                    normalized_clause,
+                    flags=re.IGNORECASE,
+                )
+                claims.append(PublicationClaim(
+                    clause=clause,
+                    actor_id=participant_id,
+                    claim_kind="delegated_operational_action",
+                    object_type="current_world_operation",
+                    predicate=(predicate.group("predicate").casefold() if predicate else "act"),
+                    temporal_scope=temporal,
+                    evidence_source=evidence_source,
+                    authority_scope="cross_role",
+                ))
+    return claims
+
+
+def publication_claim_rejection_reason(
+    content: str,
+    *,
+    speaker_id: str = "",
+    participant_aliases: dict[str, list[str] | tuple[str, ...]] | None = None,
+    validated_intent: dict | None = None,
+) -> str | None:
+    """Validate typed claims against evidence and publication authority."""
+    intent = validated_intent or {}
+    tool_grounded = (
+        str(intent.get("evidence_source") or "") == "simulated_tool_result"
+        and bool(str(intent.get("tool_result_id") or "").strip())
+        and str(intent.get("validation") or "") == "accepted"
+    )
+    for claim in classify_publication_claims(
+        content,
+        speaker_id=speaker_id,
+        participant_aliases=participant_aliases,
+        validated_intent=intent,
+    ):
+        if claim.authority_scope == "cross_role":
+            return "publication_claim_actor_lacks_authority"
+        if (
+            str(intent.get("simulation_scope") or "") == "retrospective"
+            and claim.claim_kind == "operational_action"
+        ):
+            # Preserve the older, more precise scope diagnostic for a live
+            # operation mislabeled as retrospective. Artifact review remains
+            # a typed publication violation because panelists commonly used
+            # the scenario mode to claim they inspected unsupplied material.
+            continue
+        if claim.temporal_scope == "asserted_current" and claim.claim_kind in {
+            "operational_action", "operational_readiness", "artifact_review",
+        } and not tool_grounded:
+            return "publication_claim_requires_simulated_tool_result"
+    return None
+
+
+def terminal_phase_reentry_reason(
+    content: str, *, task_type: str = "", current_phase: str = "",
+) -> str | None:
+    """Reject evaluation prompts after an interview enters candidate Q&A."""
+    if task_type != "structured_interview" or current_phase != "candidate_questions":
+        return None
+    text = " ".join((content or "").split())
+    if (
+        _INTERVIEW_PHASE_REENTRY_RE.search(text)
+        and _INTERVIEW_EVALUATION_PROMPT_RE.search(text)
+    ):
+        return "terminal_phase_reopened"
+    return None
+
+
+def synthetic_fallback_language_reason(content: str) -> str | None:
+    """Reject visible orchestration templates masquerading as natural speech."""
+    text = " ".join((content or "").split()).strip()
+    return "synthetic_fallback_language" if _SYNTHETIC_FALLBACK_RE.search(text) else None
+
+
 def _speech_exceeds_validated_lifecycle(text: str, intent: dict) -> bool:
     """Detect public assertions stronger than the prevalidated transition.
 
@@ -1112,6 +1356,10 @@ def terminal_current_world_action_reason(
 
 def retain_safe_public_clauses(
     content: str, *, validated_intent: dict | None = None,
+    speaker_id: str = "",
+    participant_aliases: dict[str, list[str] | tuple[str, ...]] | None = None,
+    task_type: str = "",
+    current_phase: str = "",
 ) -> str:
     """Keep safe clauses when only part of a draft invents a live result.
 
@@ -1134,6 +1382,20 @@ def retain_safe_public_clauses(
                 == "retrospective"
                 and retrospective_claim_grounded(clause)
             ),
+        )
+        and not unregistered_participant_assignment_reason(
+            clause,
+            participant_aliases=participant_aliases,
+            validated_intent=validated_intent,
+        )
+        and not publication_claim_rejection_reason(
+            clause,
+            speaker_id=speaker_id,
+            participant_aliases=participant_aliases,
+            validated_intent=validated_intent,
+        )
+        and not terminal_phase_reentry_reason(
+            clause, task_type=task_type, current_phase=current_phase,
         )
     ]
     return " ".join(kept).strip()
@@ -1195,11 +1457,18 @@ def speech_rejection_reason(
     private_constraints: list[str] | None = None,
     public_draft_text: str = "",
     participant_aliases: dict[str, list[str] | tuple[str, ...]] | None = None,
+    speaker_id: str = "",
+    task_type: str = "",
+    current_phase: str = "",
 ) -> str | None:
     """Reject obvious internal-plan echoes and visibly truncated public speech."""
     text = " ".join((content or "").split()).strip()
     if not text:
         return "empty"
+
+    fallback_reason = synthetic_fallback_language_reason(text)
+    if fallback_reason:
+        return fallback_reason
 
     lowered = text.casefold()
     if any(marker in lowered for marker in _INTERNAL_SPEECH_MARKERS):
@@ -1235,6 +1504,21 @@ def speech_rejection_reason(
     )
     if assignment_reason:
         return assignment_reason
+
+    publication_reason = publication_claim_rejection_reason(
+        text,
+        speaker_id=speaker_id,
+        participant_aliases=participant_aliases,
+        validated_intent=intent,
+    )
+    if publication_reason:
+        return publication_reason
+
+    phase_reason = terminal_phase_reentry_reason(
+        text, task_type=task_type, current_phase=current_phase,
+    )
+    if phase_reason:
+        return phase_reason
 
     live_artifact_reason = unsupported_live_evidentiary_artifact_reason(
         text, validated_intent=intent
@@ -1302,5 +1586,5 @@ def player_speech_rejection_reason(
         return "structured_output"
     return speech_rejection_reason(
         text, public_context=public_context, validated_intent=validated_intent,
-        participant_aliases=participant_aliases,
+        participant_aliases=participant_aliases, speaker_id="user",
     )

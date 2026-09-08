@@ -4,6 +4,7 @@ import asyncio
 
 from app.agent.speech_safety import (
     PUBLIC_RESPONSE_DRAFT,
+    classify_publication_claims,
     direct_question_to_player,
     focus_question_target_mismatch_reason,
     npc_directed_question_handoff_reason,
@@ -17,9 +18,11 @@ from app.agent.speech_safety import (
     normalized_public_propositions,
     protected_information_reason,
     public_speech_act_mismatch,
+    publication_claim_rejection_reason,
     retain_safe_public_clauses,
     speech_rejection_reason,
     terminal_current_world_action_reason,
+    terminal_phase_reentry_reason,
     unregistered_participant_assignment_reason,
     unsupported_live_evidentiary_artifact_reason,
 )
@@ -2284,6 +2287,7 @@ def main() -> None:
     ) in {
         "unsupported_artifact_claim",
         "live_evidentiary_artifact_requires_simulated_tool_result",
+        "publication_claim_requires_simulated_tool_result",
     }
     assert speech_rejection_reason(
         "We have received and reviewed the attached capacity report.",
@@ -2291,6 +2295,7 @@ def main() -> None:
     ) in {
         "unsupported_artifact_claim",
         "live_evidentiary_artifact_requires_simulated_tool_result",
+        "publication_claim_requires_simulated_tool_result",
     }
     assert near_duplicate_obligation_utterance(
         repeated_request,
@@ -2364,6 +2369,117 @@ def main() -> None:
     forced_owner_reply = required_response_public_fallback(chars[0])
     assert forced_owner_reply
     assert speech_rejection_reason(forced_owner_reply) is None
+    assert "from my role" not in forced_owner_reply.casefold()
+
+    # G4.14 run 550: present-world operational readiness is evidence-bearing
+    # even when phrased as coverage or a dashboard being "in place".
+    readiness = (
+        "We have 24/7 on-call coverage for the three customers, real-time "
+        "monitoring dashboards in place, and clear rollback criteria."
+    )
+    claims = classify_publication_claims(
+        readiness,
+        speaker_id="operations_director",
+        participant_aliases=multi_addressee_aliases,
+        validated_intent={"evidence_source": "public_statement"},
+    )
+    assert any(claim.claim_kind == "operational_readiness" for claim in claims)
+    assert publication_claim_rejection_reason(
+        readiness,
+        speaker_id="operations_director",
+        participant_aliases=multi_addressee_aliases,
+        validated_intent={"evidence_source": "public_statement"},
+    ) == "publication_claim_requires_simulated_tool_result"
+    assert publication_claim_rejection_reason(
+        readiness,
+        speaker_id="operations_director",
+        participant_aliases=multi_addressee_aliases,
+        validated_intent={
+            "evidence_source": "simulated_tool_result",
+            "tool_result_id": "tool-result-24x7-readiness",
+            "validation": "accepted",
+        },
+    ) is None, "accepted simulated-tool evidence may ground readiness claims"
+    assert publication_claim_rejection_reason(
+        (
+            "During my previous launch, we had 24/7 on-call coverage and "
+            "monitoring dashboards in place."
+        ),
+        speaker_id="operations_director",
+        participant_aliases=multi_addressee_aliases,
+        validated_intent={
+            "simulation_scope": "retrospective",
+            "evidence_source": "public_statement",
+        },
+    ) is None, "explicitly anchored past experience is not a live readiness claim"
+
+    # G4.14 run 552: retrospective candidate evidence does not authorize a
+    # panelist to claim they reviewed a current-session artifact.
+    reviewed = (
+        "I've reviewed the sprint backlog and the engineering design document "
+        "you referenced."
+    )
+    assert speech_rejection_reason(
+        reviewed,
+        speaker_id="engineering_director",
+        validated_intent={
+            "simulation_scope": "retrospective",
+            "evidence_source": "public_statement",
+        },
+    ) == "publication_claim_requires_simulated_tool_result"
+    assert speech_rejection_reason(
+        "In my previous role, I reviewed the launch report before approving it.",
+        speaker_id="engineering_director",
+        validated_intent={
+            "simulation_scope": "retrospective",
+            "evidence_source": "public_statement",
+        },
+    ) is None, "a visibly anchored retrospective artifact claim remains valid"
+    assert terminal_phase_reentry_reason(
+        "Taylor, can you walk me through a concrete engineering decision?",
+        task_type="structured_interview",
+        current_phase="candidate_questions",
+    ) == "terminal_phase_reopened"
+
+    # G4.14 run 554: named public owners must be registered, and one role may
+    # not promise another role's operational action.
+    incident_aliases = {
+        "user": ["Jordan Lee", "Jordan"],
+        "sre_lead": ["Priya Nair", "Priya"],
+        "security_lead": ["Marcus Lee", "Marcus"],
+        "communications_lead": ["Sofia Alvarez", "Sofia"],
+    }
+    assert speech_rejection_reason(
+        "I'm assigning Carlos Ruiz, our senior communications specialist, "
+        "as the primary owner of the customer notice.",
+        speaker_id="communications_lead",
+        participant_aliases=incident_aliases,
+    ) == "unregistered_participant_assignment"
+    delegated = (
+        "I'll have Marcus capture memory dumps and archive logs before any "
+        "restart."
+    )
+    assert publication_claim_rejection_reason(
+        delegated,
+        speaker_id="sre_lead",
+        participant_aliases=incident_aliases,
+        validated_intent={"evidence_source": "public_statement"},
+    ) == "publication_claim_actor_lacks_authority"
+    assert publication_claim_rejection_reason(
+        (
+            "We're initiating the rollback now, and we will update the room "
+            "after the service stabilizes."
+        ),
+        speaker_id="sre_lead",
+        participant_aliases=incident_aliases,
+        validated_intent={"evidence_source": "public_statement"},
+    ) == "publication_claim_requires_simulated_tool_result", (
+        "a later future clause must not make a present operation conditional"
+    )
+    assert player_speech_rejection_reason(
+        "I confirm Carlos Ruiz as the owner of the customer notice.",
+        participant_aliases=incident_aliases,
+    ) == "unregistered_participant_assignment"
     print("NPC speech safety and task-state smoke test: ok")
 
 

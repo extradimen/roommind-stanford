@@ -748,7 +748,10 @@ Return strict JSON only:
             rejection = "near_duplicate_same_speaker"
         if rejection and content:
             repaired = retain_safe_public_clauses(
-                content, validated_intent=validated_intent
+                content,
+                validated_intent=validated_intent,
+                speaker_id="user",
+                participant_aliases=participant_aliases,
             )
             repaired_rejection = player_speech_rejection_reason(
                 repaired, public_context=dialogue, validated_intent=validated_intent,
@@ -1043,7 +1046,10 @@ Return strict JSON only:
             rejection = "near_duplicate_same_speaker"
         if rejection and content:
             repaired = retain_safe_public_clauses(
-                content, validated_intent=validated_intent
+                content,
+                validated_intent=validated_intent,
+                speaker_id="user",
+                participant_aliases=participant_aliases,
             )
             repaired_rejection = player_speech_rejection_reason(
                 repaired, public_context=dialogue, validated_intent=validated_intent,

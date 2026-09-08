@@ -400,6 +400,12 @@ Priority:
     supply autobiographical experience and historical implementation details. A panelist
     may ask, assess, confirm sufficiency, or answer questions about the current organization;
     never ask another panelist to fill in the candidate's past or speak as a past collaborator.
+19. Final publication boundary: speak only for actions and evidence owned by your role.
+    Do not claim present staffing, coverage, monitoring, rollback readiness, artifact review,
+    or live operational execution without a registered simulated-tool result. Do not promise
+    that another participant performed an operational action, and never assign work to a name
+    outside the registered meeting participants. Once an interview reaches candidate_questions,
+    answer the candidate's questions; do not reopen product, engineering, or leadership assessment.
 
 {decision_language_rule(reply_language)}
 

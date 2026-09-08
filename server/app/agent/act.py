@@ -130,6 +130,11 @@ def contextual_public_fallback(
     transition = str(intent.get("transition") or "proposed")
     field = str(intent.get("field") or "").replace("_", " ").strip()
     topic = field or subject.replace("_", " ")
+    if topic.casefold() in {
+        "statement", "question", "proposal", "response", "current issue",
+        "current question", "current open issue",
+    }:
+        topic = "this point"
     if re.match(
         r"^(?:can|could|would|will|what|when|where|why|how|please)\b",
         topic,
@@ -175,11 +180,10 @@ def required_response_public_fallback(character: CharacterTemplate) -> str:
     evidence claim. It is safe to publish without a ledger commit and prevents
     a rejected model draft from silently transferring the role's floor.
     """
-    role = " ".join(str(getattr(character, "job_title", None) or "participant").split())
     return (
-        f"From my role as {role}, I cannot confirm the requested point beyond "
-        "the public evidence already stated. It should remain unresolved until "
-        "the responsible evidence is available."
+        "I don't have enough verified information to answer that responsibly yet. "
+        "I can clarify the evidence within my area, but I can't confirm more than "
+        "what has already been established."
     )
 
 
@@ -202,6 +206,8 @@ async def render_npc_speech(
     participant_aliases: dict[str, list[str]] | None = None,
     interview_mode: bool = False,
     required_response: bool = False,
+    task_type: str = "",
+    current_phase: str = "",
 ) -> tuple[str, str, str, bool]:
     """
     Stanford: NPC speech is grounded in the agent's active plan.
@@ -267,6 +273,9 @@ async def render_npc_speech(
                     *list((character.private_state or {}).get("hidden_agenda") or []),
                 ],
                 participant_aliases=participant_aliases,
+                speaker_id=character.character_id,
+                task_type=task_type,
+                current_phase=current_phase,
             )
         ) or focus_question_target_mismatch_reason(
             draft,
@@ -283,7 +292,12 @@ async def render_npc_speech(
             )
             return draft, emotion, gesture, True
         repaired_draft = retain_safe_public_clauses(
-            draft, validated_intent=validated_intent
+            draft,
+            validated_intent=validated_intent,
+            speaker_id=character.character_id,
+            participant_aliases=participant_aliases,
+            task_type=task_type,
+            current_phase=current_phase,
         )
         if repaired_draft and repaired_draft != draft:
             repaired_rejection = retrospective_role_substitution_reason(
@@ -308,6 +322,9 @@ async def render_npc_speech(
                         *list((character.private_state or {}).get("hidden_agenda") or []),
                     ],
                     participant_aliases=participant_aliases,
+                    speaker_id=character.character_id,
+                    task_type=task_type,
+                    current_phase=current_phase,
                 )
             ) or focus_question_target_mismatch_reason(
                 repaired_draft,
@@ -345,6 +362,7 @@ Intent for this turn (from your decision): {reasoning}
 Core content to convey: {draft}
 Validated public-world intent: {validated_intent or {"kind": "statement", "transition": "proposed"}}
 Current task-critical focus and authorized response owners: {coordinator_focus or {}}
+Current phase: {current_phase or "active"}
 
 Recent dialogue:
 {conversation_context[-600:]}
@@ -375,6 +393,12 @@ Requirements:
   health check, verification, publication, or similar side effect) may be reported
   only when the validated intent names a registered simulated tool result. Otherwise
   speak about the proposed next action, a condition, or an external follow-up.
+- Speak only for actions owned by your role. Do not promise that another participant
+  captured evidence, changed a live system, or completed operational work.
+- Present staffing, 24/7 coverage, monitoring dashboards, rollback readiness, and
+  current-session artifact review require a registered simulated-tool result.
+- If the current phase is candidate_questions, answer the candidate's questions and
+  do not resume product, engineering, or leadership assessment.
 {lang_rule}
 - Output only what you say aloud; no JSON or explanation
 
@@ -457,13 +481,16 @@ Requirements:
             validated_intent=validated_intent,
             public_draft_text=draft,
             protected_secrets=list(
-                (character.private_state or {}).get("protected_secrets") or []
+                (getattr(character, "private_state", None) or {}).get("protected_secrets") or []
             ),
             private_constraints=[
-                *list((character.private_state or {}).get("discoverable_information") or []),
-                *list((character.private_state or {}).get("hidden_agenda") or []),
+                *list((getattr(character, "private_state", None) or {}).get("discoverable_information") or []),
+                *list((getattr(character, "private_state", None) or {}).get("hidden_agenda") or []),
             ],
             participant_aliases=participant_aliases,
+            speaker_id=character.character_id,
+            task_type=task_type,
+            current_phase=current_phase,
         ) or focus_question_target_mismatch_reason(
             cleaned,
             speaker_id=character.character_id,
@@ -521,13 +548,16 @@ Requirements:
             public_context=f"{conversation_context}\n{user_input}",
             validated_intent=validated_intent,
             protected_secrets=list(
-                (character.private_state or {}).get("protected_secrets") or []
+                (getattr(character, "private_state", None) or {}).get("protected_secrets") or []
             ),
             private_constraints=[
-                *list((character.private_state or {}).get("discoverable_information") or []),
-                *list((character.private_state or {}).get("hidden_agenda") or []),
+                *list((getattr(character, "private_state", None) or {}).get("discoverable_information") or []),
+                *list((getattr(character, "private_state", None) or {}).get("hidden_agenda") or []),
             ],
             participant_aliases=participant_aliases,
+            speaker_id=character.character_id,
+            task_type=task_type,
+            current_phase=current_phase,
         ) or focus_question_target_mismatch_reason(
             fallback,
             speaker_id=character.character_id,
@@ -587,6 +617,9 @@ Requirements:
                     *list((character.private_state or {}).get("hidden_agenda") or []),
                 ],
                 participant_aliases=participant_aliases,
+                speaker_id=character.character_id,
+                task_type=task_type,
+                current_phase=current_phase,
             ) or focus_question_target_mismatch_reason(
                 candidate,
                 speaker_id=character.character_id,
@@ -623,6 +656,9 @@ Requirements:
                     *list((character.private_state or {}).get("hidden_agenda") or []),
                 ],
                 participant_aliases=participant_aliases,
+                speaker_id=character.character_id,
+                task_type=task_type,
+                current_phase=current_phase,
             )
             if not candidate_rejection:
                 fallback = candidate
@@ -701,6 +737,7 @@ async def _apply_speak(
     timeline: WorldTimeline | None,
     reply_language: str = "en",
     task_state: dict[str, Any] | None = None,
+    task_type: str = "",
     participant_aliases: dict[str, list[str]] | None = None,
     interview_mode: bool = False,
     required_response: bool = False,
@@ -741,6 +778,8 @@ async def _apply_speak(
         participant_aliases=participant_aliases,
         interview_mode=interview_mode,
         required_response=required_response,
+        task_type=task_type,
+        current_phase=str((task_state or {}).get("phase") or ""),
     )
     if decision.public_intent and content.strip():
         decision.public_intent = ground_public_intent_in_quote(
@@ -764,11 +803,26 @@ async def _apply_speak(
             active_plan_text=plan.content if plan else "",
             public_context=f"{conversation_context}\n{user_input}",
             validated_intent=decision.public_intent,
+            protected_secrets=list(
+                (getattr(character, "private_state", None) or {}).get("protected_secrets") or []
+            ),
+            private_constraints=[
+                *list((getattr(character, "private_state", None) or {}).get("discoverable_information") or []),
+                *list((getattr(character, "private_state", None) or {}).get("hidden_agenda") or []),
+            ],
             participant_aliases=participant_aliases,
+            speaker_id=character.character_id,
+            task_type=task_type,
+            current_phase=str((task_state or {}).get("phase") or ""),
         )
         if rejection:
             repaired = retain_safe_public_clauses(
-                content, validated_intent=decision.public_intent,
+                content,
+                validated_intent=decision.public_intent,
+                speaker_id=character.character_id,
+                participant_aliases=participant_aliases,
+                task_type=task_type,
+                current_phase=str((task_state or {}).get("phase") or ""),
             )
             repaired_rejection = (
                 speech_rejection_reason(
@@ -776,7 +830,17 @@ async def _apply_speak(
                     active_plan_text=plan.content if plan else "",
                     public_context=f"{conversation_context}\n{user_input}",
                     validated_intent=decision.public_intent,
+                    protected_secrets=list(
+                        (getattr(character, "private_state", None) or {}).get("protected_secrets") or []
+                    ),
+                    private_constraints=[
+                        *list((getattr(character, "private_state", None) or {}).get("discoverable_information") or []),
+                        *list((getattr(character, "private_state", None) or {}).get("hidden_agenda") or []),
+                    ],
                     participant_aliases=participant_aliases,
+                    speaker_id=character.character_id,
+                    task_type=task_type,
+                    current_phase=str((task_state or {}).get("phase") or ""),
                 )
                 if repaired else rejection
             )
@@ -808,6 +872,9 @@ async def _apply_speak(
                         public_context=f"{conversation_context}\n{user_input}",
                         validated_intent=None,
                         participant_aliases=participant_aliases,
+                        speaker_id=character.character_id,
+                        task_type=task_type,
+                        current_phase=str((task_state or {}).get("phase") or ""),
                     )
                     if not last_resort_rejection:
                         content = last_resort
@@ -1030,6 +1097,7 @@ async def execute_decision(
                 timeline=timeline,
                 reply_language=reply_language,
                 task_state=task_state,
+                task_type=str((task_config or {}).get("task_type") or ""),
                 participant_aliases=participant_aliases,
                 interview_mode=allow_retrospective,
                 required_response=required_response,
@@ -1084,6 +1152,7 @@ async def execute_decision(
                 timeline=timeline,
                 reply_language=reply_language,
                 task_state=task_state,
+                task_type=str((task_config or {}).get("task_type") or ""),
                 participant_aliases=participant_aliases,
                 interview_mode=allow_retrospective,
                 required_response=required_response,
@@ -1122,6 +1191,7 @@ async def execute_decision(
             timeline=timeline,
             reply_language=reply_language,
             task_state=task_state,
+            task_type=str((task_config or {}).get("task_type") or ""),
             participant_aliases=participant_aliases,
             interview_mode=allow_retrospective,
             required_response=required_response,
@@ -1148,6 +1218,7 @@ async def execute_decision(
             timeline=timeline,
             reply_language=reply_language,
             task_state=task_state,
+            task_type=str((task_config or {}).get("task_type") or ""),
             participant_aliases=participant_aliases,
             interview_mode=allow_retrospective,
             required_response=required_response,
@@ -1254,6 +1325,7 @@ async def execute_plan_fallback_speak(
         timeline=timeline,
         reply_language=reply_language,
         task_state=task_state,
+        task_type=str((scenario.task_config or {}).get("task_type") or ""),
         participant_aliases=public_participant_aliases(scenario),
         interview_mode=allow_retrospective,
         required_response=required_response,
