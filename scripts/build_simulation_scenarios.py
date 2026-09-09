@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 
-def build(root, destination, version=2):
+def build(root, destination, version=3):
     # Exclusive directory prevents partially replacing any previous snapshot.
     destination.mkdir(parents=True, exist_ok=False)
     manifest = {"schema": "roommind-world-scenario-snapshots-v1", "evidence_use": "development_only",
@@ -39,7 +39,8 @@ def build(root, destination, version=2):
                             values = char.setdefault("authority", {}).setdefault(permission, [])
                             if action["field"] not in values:
                                 values.append(action["field"])
-        scenario["task_config"]["simulation_executor"] = world
+        if world["actions"]:
+            scenario["task_config"]["simulation_executor"] = world
         output = json.dumps(scenario, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
         filename = scenario["slug"] + ".json"
         with (destination / filename).open("x", encoding="utf-8") as stream:
@@ -56,5 +57,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--version", type=int, default=3)
     args = parser.parse_args()
-    build(args.root, args.output)
+    build(args.root, args.output, args.version)

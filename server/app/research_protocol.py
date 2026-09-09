@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any
 
 
-CURRENT_GENERATION_ID = "G4.15"
-CURRENT_ARCHITECTURE_VERSION = "g4.15-typed-publication-and-terminal-phase-governance"
+CURRENT_GENERATION_ID = "G4.16"
+CURRENT_ARCHITECTURE_VERSION = "g4.16-shared-simulation-and-resumable-evidence-governance"
 EXPERIMENT_PROTOCOL_VERSION = "roommind-generational-experiment-v1"
 HUMAN_REVIEW_PROTOCOL_VERSION = "blinded-bilingual-expert-review-v4"
 

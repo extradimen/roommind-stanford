@@ -1,0 +1,406 @@
+{
+  "characters": [
+    {
+      "aliases": [
+        "David",
+        "David Chen",
+        "Mr. Wang",
+        "CEO"
+      ],
+      "authority": {
+        "can_confirm": [
+          "unit_price",
+          "delivery_days"
+        ],
+        "can_propose": [
+          "unit_price",
+          "delivery_days"
+        ],
+        "cannot_commit": [
+          "quality_protocol"
+        ]
+      },
+      "avatar_manifest": {
+        "avatar_style": "minecraft",
+        "team": "supplier"
+      },
+      "character_id": "supplier_ceo",
+      "character_name": "Mr. Wang",
+      "fallback_actions": {
+        "default": "Ask for the commercial conditions needed to make the proposal workable without inventing a commitment."
+      },
+      "interaction_role": "commercial_decision_maker",
+      "job_title": "Supplier CEO",
+      "persona": "Assertive, commercially pragmatic, and relationship-aware.",
+      "private_state": {
+        "goal": "Secure sustainable margin and reliable annual volume.",
+        "protected_secrets": [
+          "The supplier's exact reservation unit price is 82 RMB."
+        ],
+        "redlines": [
+          "Unit price below 82 RMB",
+          "Uncapped liability"
+        ],
+        "role_disclosable_information": [
+          "The supplier requires sustainable margin and reliable annual volume.",
+          "The supplier will not accept uncapped liability."
+        ]
+      },
+      "relationship_to_player": "counterpart",
+      "responsibility": "Lead commercial decisions and protect supplier viability.",
+      "side": "opponent",
+      "sort_order": 0,
+      "spawn_point": "seat_opposite",
+      "team_id": "supplier",
+      "tendency": {
+        "cooperation": "medium",
+        "risk": "low"
+      }
+    },
+    {
+      "aliases": [
+        "Emma",
+        "Emma Liu",
+        "Quality Director"
+      ],
+      "authority": {
+        "can_confirm": [
+          "quality_protocol",
+          "delivery_days"
+        ],
+        "can_propose": [
+          "quality_protocol",
+          "delivery_days"
+        ],
+        "cannot_commit": [
+          "unit_price"
+        ]
+      },
+      "avatar_manifest": {
+        "avatar_style": "minecraft",
+        "team": "supplier"
+      },
+      "character_id": "quality_director",
+      "character_name": "Emma Liu",
+      "fallback_actions": {
+        "default": "State the operational evidence still needed and propose a safe verification step."
+      },
+      "interaction_role": "subject_matter_expert",
+      "job_title": "Quality and Operations Director",
+      "persona": "Precise, cautious, and evidence-driven.",
+      "private_state": {
+        "goal": "Prevent unsafe capacity promises and protect product quality.",
+        "role_disclosable_information": [
+          "Capacity promises require evidence that product quality can be maintained."
+        ]
+      },
+      "relationship_to_player": "counterpart",
+      "responsibility": "Assess delivery feasibility and define quality controls.",
+      "side": "opponent",
+      "sort_order": 1,
+      "spawn_point": "seat_side",
+      "team_id": "supplier",
+      "tendency": {
+        "cooperation": "medium",
+        "risk": "very_low"
+      }
+    },
+    {
+      "aliases": [
+        "Michael",
+        "Michael Zhang",
+        "Manager Zhang"
+      ],
+      "authority": {
+        "can_confirm": [],
+        "can_propose": [],
+        "cannot_commit": [
+          "unit_price",
+          "delivery_days",
+          "quality_protocol"
+        ]
+      },
+      "avatar_manifest": {
+        "avatar_style": "minecraft",
+        "team": "buyer"
+      },
+      "character_id": "procurement_ally",
+      "character_name": "Manager Zhang",
+      "fallback_actions": {
+        "default": "Summarize the unresolved trade-off and advise the player without making a decision."
+      },
+      "interaction_role": "advisor",
+      "job_title": "Procurement Analyst",
+      "persona": "Analytical and concise.",
+      "private_state": {
+        "goal": "Help the player reach a balanced outcome.",
+        "market_benchmark": 83,
+        "role_disclosable_information": [
+          "The procurement market benchmark is 83 RMB."
+        ]
+      },
+      "relationship_to_player": "advisor",
+      "responsibility": "Provide benchmarks and flag weak packages without deciding for the player.",
+      "side": "player_ally",
+      "sort_order": 2,
+      "spawn_point": "seat_adjacent",
+      "team_id": "buyer",
+      "tendency": {
+        "cooperation": "high"
+      }
+    }
+  ],
+  "description": "A multi-party procurement meeting covering commercial, operational, and legal commitments.",
+  "dispatch_rules": [
+    {
+      "is_active": true,
+      "max_speakers": 2,
+      "min_speakers": 1,
+      "name": "Commercial",
+      "priority_character_ids": [
+        "supplier_ceo",
+        "procurement_ally"
+      ],
+      "trigger_keywords": [
+        "price",
+        "RMB",
+        "payment",
+        "volume"
+      ],
+      "weights": {}
+    },
+    {
+      "is_active": true,
+      "max_speakers": 2,
+      "min_speakers": 1,
+      "name": "Operations",
+      "priority_character_ids": [
+        "quality_director",
+        "supplier_ceo"
+      ],
+      "trigger_keywords": [
+        "delivery",
+        "capacity",
+        "quality",
+        "inspection"
+      ],
+      "weights": {}
+    }
+  ],
+  "is_published": true,
+  "opponent_side_goal": "Protect supplier viability while securing a dependable order commitment.",
+  "orchestration_config": {},
+  "player_side_goal": "Reach a balanced, explicitly confirmed supply agreement.",
+  "scene_config": {
+    "camera": "first_person",
+    "environment": "meeting_room",
+    "player_character": {
+      "avatar_manifest": {
+        "avatar_style": "minecraft",
+        "team": "buyer"
+      },
+      "character_name": "Alex Chen",
+      "job_title": "Chief Procurement Officer"
+    }
+  },
+  "schema_version": 2,
+  "slug": "supply-chain-negotiation-world-v3",
+  "task_config": {
+    "completion_conditions": {
+      "all": [
+        {
+          "field": "unit_price",
+          "operator": "<=",
+          "required_status": "confirmed",
+          "value": 85
+        },
+        {
+          "field": "delivery_days",
+          "operator": "<=",
+          "required_status": "confirmed",
+          "value": 30
+        },
+        {
+          "field": "quality_protocol",
+          "operator": "==",
+          "required_status": "confirmed",
+          "value": true
+        }
+      ]
+    },
+    "config_version": 4,
+    "counterpart_objective": "Protect margin, capacity, and liability limits while obtaining reliable volume.",
+    "evaluator_instructions": [
+      "A conditional counteroffer is proposed or disputed, never confirmed.",
+      "A package is confirmed only when the necessary parties explicitly accept the same terms."
+    ],
+    "evidence_mode": "live_operation",
+    "phases": [
+      {
+        "description": "Establish roles and agenda",
+        "phase_id": "opening"
+      },
+      {
+        "description": "Surface needs, constraints, and risks",
+        "entry_conditions": {
+          "any": [
+            {
+              "allowed_statuses": [
+                "proposed",
+                "disputed",
+                "confirmed"
+              ],
+              "field": "unit_price",
+              "operator": "!=",
+              "value": null
+            },
+            {
+              "allowed_statuses": [
+                "proposed",
+                "disputed",
+                "confirmed"
+              ],
+              "field": "delivery_days",
+              "operator": "!=",
+              "value": null
+            }
+          ]
+        },
+        "phase_id": "discovery"
+      },
+      {
+        "description": "Develop and compare packages",
+        "entry_conditions": {
+          "all": [
+            {
+              "allowed_statuses": [
+                "proposed",
+                "disputed",
+                "confirmed"
+              ],
+              "field": "unit_price",
+              "operator": "!=",
+              "value": null
+            },
+            {
+              "allowed_statuses": [
+                "proposed",
+                "disputed",
+                "confirmed"
+              ],
+              "field": "delivery_days",
+              "operator": "!=",
+              "value": null
+            }
+          ]
+        },
+        "phase_id": "option_building"
+      },
+      {
+        "description": "Explicitly confirm final commitments",
+        "entry_conditions": {
+          "all": [
+            {
+              "allowed_statuses": [
+                "proposed",
+                "confirmed"
+              ],
+              "field": "unit_price",
+              "operator": "<=",
+              "value": 85
+            },
+            {
+              "allowed_statuses": [
+                "proposed",
+                "confirmed"
+              ],
+              "field": "delivery_days",
+              "operator": "<=",
+              "value": 30
+            },
+            {
+              "allowed_statuses": [
+                "proposed",
+                "confirmed"
+              ],
+              "field": "quality_protocol",
+              "operator": "==",
+              "value": true
+            }
+          ]
+        },
+        "phase_id": "confirmation"
+      }
+    ],
+    "player_objective": "Secure an agreed unit price at or below 85 RMB, delivery within 30 days, and an accepted quality protocol.",
+    "relevance_signals": [
+      "price",
+      "RMB",
+      "delivery",
+      "quality",
+      "inspection",
+      "volume",
+      "payment",
+      "confirm",
+      "accept"
+    ],
+    "state_schema": {
+      "delivery_days": {
+        "confirm_permissions": [
+          "player",
+          "supplier_ceo",
+          "quality_director"
+        ],
+        "confirmation_policy": "player_and_authorized_counterpart",
+        "description": "Agreed standard delivery lead time",
+        "propose_permissions": [
+          "player",
+          "supplier_ceo",
+          "quality_director"
+        ],
+        "type": "integer",
+        "unit": "days"
+      },
+      "quality_protocol": {
+        "confirm_permissions": [
+          "player",
+          "quality_director"
+        ],
+        "confirmation_policy": "player_and_responsible_participant",
+        "description": "Joint inspection and quality protocol accepted",
+        "propose_permissions": [
+          "player",
+          "quality_director"
+        ],
+        "type": "boolean"
+      },
+      "unit_price": {
+        "confirm_permissions": [
+          "player",
+          "supplier_ceo"
+        ],
+        "confirmation_policy": "player_and_authorized_counterpart",
+        "description": "Agreed unit price",
+        "propose_permissions": [
+          "player",
+          "supplier_ceo"
+        ],
+        "type": "number",
+        "unit": "RMB"
+      }
+    },
+    "task_type": "negotiation",
+    "terminology": {
+      "completion": "agreement",
+      "player_name": "Alex Chen",
+      "player_role": "Chief Procurement Officer",
+      "task": "contract meeting"
+    }
+  },
+  "template_meta": {
+    "source_sha256": "f13dbb685cbad26326cdf7a6c1552ab2c22b68294df80287713cfa983b5d63ca",
+    "source_slug": "supply-chain-negotiation",
+    "world_version": 3
+  },
+  "title": "Supply Chain Contract Meeting (Simulated World v3)"
+}

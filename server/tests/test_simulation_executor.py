@@ -99,7 +99,8 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         from app.agent.act import AgentDecision, execute_decision
         from app.models.db import CharacterTemplate
         from app.task_state import refresh_task_state_from_public_ledger
-        path = Path(__file__).resolve().parents[2] / "research/scenario-designs/world-v2/incident-response-command-world-v2.json"
+        path = (Path(__file__).resolve().parents[2]
+                / "research/scenario-designs/world-v3/incident-response-command-world-v3.json")
         snapshot = json.loads(path.read_text())
         characters = [CharacterTemplate(character_id=row["character_id"],
                       display_name=row["character_name"], character_name=row["character_name"],

@@ -13,8 +13,8 @@ from app.research_protocol import CURRENT_ARCHITECTURE_VERSION, CURRENT_GENERATI
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G4.15"
-    assert CURRENT_ARCHITECTURE_VERSION.startswith("g4.15-")
+    assert CURRENT_GENERATION_ID == "G4.16"
+    assert CURRENT_ARCHITECTURE_VERSION.startswith("g4.16-")
 
     # Runs 532/534/536: named addressees retain their public order even when
     # ordinary dispatch and focus would otherwise prefer another role.

@@ -11,8 +11,8 @@ from app.research_protocol import CURRENT_ARCHITECTURE_VERSION, CURRENT_GENERATI
 
 
 def main() -> None:
-    assert CURRENT_GENERATION_ID == "G4.15"
-    assert CURRENT_ARCHITECTURE_VERSION.startswith("g4.15-")
+    assert CURRENT_GENERATION_ID == "G4.16"
+    assert CURRENT_ARCHITECTURE_VERSION.startswith("g4.16-")
     artifact = (
         Path(__file__).resolve().parents[2]
         / "research/experiments/2026-09-08-g4-14-qualification/g4-14-debug-bundle.json"
