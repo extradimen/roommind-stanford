@@ -30,6 +30,7 @@ from app.player_agent import (
 )
 from app.scenario_side import resolve_player_side_goal
 from app.telemetry import emit
+from app.world.executor import request_execution as execute_simulation, prompt as simulation_prompt
 
 
 @dataclass
@@ -175,6 +176,8 @@ Disclose information only when your character would realistically do so."""
 Your rolling public conversation memory:
 {_memory_text(memory, current_player)}
 
+{simulation_prompt(scenario.task_config or {}, (session.shared_state or {}).get("_baseline_simulation", {}), char.character_id)}
+
 Independently decide whether your character should speak now or wait. Do not
 coordinate this decision with other agents. If speaking, contribute something
 specific to your own role rather than repeating another participant. Do not
@@ -223,12 +226,25 @@ Return strict JSON only:
     phases: list[str] = []
     completion_votes: list[bool] = []
     raw_by_agent: dict[str, str] = {}
+    shared = dict(session.shared_state or {})
+    simulation_state = dict(shared.get("_baseline_simulation") or {})
     for char, parsed, raw in outputs:
         raw_by_agent[char.character_id] = raw
         phase = str(parsed.get("declared_phase") or "").strip()
         if phase:
             phases.append(phase)
         completion_votes.append(bool(parsed.get("declared_complete", False)))
+        if str(parsed.get("action") or "").lower() == "execute":
+            receipt = execute_simulation(
+                scenario.task_config or {}, simulation_state, actor_id=char.character_id,
+                request=parsed.get("simulation_action") or {},
+                turn_id=sum(row.get("speaker_type") == "user" for row in messages),
+            )
+            valid.append({"speaker_id": char.character_id, "content": receipt["content"],
+                          "emotion": "neutral", "gesture": "talking",
+                          "simulation_receipt": receipt})
+            completion_votes[-1] = False
+            continue
         if str(parsed.get("action") or "").strip().lower() != "speak":
             continue
         content = normalize_player_content(parsed.get("content") or "").strip()
@@ -239,6 +255,9 @@ Return strict JSON only:
                 "emotion": str(parsed.get("emotion") or "neutral"),
                 "gesture": str(parsed.get("gesture") or "talking"),
             })
+    if simulation_state:
+        shared["_baseline_simulation"] = simulation_state
+        session.shared_state = shared
     declared_phase = statistics.mode(phases) if phases else session.current_phase
     return BaselineTurn(
         replies=valid,
@@ -311,7 +330,9 @@ async def process_baseline_step(
             content=reply["content"],
             emotion=reply["emotion"],
             gesture=reply["gesture"],
-            meta={"baseline_model": result.model_label},
+            meta={"baseline_model": result.model_label,
+                  **({"simulation_receipt": reply["simulation_receipt"]}
+                     if "simulation_receipt" in reply else {})},
             created_at=datetime.now(timezone.utc),
         ))
         emit(

@@ -30,7 +30,9 @@ from app.public_ledger import (
     commit_public_intent,
     ground_public_intent_in_quote,
     validate_public_intent,
+    record_simulated_tool_result,
 )
+from app.world.executor import request_execution as execute_simulation
 from app.i18n.reply_language import (
     action_internal_note,
     action_internal_summary,
@@ -58,6 +60,7 @@ class AgentDecision:
     internal_note: str | None = None
     moment_importance: float = 4.0
     public_intent: dict[str, Any] = field(default_factory=dict)
+    simulation_action: dict[str, Any] = field(default_factory=dict)
     raw: str = ""
 
 
@@ -992,6 +995,52 @@ async def execute_decision(
 ) -> ActionResult:
     """Execute a structured decision: memory writes + optional speech on world line."""
 
+    if (task_state or {}).get("completion_status") == "completed":
+        return ActionResult(character_id=character.character_id, action="wait",
+                            reasoning="Session is terminal; no further action is permitted.")
+
+    if decision.action.lower() == "execute":
+        if task_state is None or speak_quota_remaining <= 0:
+            return ActionResult(character_id=character.character_id, action="wait")
+        receipt = execute_simulation(
+            task_config or {}, task_state, actor_id=character.character_id,
+            request=decision.simulation_action, turn_id=turn_id,
+        )
+        result = ActionResult(character_id=character.character_id, action="execute",
+                              spoke=True, content=receipt["content"])
+        if receipt["status"] == "success":
+            record_simulated_tool_result(
+                task_state, result_id=receipt["result_id"], actor_id=character.character_id,
+                field=receipt["field"], inline_content=receipt["content"], turn_id=receipt["turn_id"],
+            )
+            intent = validate_public_intent(
+                character=character, turn_id=turn_id, state=task_state,
+                task_config=task_config, intent={
+                    "kind": "action", "subject": receipt["operation"],
+                    "transition": "verified", "field": receipt["field"],
+                    "value": receipt["value"], "simulation_scope": "in_session",
+                    "evidence_source": "simulated_tool_result",
+                    "tool_result_id": receipt["result_id"], "inline_content": receipt["content"],
+                },
+            )
+            result.public_ledger_event = commit_public_intent(
+                task_state, intent=intent, public_quote=receipt["content"], tick=tick,
+            )
+            result.public_intent = intent
+        result.public_intent = {**(result.public_intent or {}), "simulation_receipt": receipt}
+        if timeline is not None:
+            result.world_events.append(timeline.append(
+                turn_id=turn_id, tick=tick, event_type="npc_speech",
+                actor_id=character.character_id, content=receipt["content"],
+                meta={"source": "simulation_executor", "simulation_receipt": receipt},
+            ))
+        await _record_action_memory(
+            db, store, result, nodes, action_kind="execute", summary=receipt["content"],
+            turn_id=turn_id, tick=tick, importance=6.5,
+            meta={"source": "simulation_executor", "simulation_receipt": receipt},
+        )
+        return result
+
     decision.public_intent = align_explicit_confirmation_intent(
         character=character,
         intent=decision.public_intent,
@@ -1344,6 +1393,7 @@ def decision_from_llm(raw: dict[str, Any], raw_text: str = "") -> AgentDecision:
         internal_note=str(raw.get("internal_note") or "").strip() or None,
         moment_importance=float(raw.get("moment_importance", 4)),
         public_intent=dict(raw.get("public_intent") or {}),
+        simulation_action=(raw.get("simulation_action") if isinstance(raw.get("simulation_action"), dict) else {}),
         raw=raw_text[:500],
     )
 

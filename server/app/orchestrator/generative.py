@@ -113,6 +113,20 @@ class GenerativeOrchestrator:
         if not characters:
             raise RuntimeError("Scenario has no characters; add at least one role before play")
 
+        if ((shared_state or {}).get("task_state") or {}).get("completion_status") == "completed":
+            # A persisted terminal session cannot be reopened by a new input,
+            # fallback, planning call, or resumed worker.
+            closed_state = dict(shared_state)
+            closed_state["_pending_responses"] = []
+            closed_state["_pending_player_response"] = False
+            yield {
+                "type": "turn_result", "phase": current_phase,
+                "shared_state": closed_state, "orchestration_mode": ORCHESTRATION_MODE,
+                "replies": [], "_result": OrchestratorResult(
+                    replies=[], phase=current_phase, shared_state=closed_state),
+            }
+            return
+
         llm_cfg = await orch_support.get_llm_config(db)
         orch_cfg = orchestration_config
         cfg = agent_config(orchestration_config)

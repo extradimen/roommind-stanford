@@ -40,6 +40,7 @@ from app.task_state import public_task_result
 from app.world.perception import perceive_events
 from app.world.timeline import WorldEvent, WorldTimeline
 from app.telemetry import emit
+from app.world.executor import prompt as simulation_prompt
 
 
 @dataclass
@@ -408,6 +409,8 @@ Priority:
     answer the candidate's questions; do not reopen product, engineering, or leadership assessment.
 
 {decision_language_rule(reply_language)}
+
+{simulation_prompt(scenario.task_config or {}, task_state or {}, character.character_id)}
 
 Output strict JSON only:
 {{
