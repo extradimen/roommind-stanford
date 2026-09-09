@@ -150,7 +150,8 @@ def source_revision() -> str:
         return "unrecorded"
 
 
-def experiment_manifest(*, study_phase: str, random_seed: int) -> dict[str, Any]:
+def experiment_manifest(*, study_phase: str, random_seed: int,
+                        frozen_inputs_sha256: str | None = None) -> dict[str, Any]:
     phase = study_phase if study_phase in STUDY_PHASES else "exploration"
     manifest = {
         "protocol": EXPERIMENT_PROTOCOL_VERSION,
@@ -166,4 +167,6 @@ def experiment_manifest(*, study_phase: str, random_seed: int) -> dict[str, Any]
         "random_seed": random_seed,
         "immutability": "Dialogue artifacts are append-only; later evaluation references their SHA-256.",
     }
+    if frozen_inputs_sha256 is not None:
+        manifest["frozen_inputs_sha256"] = frozen_inputs_sha256
     return {**manifest, "manifest_sha256": sha256_json(manifest)}

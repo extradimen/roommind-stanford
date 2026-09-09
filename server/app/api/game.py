@@ -580,7 +580,7 @@ async def export_blinded_evaluation_packet(session_uuid: str, db: DbDep) -> dict
     if not session:
         raise HTTPException(404, "Session not found")
     public = build_public_session_export_bundle(await build_session_export_bundle(db, session))
-    return build_blinded_evaluation_packet(public)
+    return build_blinded_evaluation_packet(public, shared_state=session.shared_state or {})
 
 
 @router.post("/sessions/{session_uuid}/external-evaluation")
@@ -598,6 +598,7 @@ async def run_external_evaluation(session_uuid: str, db: DbDep) -> dict:
             db,
             scenario=scenario,
             messages=public.get("messages") or [],
+            shared_state=session.shared_state or {},
             system_claim=(public.get("external_observation") or {}).get("system_claim") or {},
         )
     except RuntimeError as exc:

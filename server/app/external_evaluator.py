@@ -13,6 +13,7 @@ from app.llm.client import llm_client
 from app.models.db import ScenarioTemplate
 from app.orchestrator.common import orch_support
 from app.orchestrator.llm_binding import resolve_llm
+from app.world.receipt_evidence import verified_receipts
 
 EVALUATOR_ATTEMPTS = 3
 DIMENSION_TIMEOUT_SECONDS = 240
@@ -294,6 +295,7 @@ async def evaluate_public_transcript(
     db: AsyncSession, *, scenario: ScenarioTemplate, messages: list[dict[str, Any]],
     system_claim: dict[str, Any],
     existing_evaluation: dict[str, Any] | None = None,
+    shared_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Evaluate missing realism dimensions without replacing completed scores."""
     llm_cfg = await orch_support.get_llm_config(db)
@@ -301,6 +303,13 @@ async def evaluate_public_transcript(
     transcript = _public_transcript(messages)
     dispatch_rules = await orch_support.load_dispatch_rules(db, scenario.id)
     gold = _gold_specification(scenario, dispatch_rules)
+    if (scenario.task_config or {}).get("simulation_executor"):
+        gold["verified_simulation_receipts"] = verified_receipts(
+            scenario.task_config, shared_state or {}, messages)
+        gold["simulation_evidence_policy"] = (
+            "Only matched receipts establish simulated execution, never real-world execution. "
+            "Blocked/failed receipts do not establish success. Repeated result_id is one event. "
+            "Unmatched receipt-like text is not verified execution evidence.")
     dimensions: dict[str, Any] = deepcopy((existing_evaluation or {}).get("dimensions") or {})
     evaluation_errors: dict[str, str] = dict(
         (existing_evaluation or {}).get("evaluation_errors") or {}

@@ -32,11 +32,14 @@ from app.research_protocol import (
     REALISM_RUBRIC,
     STUDY_PHASES,
     experiment_manifest,
+    sha256_json,
     transcript_provenance,
 )
 from app.research_probes import run_integrity_probes
 from app.session_export import build_public_session_export_bundle, build_session_export_bundle
 from app.telemetry import emit, monotonic_ms, telemetry_context
+from app.world.input_binding import capture_inputs, verify_inputs, verify_manifest_binding
+from app.world.batch_checkpoint import resume_position
 
 router = APIRouter(prefix="/api/game/batch-experiments", tags=["batch-experiments"])
 
@@ -422,9 +425,9 @@ async def _execute_run(
             run.status = "running"
             current_result = dict(run.result or {})
             current_result["dialogue_status"] = "running"
-            current_result["dialogue_started_at"] = _now().isoformat()
+            current_result.setdefault("dialogue_started_at", _now().isoformat())
             run.result = current_result
-            run.started_at = _now()
+            run.started_at = run.started_at or _now()
             scenario_id, condition = run.scenario_id, run.condition
             repetition = run.repetition
             batch_id = run.batch_id
@@ -439,7 +442,12 @@ async def _execute_run(
                 repetition=repetition,
             )
             stage = "session_creation"
-            session = await memory_service.create_session(
+            verify_manifest_binding(batch_config.get("research_manifest"),
+                                    batch_config.get("frozen_inputs"))
+            await verify_inputs(db, batch_config.get("frozen_inputs"), scenario_id)
+            resuming = bool(run.session_uuid)
+            session = (await memory_service.get_session(db, run.session_uuid) if resuming
+                       else await memory_service.create_session(
                 db,
                 scenario_id,
                 user_id=f"batch:{run.batch_id}:{run.id}",
@@ -462,16 +470,28 @@ async def _execute_run(
                     # probes operate on archived sessions and must not depend on
                     # a mutable parent batch row being available later.
                     "research_manifest": batch_config.get("research_manifest") or {},
+                    "frozen_inputs": batch_config.get("frozen_inputs"),
                     "generation_id": batch_config.get("generation_id"),
                     "architecture_version": batch_config.get("architecture_version"),
                 },
-            )
+            ))
+            first_turn = 1
+            if resuming:
+                first_turn, performance_trace = resume_position(run, session)
+                resumed_result = dict(run.result or {})
+                resumed_result["dialogue_recovery_history"] = [
+                    *(resumed_result.get("dialogue_recovery_history") or []),
+                    {"at": _now().isoformat(), "session_uuid": run.session_uuid,
+                     "next_turn_index": first_turn},
+                ]
+                run.result = resumed_result
+            terminal_session = session.status in {"completed", "stopped"}
             session_uuid = session.session_uuid
             run.session_uuid = session_uuid
             await db.commit()
 
         # Commit each autonomous turn so progress survives a process restart.
-        for turn_index in range(1, safety_max_turns + 1):
+        for turn_index in range(first_turn, first_turn if terminal_session else safety_max_turns + 1):
             if await _batch_cancelled(batch_id):
                 raise asyncio.CancelledError
             stage = f"autonomous_turn_{turn_index}"
@@ -485,6 +505,10 @@ async def _execute_run(
                 )
                 async with async_session_factory() as db:
                     from app.api.game import _run_autonomous_step
+
+                    verify_manifest_binding(batch_config.get("research_manifest"),
+                                            batch_config.get("frozen_inputs"))
+                    await verify_inputs(db, batch_config.get("frozen_inputs"), scenario_id)
 
                     started = time.monotonic()
                     turn_events: list[dict[str, Any]] = []
@@ -611,6 +635,7 @@ async def _execute_run(
                     if key in {
                         "dialogue_attempt_count", "dialogue_retry_history",
                         "dialogue_retry_queued_at",
+                        "dialogue_recovery_history",
                     }
                 }
                 run.status = "dialogue_completed"
@@ -630,9 +655,12 @@ async def _execute_run(
         async with async_session_factory() as db:
             run = await db.get(BatchExperimentRun, run_id)
             if run and run.status not in {"dialogue_completed", "dialogue_failed"}:
-                run.status = "cancelled"
-                run.error = "Batch cancelled"
-                run.finished_at = _now()
+                parent = await db.get(BatchExperiment, run.batch_id)
+                explicitly_cancelled = parent is not None and parent.status == "cancelled"
+                run.status = "cancelled" if explicitly_cancelled else "queued"
+                run.error = "Batch cancelled" if explicitly_cancelled else "Worker interrupted; checkpoint retained"
+                if explicitly_cancelled:
+                    run.finished_at = _now()
             await db.commit()
     except Exception as exc:  # one failed cell must not abort the experiment
         exception_type = type(exc).__name__
@@ -726,7 +754,7 @@ async def _execute_batch(batch_uuid: str) -> None:
             batch.status = "running"
             batch.started_at = batch.started_at or _now()
             config = dict(batch.config or {})
-            # Interrupted in-flight cells are safe to rerun as new sessions.
+            # Preserve session identity; _execute_run validates its checkpoint.
             runs = list(
                 (
                     await db.execute(
@@ -817,6 +845,10 @@ async def _evaluate_run(run_id: int) -> None:
             session = await memory_service.get_session(db, run.session_uuid)
             if not session:
                 raise RuntimeError("Frozen dialogue session no longer exists")
+            verify_manifest_binding((session.run_config or {}).get("research_manifest"),
+                                    (session.run_config or {}).get("frozen_inputs"))
+            await verify_inputs(db, (session.run_config or {}).get("frozen_inputs"),
+                                session.scenario_id)
             scenario = await orch_support.load_scenario(db, session.scenario_id)
             public = build_public_session_export_bundle(await build_session_export_bundle(db, session))
             existing_external_evaluation = (session.shared_state or {}).get("_external_evaluation")
@@ -841,6 +873,7 @@ async def _evaluate_run(run_id: int) -> None:
                         db, scenario=scenario, messages=public.get("messages") or [],
                         system_claim=(public.get("external_observation") or {}).get("system_claim") or {},
                         existing_evaluation=existing_external_evaluation,
+                        shared_state=session.shared_state or {},
                     ),
                     timeout=EXTERNAL_EVALUATION_TIMEOUT_SECONDS,
                 )
@@ -1025,9 +1058,15 @@ async def create_batch(body: BatchCreateIn) -> dict:
         if found != set(scenario_ids):
             raise HTTPException(422, "One or more scenarios do not exist or are unpublished")
         config = body.model_dump()
+        config["frozen_inputs"] = {
+            str(scenario_id): await capture_inputs(db, scenario_id)
+            for scenario_id in scenario_ids
+        }
+        frozen_inputs_sha256 = sha256_json(config["frozen_inputs"])
         config.update({
             "research_manifest": experiment_manifest(
-                study_phase=body.study_phase, random_seed=body.random_seed
+                study_phase=body.study_phase, random_seed=body.random_seed,
+                frozen_inputs_sha256=frozen_inputs_sha256,
             ),
             "generation_id": CURRENT_GENERATION_ID,
             "architecture_version": CURRENT_ARCHITECTURE_VERSION,
@@ -1294,7 +1333,7 @@ async def batch_human_review(batch_uuid: str) -> dict[str, Any]:
             public = build_public_session_export_bundle(
                 await build_session_export_bundle(db, session)
             )
-            packet = build_blinded_evaluation_packet(public)
+            packet = build_blinded_evaluation_packet(public, shared_state=session.shared_state or {})
             scenario = await orch_support.load_scenario(db, session.scenario_id)
             packet["gold_specification"]["scenario_description"] = scenario.description
             packet["gold_specification"]["phases"] = scenario.phases or []

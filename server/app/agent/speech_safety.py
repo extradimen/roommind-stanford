@@ -405,6 +405,24 @@ def _direct_address_aliases(labels: list[str] | tuple[str, ...]) -> list[str]:
     return sorted(set(aliases), key=len, reverse=True)
 
 
+def _explicit_addressee_group(content: str, participant_aliases: dict | None) -> list[str]:
+    """Parse an explicit leading name list; never collect incidental mentions."""
+    owners: dict[str, set[str]] = {}
+    for actor, labels in (participant_aliases or {}).items():
+        for alias in _direct_address_aliases(list(labels or [])):
+            owners.setdefault(alias.casefold(), set()).add(str(actor))
+    names = [name for name, ids in owners.items() if len(ids) == 1]
+    if not names:
+        return []
+    name_pattern = "(?:" + "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True)) + ")"
+    separator = r"\s*(?:,\s*(?:(?:and|&)\s+)?|\band\b\s+|&\s+)"
+    match = re.match(rf"^\s*({name_pattern}(?:{separator}{name_pattern})+)\s*[,：:—-]\s*", content.casefold())
+    if not match or not _VISIBLE_RESPONSE_REQUEST_RE.search(content[match.end():]):
+        return []
+    return list(dict.fromkeys(next(iter(owners[item.group(0)]))
+                             for item in re.finditer(name_pattern, match.group(1))))
+
+
 def resolve_direct_question_target(
     content: str,
     *,
@@ -422,6 +440,9 @@ def resolve_direct_question_target(
     """
     intent = public_intent or {}
     text = " ".join((content or "").split()).strip()
+    group = _explicit_addressee_group(text, participant_aliases)
+    if group:
+        return group[0]
     if not text or not _VISIBLE_RESPONSE_REQUEST_RE.search(text):
         return ""
     folded = text.casefold()
@@ -497,6 +518,10 @@ def resolve_direct_question_targets(
     targets: list[str] = []
     clauses = re.split(r"(?<=[.!?？])\s+|[\r\n;]+", content or "")
     for clause in clauses:
+        group = _explicit_addressee_group(clause, participant_aliases)
+        if group:
+            targets.extend(target for target in group if target not in targets)
+            continue
         target = resolve_direct_question_target(
             clause,
             public_intent=public_intent,

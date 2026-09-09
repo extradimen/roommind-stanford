@@ -7,6 +7,7 @@ import re
 from collections import Counter
 from datetime import datetime
 from typing import Any
+from app.world.receipt_evidence import verified_receipts
 
 from app.research_protocol import (
     HUMAN_REVIEW_PROTOCOL_VERSION,
@@ -106,7 +107,9 @@ def build_external_observation(bundle: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_blinded_evaluation_packet(bundle: dict[str, Any]) -> dict[str, Any]:
+def build_blinded_evaluation_packet(
+    bundle: dict[str, Any], *, shared_state: dict | None = None
+) -> dict[str, Any]:
     """Prepare a condition-hidden packet for an external human or AI judge."""
     scenario = bundle.get("scenario") or {}
     directory = bundle.get("speaker_directory") or {}
@@ -153,6 +156,10 @@ def build_blinded_evaluation_packet(bundle: dict[str, Any]) -> dict[str, Any]:
             },
         },
         "speaker_aliases": aliases,
+        "verified_simulation_receipts": verified_receipts(
+            scenario.get("task_config") or {},
+            shared_state if shared_state is not None else bundle.get("shared_state") or {},
+            bundle.get("messages") or []),
         "fixed_window_transcript": [row for row in visible if int(row.get("turn_id") or 0) <= 20],
         "public_transcript": visible,
         "system_claim": (bundle.get("external_observation") or {}).get("system_claim") or {},
