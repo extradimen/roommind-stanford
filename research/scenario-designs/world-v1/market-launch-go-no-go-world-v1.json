@@ -1,0 +1,465 @@
+{
+  "characters": [
+    {
+      "aliases": [
+        "Elena",
+        "Elena Ruiz",
+        "Sales VP"
+      ],
+      "authority": {
+        "can_confirm": [
+          "market_readiness"
+        ],
+        "can_propose": [
+          "market_readiness",
+          "launch_decision"
+        ],
+        "cannot_commit": [
+          "operational_readiness",
+          "budget_approved"
+        ]
+      },
+      "avatar_manifest": {
+        "avatar_style": "minecraft",
+        "team": "commercial"
+      },
+      "character_id": "sales_vp",
+      "character_name": "Elena Ruiz",
+      "fallback_actions": {
+        "default": "Provide concrete customer and pipeline evidence without approving another function's commitment."
+      },
+      "interaction_role": "commercial_decision_maker",
+      "job_title": "VP of Enterprise Sales",
+      "persona": "Commercially ambitious, persuasive, and strongly customer-focused.",
+      "private_state": {
+        "goal": "Protect two strategic customer commitments and the quarterly revenue target.",
+        "hidden_agenda": [
+          "Two major customers expect availability this quarter."
+        ],
+        "protected_secrets": [
+          "Two major customers privately expect availability this quarter."
+        ],
+        "redlines": [
+          "An indefinite delay without a customer communication plan."
+        ]
+      },
+      "relationship_to_player": "stakeholder",
+      "responsibility": "Validate market demand, customer readiness, and revenue exposure.",
+      "side": "opponent",
+      "sort_order": 0,
+      "spawn_point": "seat_opposite_left",
+      "team_id": "commercial",
+      "tendency": {
+        "aggression": "medium",
+        "cooperation": "high",
+        "risk": "medium_high"
+      }
+    },
+    {
+      "aliases": [
+        "Samir",
+        "Samir Patel",
+        "Operations Director"
+      ],
+      "authority": {
+        "can_confirm": [
+          "operational_readiness"
+        ],
+        "can_propose": [
+          "operational_readiness",
+          "launch_decision"
+        ],
+        "cannot_commit": [
+          "market_readiness",
+          "budget_approved"
+        ]
+      },
+      "avatar_manifest": {
+        "avatar_style": "minecraft",
+        "team": "operations"
+      },
+      "character_id": "operations_director",
+      "character_name": "Samir Patel",
+      "fallback_actions": {
+        "default": "Name the missing operational evidence and propose a bounded safeguard or rollout scope."
+      },
+      "interaction_role": "readiness_owner",
+      "job_title": "Director of Customer Operations",
+      "persona": "Cautious, data-driven, and willing to support a controlled experiment.",
+      "private_state": {
+        "discoverable_information": [
+          "The support team is short two trained specialists for a national launch."
+        ],
+        "goal": "Avoid an uncontrolled support surge while preserving a credible launch path.",
+        "hidden_agenda": [
+          "The support team is short two trained specialists for a national launch."
+        ],
+        "redlines": [
+          "A full national launch without monitoring, rollback criteria, and on-call coverage."
+        ]
+      },
+      "relationship_to_player": "stakeholder",
+      "responsibility": "Confirm support capacity, incident readiness, training, and launch safeguards.",
+      "side": "opponent",
+      "sort_order": 1,
+      "spawn_point": "seat_opposite_right",
+      "team_id": "operations",
+      "tendency": {
+        "aggression": "low",
+        "cooperation": "medium",
+        "risk": "very_low"
+      }
+    },
+    {
+      "aliases": [
+        "Dana",
+        "Dana Brooks",
+        "CFO"
+      ],
+      "authority": {
+        "can_confirm": [
+          "budget_approved",
+          "launch_decision"
+        ],
+        "can_propose": [
+          "budget_approved",
+          "launch_decision"
+        ],
+        "cannot_commit": [
+          "market_readiness",
+          "operational_readiness"
+        ]
+      },
+      "avatar_manifest": {
+        "avatar_style": "minecraft",
+        "team": "finance"
+      },
+      "character_id": "cfo",
+      "character_name": "Dana Brooks",
+      "fallback_actions": {
+        "default": "Request a quantified option and state the financial condition needed for approval."
+      },
+      "interaction_role": "financial_approver",
+      "job_title": "Chief Financial Officer",
+      "persona": "Calm, skeptical of unsupported forecasts, and receptive to bounded options.",
+      "private_state": {
+        "goal": "Limit downside while preserving a measurable route to revenue.",
+        "hidden_agenda": [
+          "A contingency reserve is available if exposure is capped and reviewed after 30 days."
+        ],
+        "protected_secrets": [
+          "A contingency reserve is available only if exposure is capped and reviewed after 30 days."
+        ],
+        "redlines": [
+          "Open-ended launch spending",
+          "A launch decision without measurable stop criteria"
+        ]
+      },
+      "relationship_to_player": "executive_sponsor",
+      "responsibility": "Approve launch spending, contingency, and the final financially defensible decision.",
+      "side": "opponent",
+      "sort_order": 2,
+      "spawn_point": "seat_side",
+      "team_id": "finance",
+      "tendency": {
+        "aggression": "low",
+        "cooperation": "medium",
+        "risk": "low"
+      }
+    }
+  ],
+  "description": "A cross-functional executive meeting must decide whether to launch a new enterprise analytics product nationally, delay it, or use a controlled phased launch. Commercial demand is strong, operations has unresolved readiness risks, and finance requires a bounded launch budget.",
+  "dispatch_rules": [
+    {
+      "description": "Route customer, revenue, and market evidence to the commercial owner.",
+      "is_active": true,
+      "max_speakers": 2,
+      "min_speakers": 1,
+      "name": "Commercial demand",
+      "priority_character_ids": [
+        "sales_vp",
+        "cfo"
+      ],
+      "trigger_keywords": [
+        "customer",
+        "market",
+        "pipeline",
+        "revenue",
+        "demand",
+        "sales"
+      ],
+      "weights": {}
+    },
+    {
+      "description": "Route capacity, support, training, monitoring, and rollback topics to operations.",
+      "is_active": true,
+      "max_speakers": 2,
+      "min_speakers": 1,
+      "name": "Operational readiness",
+      "priority_character_ids": [
+        "operations_director",
+        "cfo"
+      ],
+      "trigger_keywords": [
+        "operations",
+        "capacity",
+        "support",
+        "training",
+        "monitoring",
+        "rollback",
+        "incident",
+        "readiness"
+      ],
+      "weights": {}
+    },
+    {
+      "description": "Route budget, contingency, approval, and final decision topics to finance and relevant owners.",
+      "is_active": true,
+      "max_speakers": 2,
+      "min_speakers": 1,
+      "name": "Budget and decision",
+      "priority_character_ids": [
+        "cfo",
+        "sales_vp",
+        "operations_director"
+      ],
+      "trigger_keywords": [
+        "budget",
+        "cost",
+        "contingency",
+        "approve",
+        "decision",
+        "launch",
+        "delay",
+        "phase"
+      ],
+      "weights": {}
+    }
+  ],
+  "is_published": true,
+  "opponent_side_goal": "Protect revenue opportunity, operational reliability, and financial discipline within each executive's authority.",
+  "orchestration_config": {},
+  "player_side_goal": "Lead an evidence-based decision, secure explicit functional commitments, and approve a defensible launch plan.",
+  "scene_config": {
+    "camera": "first_person",
+    "environment": "executive_meeting_room",
+    "player_character": {
+      "avatar_manifest": {
+        "avatar_style": "minecraft",
+        "team": "product"
+      },
+      "character_name": "Morgan Lee",
+      "job_title": "Product Launch Director"
+    }
+  },
+  "schema_version": 2,
+  "slug": "market-launch-go-no-go-world-v1",
+  "task_config": {
+    "completion_conditions": {
+      "all": [
+        {
+          "field": "market_readiness",
+          "operator": "==",
+          "required_status": "confirmed",
+          "value": true
+        },
+        {
+          "field": "operational_readiness",
+          "operator": "==",
+          "required_status": "confirmed",
+          "value": true
+        },
+        {
+          "field": "budget_approved",
+          "operator": "==",
+          "required_status": "confirmed",
+          "value": true
+        },
+        {
+          "field": "launch_decision",
+          "operator": "==",
+          "required_status": "confirmed",
+          "value": "phased_launch"
+        }
+      ]
+    },
+    "config_version": 4,
+    "counterpart_objective": "Reach a launch decision without hiding material commercial, operational, or financial risk.",
+    "evaluator_instructions": [
+      "Optimism, forecasts, and recommendations are not confirmations.",
+      "Operational readiness requires explicit safeguards for the agreed launch scope.",
+      "A conditional budget or readiness statement remains proposed or disputed.",
+      "The final launch decision requires explicit acceptance by both the player and CFO."
+    ],
+    "evidence_mode": "live_operation",
+    "phases": [
+      {
+        "description": "Establish decision criteria and responsibilities",
+        "phase_id": "briefing"
+      },
+      {
+        "description": "Review commercial, operational, and financial evidence",
+        "entry_conditions": {
+          "any": [
+            {
+              "allowed_statuses": [
+                "proposed",
+                "confirmed"
+              ],
+              "field": "market_readiness",
+              "operator": "==",
+              "value": true
+            },
+            {
+              "allowed_statuses": [
+                "proposed",
+                "confirmed"
+              ],
+              "field": "operational_readiness",
+              "operator": "==",
+              "value": true
+            },
+            {
+              "allowed_statuses": [
+                "proposed",
+                "confirmed"
+              ],
+              "field": "budget_approved",
+              "operator": "==",
+              "value": true
+            }
+          ]
+        },
+        "phase_id": "evidence_review"
+      },
+      {
+        "description": "Design a launch option that addresses unresolved risks",
+        "entry_conditions": {
+          "all": [
+            {
+              "field": "market_readiness",
+              "operator": "==",
+              "required_status": "confirmed",
+              "value": true
+            },
+            {
+              "field": "operational_readiness",
+              "operator": "==",
+              "required_status": "confirmed",
+              "value": true
+            },
+            {
+              "field": "budget_approved",
+              "operator": "==",
+              "required_status": "confirmed",
+              "value": true
+            }
+          ]
+        },
+        "phase_id": "option_design"
+      },
+      {
+        "description": "Explicitly approve and summarize the launch decision",
+        "entry_conditions": {
+          "all": [
+            {
+              "allowed_statuses": [
+                "proposed",
+                "confirmed"
+              ],
+              "field": "launch_decision",
+              "operator": "==",
+              "value": "phased_launch"
+            }
+          ]
+        },
+        "phase_id": "decision"
+      }
+    ],
+    "player_objective": "Confirm market readiness, operational readiness, and budget approval, then obtain joint approval for a phased launch decision.",
+    "relevance_signals": [
+      "launch",
+      "customer",
+      "pipeline",
+      "readiness",
+      "capacity",
+      "support",
+      "budget",
+      "contingency",
+      "risk",
+      "phase",
+      "confirm"
+    ],
+    "simulation_executor": {
+      "actions": {},
+      "initial_facts": {},
+      "schema": "roommind-simulation-executor-v1"
+    },
+    "state_schema": {
+      "budget_approved": {
+        "confirm_permissions": [
+          "cfo"
+        ],
+        "confirmation_policy": "responsible_participant",
+        "description": "Launch budget and contingency are approved",
+        "propose_permissions": [
+          "player",
+          "cfo"
+        ],
+        "type": "boolean"
+      },
+      "launch_decision": {
+        "confirm_permissions": [
+          "player",
+          "cfo"
+        ],
+        "confirmation_policy": "player_and_authorized_counterpart",
+        "description": "Final decision: phased_launch, full_launch, or delay",
+        "propose_permissions": [
+          "player",
+          "sales_vp",
+          "operations_director",
+          "cfo"
+        ],
+        "type": "string"
+      },
+      "market_readiness": {
+        "confirm_permissions": [
+          "sales_vp"
+        ],
+        "confirmation_policy": "responsible_participant",
+        "description": "Commercial demand and customer readiness supported by evidence",
+        "propose_permissions": [
+          "player",
+          "sales_vp"
+        ],
+        "type": "boolean"
+      },
+      "operational_readiness": {
+        "confirm_permissions": [
+          "operations_director"
+        ],
+        "confirmation_policy": "responsible_participant",
+        "description": "Operations can support the agreed launch scope and safeguards",
+        "propose_permissions": [
+          "player",
+          "operations_director"
+        ],
+        "type": "boolean"
+      }
+    },
+    "task_type": "cross_functional_decision",
+    "terminology": {
+      "completion": "launch decision",
+      "player_name": "Morgan Lee",
+      "player_role": "Product Launch Director",
+      "task": "go/no-go meeting"
+    }
+  },
+  "template_meta": {
+    "source_sha256": "e64b54cf69baaaf95b45f7dbcddc7a22c6a653c8420695047878a2d95c6b049a",
+    "source_slug": "market-launch-go-no-go",
+    "world_version": 1
+  },
+  "title": "Strategic Product Launch Go/No-Go Meeting (Simulated World v1)"
+}

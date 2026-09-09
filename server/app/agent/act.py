@@ -745,6 +745,10 @@ async def _apply_speak(
     interview_mode: bool = False,
     required_response: bool = False,
 ) -> ActionResult:
+    if (task_state or {}).get("completion_status") == "completed":
+        result.spoke = False
+        result.content = ""
+        return result
     plan = active_plan(nodes)
     prior_utterances = [
         str((node.meta or {}).get("display_text") or "")
@@ -1026,6 +1030,25 @@ async def execute_decision(
             result.public_ledger_event = commit_public_intent(
                 task_state, intent=intent, public_quote=receipt["content"], tick=tick,
             )
+            # Only an explicitly declared world-result field may be confirmed
+            # by execution. Negotiated decisions still need their normal parties.
+            spec = ((task_config or {}).get("state_schema") or {}).get(receipt["field"], {})
+            if spec.get("execution_confirms") is True:
+                confirmation = validate_public_intent(
+                    character=character, turn_id=turn_id, state=task_state,
+                    task_config=task_config, intent={
+                        "kind": "decision", "subject": receipt["operation"],
+                        "transition": "accepted", "field": receipt["field"],
+                        "value": receipt["value"], "simulation_scope": "in_session",
+                        "evidence_source": "simulated_tool_result",
+                        "tool_result_id": receipt["result_id"], "inline_content": receipt["content"],
+                    },
+                )
+                if confirmation.get("commit_allowed") and confirmation.get("transition") == "accepted":
+                    result.public_ledger_event = commit_public_intent(
+                        task_state, intent=confirmation, public_quote=receipt["content"], tick=tick,
+                    )
+                    intent = confirmation
             result.public_intent = intent
         result.public_intent = {**(result.public_intent or {}), "simulation_receipt": receipt}
         if timeline is not None:
@@ -1323,6 +1346,8 @@ async def execute_plan_fallback_speak(
     required_response: bool = False,
 ) -> ActionResult | None:
     """When no NPC spoke this turn, force one reply from the active plan."""
+    if (task_state or {}).get("completion_status") == "completed":
+        return None
     plan = active_plan(nodes)
     if not plan and not user_input.strip():
         return None

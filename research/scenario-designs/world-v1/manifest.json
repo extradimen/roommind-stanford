@@ -1,0 +1,26 @@
+{
+  "schema": "roommind-world-scenario-snapshots-v1",
+  "evidence_use": "development_only",
+  "scenarios": [
+    {
+      "file": "candidate-panel-interview-world-v1.json",
+      "source_sha256": "97073815dd7b87f1efb938764296e3db92cf7cbe9205983cf5f94a0f60c663b8",
+      "sha256": "43f2b4a8404a083cd97b3b00695f69e4f52185f0f3804139227640ae4304a57e"
+    },
+    {
+      "file": "incident-response-command-world-v1.json",
+      "source_sha256": "61f513f3dc5f7a32b78b3138c11e55d41c77d690053501b7404d26475ec5803b",
+      "sha256": "7f616341e19d9206b736a664d516deffd2753ae9e78d7c3e1847dcec3adf9adf"
+    },
+    {
+      "file": "market-launch-go-no-go-world-v1.json",
+      "source_sha256": "e64b54cf69baaaf95b45f7dbcddc7a22c6a653c8420695047878a2d95c6b049a",
+      "sha256": "e5a2a7bed87fd168701f38dd23f63c959236d4119758fb4361792e1f53ea7329"
+    },
+    {
+      "file": "supply-chain-negotiation-world-v1.json",
+      "source_sha256": "f13dbb685cbad26326cdf7a6c1552ab2c22b68294df80287713cfa983b5d63ca",
+      "sha256": "0a30b75f0227a53fc3d27395f0d54bf38d0037ccf3b03bef57092804d6c4915d"
+    }
+  ]
+}

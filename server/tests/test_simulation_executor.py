@@ -2,6 +2,7 @@
 import copy
 import json
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -94,6 +95,36 @@ class ExecutorTests(unittest.TestCase):
 
 
 class AdapterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_versioned_incident_can_reach_containment_through_registered_results(self):
+        from app.agent.act import AgentDecision, execute_decision
+        from app.models.db import CharacterTemplate
+        from app.task_state import refresh_task_state_from_public_ledger
+        path = Path(__file__).resolve().parents[2] / "research/scenario-designs/world-v2/incident-response-command-world-v2.json"
+        snapshot = json.loads(path.read_text())
+        characters = [CharacterTemplate(character_id=row["character_id"],
+                      display_name=row["character_name"], character_name=row["character_name"],
+                      authority=row["authority"], private_state=row["private_state"])
+                      for row in snapshot["characters"]]
+        by_id = {row.character_id: row for row in characters}
+        state = {}
+        with patch("app.agent.act._record_action_memory", new=AsyncMock()):
+            for turn, (actor, operation) in enumerate([
+                ("sre_lead", "diagnose_scope"), ("security_lead", "preserve_evidence"),
+                ("sre_lead", "activate_containment")], 1):
+                result = await execute_decision(
+                    None, character=by_id[actor], store=None, nodes=[],
+                    decision=AgentDecision(action="execute", simulation_action={
+                        "request_id": operation, "operation": operation}),
+                    user_input="", turn_id=turn, tick=0, conversation_context="", npc_llm=None,
+                    speak_quota_remaining=1, mentioned=True,
+                    task_state=state, task_config=snapshot["task_config"])
+                self.assertEqual(result.public_intent["simulation_receipt"]["status"], "success")
+                refresh_task_state_from_public_ledger(snapshot["task_config"], state, characters)
+        self.assertEqual(state[KEY]["facts"]["containment_active"], True)
+        self.assertEqual(state["variables"]["containment_active"]["status"], "confirmed")
+        self.assertEqual(len(state["public_ledger"]["tool_results"]), 3)
+        self.assertNotEqual(state.get("completion_status"), "completed")
+
     async def test_terminal_restart_prevents_model_calls_and_execution(self):
         from app.orchestrator.generative import generative_orchestrator
         from app.agent.act import AgentDecision, execute_decision
@@ -114,6 +145,12 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             task_state=state, task_config=config())
         self.assertFalse(result.spoke)
         self.assertEqual(state, {"completion_status": "completed"})
+        from app.agent.act import execute_plan_fallback_speak
+        fallback = await execute_plan_fallback_speak(
+            None, character=None, scenario=None, store=None, nodes=[], user_input="Continue",
+            turn_id=2, tick=0, conversation_context="", current_phase="closed",
+            npc_llm=None, timeline=None, task_state=state)
+        self.assertIsNone(fallback)
 
     async def test_real_adapters_share_receipt_and_roommind_registers_evidence(self):
         from app.agent.act import AgentDecision, execute_decision

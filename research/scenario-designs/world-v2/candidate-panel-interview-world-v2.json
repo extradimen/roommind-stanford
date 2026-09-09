@@ -1,0 +1,413 @@
+{
+  "characters": [
+    {
+      "aliases": [
+        "Avery",
+        "Avery Chen",
+        "Product VP"
+      ],
+      "authority": {
+        "can_confirm": [
+          "product_evidence",
+          "candidate_questions_complete"
+        ],
+        "cannot_confirm": [
+          "engineering_evidence",
+          "leadership_evidence"
+        ]
+      },
+      "avatar_manifest": {
+        "avatar_style": "minecraft",
+        "team": "panel"
+      },
+      "character_id": "product_vp",
+      "character_name": "Avery Chen",
+      "fallback_actions": {
+        "default": "Ask for a concrete decision, metric, trade-off, and result rather than filling in missing evidence."
+      },
+      "interaction_role": "panel_chair",
+      "job_title": "VP Product",
+      "persona": "Strategic, concise, and curious about measurable outcomes.",
+      "private_state": {
+        "goal": "Distinguish real decision ownership from polished storytelling."
+      },
+      "relationship_to_player": "evaluator",
+      "responsibility": "Assess product judgment and chair the interview.",
+      "side": "opponent",
+      "sort_order": 0,
+      "spawn_point": "seat_opposite",
+      "team_id": "interview_panel",
+      "tendency": {
+        "cooperation": "medium"
+      }
+    },
+    {
+      "aliases": [
+        "Noah",
+        "Noah Williams",
+        "Engineering Director"
+      ],
+      "authority": {
+        "can_confirm": [
+          "engineering_evidence"
+        ],
+        "cannot_confirm": [
+          "product_evidence",
+          "leadership_evidence",
+          "candidate_questions_complete"
+        ]
+      },
+      "avatar_manifest": {
+        "avatar_style": "minecraft",
+        "team": "panel"
+      },
+      "character_id": "engineering_director",
+      "character_name": "Noah Williams",
+      "fallback_actions": {
+        "default": "Probe the candidate's technical trade-off, collaboration boundary, and measurable execution result."
+      },
+      "interaction_role": "technical_interviewer",
+      "job_title": "Engineering Director",
+      "persona": "Direct and attentive to technical trade-offs.",
+      "private_state": {
+        "goal": "Test whether the candidate creates clarity without overruling engineers."
+      },
+      "relationship_to_player": "evaluator",
+      "responsibility": "Assess engineering collaboration and execution realism.",
+      "side": "opponent",
+      "sort_order": 1,
+      "spawn_point": "seat_side",
+      "team_id": "interview_panel",
+      "tendency": {
+        "cooperation": "medium",
+        "risk": "low"
+      }
+    },
+    {
+      "aliases": [
+        "Maya",
+        "Maya Patel",
+        "People Partner"
+      ],
+      "authority": {
+        "can_confirm": [
+          "leadership_evidence"
+        ],
+        "cannot_confirm": [
+          "product_evidence",
+          "engineering_evidence",
+          "candidate_questions_complete"
+        ]
+      },
+      "avatar_manifest": {
+        "avatar_style": "minecraft",
+        "team": "panel"
+      },
+      "character_id": "people_partner",
+      "character_name": "Maya Patel",
+      "fallback_actions": {
+        "default": "Ask for the specific conflict, the candidate's action, its effect on others, and what was learned."
+      },
+      "interaction_role": "behavioral_interviewer",
+      "job_title": "People Partner",
+      "persona": "Warm but persistent about specifics.",
+      "private_state": {
+        "goal": "Find behavioral evidence rather than rehearsed values."
+      },
+      "relationship_to_player": "evaluator",
+      "responsibility": "Assess conflict handling, inclusion, and self-awareness.",
+      "side": "opponent",
+      "sort_order": 2,
+      "spawn_point": "seat_adjacent",
+      "team_id": "interview_panel",
+      "tendency": {
+        "cooperation": "high"
+      }
+    }
+  ],
+  "description": "The player is a candidate answering a structured panel interview with product, engineering, and people perspectives.",
+  "dispatch_rules": [
+    {
+      "is_active": true,
+      "max_speakers": 1,
+      "min_speakers": 1,
+      "name": "Product evidence",
+      "priority_character_ids": [
+        "product_vp"
+      ],
+      "trigger_keywords": [
+        "customer",
+        "metric",
+        "roadmap",
+        "priority"
+      ],
+      "weights": {}
+    },
+    {
+      "is_active": true,
+      "max_speakers": 1,
+      "min_speakers": 1,
+      "name": "Execution evidence",
+      "priority_character_ids": [
+        "engineering_director"
+      ],
+      "trigger_keywords": [
+        "engineering",
+        "technical",
+        "delivery",
+        "trade-off"
+      ],
+      "weights": {}
+    },
+    {
+      "is_active": true,
+      "max_speakers": 1,
+      "min_speakers": 1,
+      "name": "Leadership evidence",
+      "priority_character_ids": [
+        "people_partner"
+      ],
+      "trigger_keywords": [
+        "conflict",
+        "team",
+        "feedback",
+        "stakeholder"
+      ],
+      "weights": {}
+    }
+  ],
+  "is_published": true,
+  "opponent_side_goal": "Collect sufficient evidence for a fair, role-relevant hiring decision.",
+  "orchestration_config": {},
+  "player_side_goal": "Demonstrate evidence-based leadership across product, execution, and team conflict.",
+  "scene_config": {
+    "camera": "first_person",
+    "environment": "meeting_room",
+    "player_character": {
+      "avatar_manifest": {
+        "avatar_style": "minecraft",
+        "team": "candidate"
+      },
+      "character_name": "Taylor Morgan",
+      "job_title": "Product Lead Candidate"
+    }
+  },
+  "schema_version": 2,
+  "slug": "candidate-panel-interview-world-v2",
+  "task_config": {
+    "completion_conditions": {
+      "all": [
+        {
+          "field": "product_evidence",
+          "operator": "==",
+          "required_status": "confirmed",
+          "value": true
+        },
+        {
+          "field": "engineering_evidence",
+          "operator": "==",
+          "required_status": "confirmed",
+          "value": true
+        },
+        {
+          "field": "leadership_evidence",
+          "operator": "==",
+          "required_status": "confirmed",
+          "value": true
+        },
+        {
+          "field": "candidate_questions_complete",
+          "operator": "==",
+          "required_status": "confirmed",
+          "value": true
+        }
+      ]
+    },
+    "config_version": 3,
+    "counterpart_objective": "Probe consistently and record evidence without coaching the candidate.",
+    "evaluator_instructions": [
+      "Evidence requires a concrete situation, candidate action, and outcome; generic claims are insufficient.",
+      "Panel praise does not by itself confirm evidence completeness."
+    ],
+    "evidence_mode": "retrospective_claim",
+    "phases": [
+      {
+        "description": "Set expectations",
+        "phase_id": "introduction"
+      },
+      {
+        "description": "Collect behavioral evidence",
+        "entry_conditions": {
+          "any": [
+            {
+              "allowed_statuses": [
+                "proposed",
+                "confirmed"
+              ],
+              "field": "product_evidence",
+              "operator": "==",
+              "value": true
+            },
+            {
+              "allowed_statuses": [
+                "proposed",
+                "confirmed"
+              ],
+              "field": "engineering_evidence",
+              "operator": "==",
+              "value": true
+            },
+            {
+              "allowed_statuses": [
+                "proposed",
+                "confirmed"
+              ],
+              "field": "leadership_evidence",
+              "operator": "==",
+              "value": true
+            }
+          ]
+        },
+        "phase_id": "evidence_questions"
+      },
+      {
+        "description": "Probe ambiguity and trade-offs",
+        "entry_conditions": {
+          "all": [
+            {
+              "field": "product_evidence",
+              "operator": "==",
+              "required_status": "confirmed",
+              "value": true
+            },
+            {
+              "field": "engineering_evidence",
+              "operator": "==",
+              "required_status": "confirmed",
+              "value": true
+            },
+            {
+              "field": "leadership_evidence",
+              "operator": "==",
+              "required_status": "confirmed",
+              "value": true
+            }
+          ]
+        },
+        "phase_id": "follow_up"
+      },
+      {
+        "description": "Candidate asks questions and panel closes",
+        "entry_conditions": {
+          "all": [
+            {
+              "field": "product_evidence",
+              "operator": "==",
+              "required_status": "confirmed",
+              "value": true
+            },
+            {
+              "field": "engineering_evidence",
+              "operator": "==",
+              "required_status": "confirmed",
+              "value": true
+            },
+            {
+              "field": "leadership_evidence",
+              "operator": "==",
+              "required_status": "confirmed",
+              "value": true
+            },
+            {
+              "allowed_statuses": [
+                "proposed",
+                "confirmed"
+              ],
+              "field": "candidate_questions_complete",
+              "operator": "==",
+              "value": true
+            }
+          ]
+        },
+        "phase_id": "candidate_questions"
+      }
+    ],
+    "player_objective": "Provide concrete evidence across product judgment, engineering collaboration, and people leadership, then complete the candidate questions stage.",
+    "relevance_signals": [
+      "example",
+      "result",
+      "metric",
+      "trade-off",
+      "conflict",
+      "stakeholder",
+      "learned",
+      "question"
+    ],
+    "simulation_executor": {
+      "actions": {},
+      "initial_facts": {},
+      "schema": "roommind-simulation-executor-v1"
+    },
+    "state_schema": {
+      "candidate_questions_complete": {
+        "confirm_permissions": [
+          "player",
+          "product_vp"
+        ],
+        "confirmation_policy": "player_and_responsible_participant",
+        "description": "Candidate questions were invited and completed",
+        "propose_permissions": [
+          "player",
+          "product_vp"
+        ],
+        "type": "boolean"
+      },
+      "engineering_evidence": {
+        "confirm_permissions": [
+          "engineering_director"
+        ],
+        "confirmation_policy": "responsible_participant",
+        "description": "Concrete engineering collaboration evidence obtained",
+        "propose_permissions": [
+          "player"
+        ],
+        "type": "boolean"
+      },
+      "leadership_evidence": {
+        "confirm_permissions": [
+          "people_partner"
+        ],
+        "confirmation_policy": "responsible_participant",
+        "description": "Concrete conflict or people leadership evidence obtained",
+        "propose_permissions": [
+          "player"
+        ],
+        "type": "boolean"
+      },
+      "product_evidence": {
+        "confirm_permissions": [
+          "product_vp"
+        ],
+        "confirmation_policy": "responsible_participant",
+        "description": "Concrete product decision evidence obtained",
+        "propose_permissions": [
+          "player"
+        ],
+        "type": "boolean"
+      }
+    },
+    "task_type": "structured_interview",
+    "terminology": {
+      "completion": "interview evidence complete",
+      "player_name": "Taylor Morgan",
+      "player_role": "Product Lead Candidate",
+      "task": "panel interview"
+    }
+  },
+  "template_meta": {
+    "source_sha256": "97073815dd7b87f1efb938764296e3db92cf7cbe9205983cf5f94a0f60c663b8",
+    "source_slug": "candidate-panel-interview",
+    "world_version": 2
+  },
+  "title": "Cross-functional Product Leadership Interview (Simulated World v2)"
+}

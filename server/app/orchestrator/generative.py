@@ -40,6 +40,7 @@ from app.player_character import resolve_player_character
 from app.public_ledger import ensure_public_ledger
 from app.telemetry import emit
 from app.task_state import refresh_task_state_from_public_ledger
+from app.world.response_queue import ResponseQueue
 
 
 def schedule_direct_response(
@@ -117,7 +118,9 @@ class GenerativeOrchestrator:
             # A persisted terminal session cannot be reopened by a new input,
             # fallback, planning call, or resumed worker.
             closed_state = dict(shared_state)
-            closed_state["_pending_responses"] = []
+            closed_queue = ResponseQueue(closed_state)
+            closed_queue.close()
+            closed_queue.save(closed_state)
             closed_state["_pending_player_response"] = False
             yield {
                 "type": "turn_result", "phase": current_phase,
@@ -206,8 +209,15 @@ class GenerativeOrchestrator:
             )
             if target != "user"
         ]
+        response_queue = ResponseQueue(updated_state)
+        if "response_queue" not in updated_state:
+            response_queue.request("legacy", "unknown", [
+                cid for cid in updated_state.get("_pending_responses", [])
+                if cid in {char.character_id for char in characters}
+            ])
+        response_queue.request(f"player:{turn_id}", "user", directed_mentions, first=True)
         pending = [
-            cid for cid in updated_state.get("_pending_responses", [])
+            cid for cid in response_queue.pending()
             if cid not in directed_mentions
         ]
         # Interrogative/request addressees outrank courtesy mentions and older
@@ -334,6 +344,9 @@ class GenerativeOrchestrator:
             char = agent_queue[queue_index]
             queue_index += 1
             cid   = char.character_id
+            if not response_queue.can_respond(cid):
+                # An unanswered owner cannot be replaced by ambient speech.
+                break
             store = AgentMemoryStore(session_id, cid)
             nodes = await store.load_all(db)
 
@@ -424,6 +437,7 @@ class GenerativeOrchestrator:
             accumulators[cid] = acc
 
             if action_result and action_result.spoke and speak_quota > 0:
+                response_queue.answered(cid, {"turn_id": turn_id, "tick": tick, "speaker_id": cid})
                 # A role answering an earlier NPC-to-NPC question clears that
                 # obligation before any new question in its reply is recorded.
                 directed_pending = [target for target in directed_pending if target != cid]
@@ -443,6 +457,9 @@ class GenerativeOrchestrator:
                     and question_target_id not in directed_pending
                 ):
                     directed_pending.append(question_target_id)
+                    response_queue.request(
+                        f"npc:{turn_id}:{tick}:{cid}", cid, [question_target_id], first=True,
+                    )
                 if (
                     question_target_id
                     and question_target_id != "user"
@@ -555,13 +572,17 @@ class GenerativeOrchestrator:
                 agent_debug[cid]["reflection"]            = reflect_text
                 agent_debug[cid]["reflection_node_count"] = len(new_reflections)
 
+            if not action_result or not action_result.spoke:
+                if cid in response_queue.pending():
+                    response_queue.blocked(cid)
+                    break
             if floor_handed_to_player or terminal_floor_locked:
                 break
 
         # ----------------------------------------------------------------
         # FALLBACK  (guarantee at least one reply per turn)
         # ----------------------------------------------------------------
-        if not replies:
+        if not replies and not response_queue.pending() and not terminal_floor_locked:
             for char in agent_order:
                 if speak_quota <= 0:
                     break
@@ -615,11 +636,9 @@ class GenerativeOrchestrator:
         # PERSIST STATE
         # ----------------------------------------------------------------
         updated_state[WorldTimeline.KEY] = timeline.to_list()
-        spoken_ids = {reply.character_id for reply in replies}
-        updated_state["_pending_responses"] = list(dict.fromkeys([
-            *(cid for cid in player_response_targets if cid not in spoken_ids),
-            *directed_pending,
-        ]))
+        if terminal_floor_locked:
+            response_queue.close()
+        response_queue.save(updated_state)
         # The test runner must not interpret a fresh, directed player question
         # as task stagnation. The flag is public interaction state, not shared
         # private memory, and is cleared as soon as the next player turn is

@@ -1,0 +1,434 @@
+{
+  "characters": [
+    {
+      "aliases": [
+        "Priya",
+        "Priya Shah",
+        "SRE"
+      ],
+      "authority": {
+        "can_confirm": [
+          "incident_scope_identified",
+          "containment_active",
+          "recovery_plan_approved",
+          "next_review_minutes"
+        ],
+        "can_execute": [
+          "containment_active",
+          "incident_scope_identified"
+        ],
+        "can_propose": [
+          "incident_scope_identified",
+          "containment_active",
+          "recovery_plan_approved"
+        ]
+      },
+      "avatar_manifest": {
+        "avatar_style": "minecraft",
+        "team": "response"
+      },
+      "character_id": "sre_lead",
+      "character_name": "Priya Shah",
+      "fallback_actions": {
+        "default": "State the observed signal, identify the missing diagnostic evidence, and recommend the safest reversible next action."
+      },
+      "interaction_role": "technical_owner",
+      "job_title": "SRE Lead",
+      "persona": "Calm, technical, and hypothesis-driven.",
+      "private_state": {
+        "discoverable_information": [
+          "The error spike began after payment-router release 4.18."
+        ],
+        "goal": "Restore safely while limiting blast radius.",
+        "known_signal": "Error spike began after payment-router release 4.18."
+      },
+      "relationship_to_player": "teammate",
+      "responsibility": "Diagnose impact and execute containment and recovery.",
+      "side": "opponent",
+      "sort_order": 0,
+      "spawn_point": "seat_opposite",
+      "team_id": "response",
+      "tendency": {
+        "cooperation": "high",
+        "risk": "medium"
+      }
+    },
+    {
+      "aliases": [
+        "Marcus",
+        "Marcus Reed",
+        "Security"
+      ],
+      "authority": {
+        "can_confirm": [
+          "recovery_plan_approved",
+          "evidence_preserved"
+        ],
+        "can_execute": [
+          "evidence_preserved"
+        ],
+        "can_propose": [
+          "recovery_plan_approved",
+          "evidence_preserved"
+        ],
+        "cannot_commit": [
+          "containment_active",
+          "customer_owner_assigned"
+        ]
+      },
+      "avatar_manifest": {
+        "avatar_style": "minecraft",
+        "team": "security"
+      },
+      "character_id": "security_lead",
+      "character_name": "Marcus Reed",
+      "fallback_actions": {
+        "default": "Name the evidence-preservation concern and specify what must be checked before approval."
+      },
+      "interaction_role": "risk_authority",
+      "job_title": "Security Lead",
+      "persona": "Evidence-focused and appropriately skeptical.",
+      "private_state": {
+        "goal": "Avoid destroying evidence before compromise is ruled out."
+      },
+      "relationship_to_player": "teammate",
+      "responsibility": "Protect forensic evidence and assess security implications.",
+      "side": "opponent",
+      "sort_order": 1,
+      "spawn_point": "seat_side",
+      "team_id": "response",
+      "tendency": {
+        "cooperation": "medium",
+        "risk": "very_low"
+      }
+    },
+    {
+      "aliases": [
+        "Sofia",
+        "Sofia Martinez",
+        "Comms"
+      ],
+      "authority": {
+        "can_confirm": [
+          "customer_owner_assigned",
+          "next_review_minutes"
+        ],
+        "can_propose": [
+          "customer_owner_assigned"
+        ],
+        "cannot_commit": [
+          "containment_active",
+          "recovery_plan_approved"
+        ]
+      },
+      "avatar_manifest": {
+        "avatar_style": "minecraft",
+        "team": "communications"
+      },
+      "character_id": "communications_lead",
+      "character_name": "Sofia Martinez",
+      "fallback_actions": {
+        "default": "Draft a factual holding message and identify the approval or ETA still needed."
+      },
+      "interaction_role": "communications_owner",
+      "job_title": "Customer Communications Lead",
+      "persona": "Clear, empathetic, and deadline-oriented.",
+      "private_state": {
+        "goal": "Give customers accurate updates without speculation."
+      },
+      "relationship_to_player": "advisor",
+      "responsibility": "Own status-page and customer communication decisions.",
+      "side": "player_ally",
+      "sort_order": 2,
+      "spawn_point": "seat_adjacent",
+      "team_id": "response",
+      "tendency": {
+        "cooperation": "high",
+        "risk": "low"
+      }
+    }
+  ],
+  "description": "Coordinate a cross-functional response to a payment outage while balancing restoration, evidence preservation, and customer communication.",
+  "dispatch_rules": [
+    {
+      "is_active": true,
+      "max_speakers": 2,
+      "min_speakers": 1,
+      "name": "Technical response",
+      "priority_character_ids": [
+        "sre_lead",
+        "security_lead"
+      ],
+      "trigger_keywords": [
+        "error",
+        "logs",
+        "rollback",
+        "contain",
+        "deploy"
+      ],
+      "weights": {}
+    },
+    {
+      "is_active": true,
+      "max_speakers": 2,
+      "min_speakers": 1,
+      "name": "Customer impact",
+      "priority_character_ids": [
+        "communications_lead",
+        "sre_lead"
+      ],
+      "trigger_keywords": [
+        "customer",
+        "status page",
+        "message",
+        "ETA"
+      ],
+      "weights": {}
+    }
+  ],
+  "is_published": true,
+  "opponent_side_goal": "Each specialist protects their operational responsibility and risk boundaries.",
+  "orchestration_config": {},
+  "player_side_goal": "Lead the response and obtain explicit operational commitments.",
+  "scene_config": {
+    "camera": "first_person",
+    "environment": "operations_room",
+    "player_character": {
+      "avatar_manifest": {
+        "avatar_style": "minecraft",
+        "team": "incident-command"
+      },
+      "character_name": "Jordan Lee",
+      "job_title": "Incident Commander"
+    }
+  },
+  "schema_version": 2,
+  "slug": "incident-response-command-world-v1",
+  "task_config": {
+    "completion_conditions": {
+      "all": [
+        {
+          "field": "containment_active",
+          "operator": "==",
+          "required_status": "confirmed",
+          "value": true
+        },
+        {
+          "field": "recovery_plan_approved",
+          "operator": "==",
+          "required_status": "confirmed",
+          "value": true
+        },
+        {
+          "field": "customer_owner_assigned",
+          "operator": "!=",
+          "required_status": "confirmed",
+          "value": ""
+        },
+        {
+          "field": "next_review_minutes",
+          "operator": "<=",
+          "required_status": "confirmed",
+          "value": 30
+        }
+      ]
+    },
+    "config_version": 4,
+    "counterpart_objective": "Restore service without destroying evidence or creating unmanaged customer and compliance risk.",
+    "evaluator_instructions": [
+      "Technical suggestions are only proposed until the incident commander and responsible owner explicitly approve them.",
+      "Do not mark containment active merely because someone recommends it."
+    ],
+    "evidence_mode": "live_operation",
+    "phases": [
+      {
+        "description": "Establish facts and severity",
+        "phase_id": "triage"
+      },
+      {
+        "description": "Limit impact and preserve evidence",
+        "entry_conditions": {
+          "all": [
+            {
+              "field": "incident_scope_identified",
+              "operator": "==",
+              "required_status": "confirmed",
+              "value": true
+            }
+          ]
+        },
+        "phase_id": "containment"
+      },
+      {
+        "description": "Choose and execute a recovery path",
+        "entry_conditions": {
+          "all": [
+            {
+              "field": "containment_active",
+              "operator": "==",
+              "required_status": "confirmed",
+              "value": true
+            }
+          ]
+        },
+        "phase_id": "recovery"
+      },
+      {
+        "description": "Confirm owners and next review",
+        "entry_conditions": {
+          "all": [
+            {
+              "field": "recovery_plan_approved",
+              "operator": "==",
+              "required_status": "confirmed",
+              "value": true
+            },
+            {
+              "field": "customer_owner_assigned",
+              "operator": "!=",
+              "required_status": "confirmed",
+              "value": ""
+            }
+          ]
+        },
+        "phase_id": "handoff"
+      }
+    ],
+    "player_objective": "Contain the incident, approve a safe recovery plan, assign customer communication, and establish the next review time.",
+    "relevance_signals": [
+      "impact",
+      "contain",
+      "rollback",
+      "evidence",
+      "customer",
+      "owner",
+      "ETA",
+      "review",
+      "approve"
+    ],
+    "simulation_executor": {
+      "actions": {
+        "activate_containment": {
+          "actors": [
+            "sre_lead"
+          ],
+          "field": "containment_active",
+          "requires": {
+            "evidence_preserved": true
+          },
+          "value": true
+        },
+        "diagnose_scope": {
+          "actors": [
+            "sre_lead"
+          ],
+          "field": "incident_scope_identified",
+          "value": true
+        },
+        "preserve_evidence": {
+          "actors": [
+            "security_lead"
+          ],
+          "field": "evidence_preserved",
+          "requires": {
+            "incident_scope_identified": true
+          },
+          "value": true
+        }
+      },
+      "initial_facts": {},
+      "schema": "roommind-simulation-executor-v1"
+    },
+    "state_schema": {
+      "containment_active": {
+        "confirm_permissions": [
+          "sre_lead"
+        ],
+        "confirmation_policy": "responsible_participant",
+        "description": "Traffic containment is explicitly activated",
+        "propose_permissions": [
+          "player",
+          "sre_lead"
+        ],
+        "type": "boolean"
+      },
+      "customer_owner_assigned": {
+        "confirm_permissions": [
+          "player",
+          "communications_lead"
+        ],
+        "confirmation_policy": "player_and_assignee",
+        "description": "Named owner for customer communication",
+        "propose_permissions": [
+          "player",
+          "communications_lead"
+        ],
+        "type": "string"
+      },
+      "evidence_preserved": {
+        "confirm_permissions": [
+          "security_lead"
+        ],
+        "confirmation_policy": "responsible_participant",
+        "description": "Evidence preserved by the internal simulation executor",
+        "propose_permissions": [
+          "security_lead"
+        ],
+        "type": "boolean"
+      },
+      "incident_scope_identified": {
+        "confirm_permissions": [
+          "sre_lead"
+        ],
+        "confirmation_policy": "responsible_participant",
+        "description": "Impact and likely scope are explicitly identified",
+        "propose_permissions": [
+          "sre_lead"
+        ],
+        "type": "boolean"
+      },
+      "next_review_minutes": {
+        "confirm_permissions": [
+          "player",
+          "sre_lead",
+          "communications_lead"
+        ],
+        "confirmation_policy": "player_and_responsible_participant",
+        "description": "Time until next incident review",
+        "propose_permissions": [
+          "player"
+        ],
+        "type": "integer",
+        "unit": "minutes"
+      },
+      "recovery_plan_approved": {
+        "confirm_permissions": [
+          "player",
+          "sre_lead",
+          "security_lead"
+        ],
+        "confirmation_policy": "player_and_responsible_participant",
+        "description": "A concrete recovery plan is approved",
+        "propose_permissions": [
+          "player",
+          "sre_lead",
+          "security_lead"
+        ],
+        "type": "boolean"
+      }
+    },
+    "task_type": "incident_response",
+    "terminology": {
+      "completion": "response plan approved",
+      "player_name": "Jordan Lee",
+      "player_role": "Incident Commander",
+      "task": "incident command"
+    }
+  },
+  "template_meta": {
+    "source_sha256": "61f513f3dc5f7a32b78b3138c11e55d41c77d690053501b7404d26475ec5803b",
+    "source_slug": "incident-response-command",
+    "world_version": 1
+  },
+  "title": "Critical Service Incident Command (Simulated World v1)"
+}
