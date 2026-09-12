@@ -75,7 +75,7 @@ async def run(args, api_key):
     store = World(output / "world.sqlite")
     committed = sum(len(store.events("qual-" + arm))
                     for arm in ARMS if store.db.execute(
-                        "SELECT 1 FROM g5_worlds WHERE world_id=?", ("qual-" + arm,)).fetchone())
+                        "SELECT 1 FROM g5_worlds WHERE id=?", ("qual-" + arm,)).fetchone())
     try:
         for assignment in frozen["assignments"]:
             arm = assignment["arm"]
