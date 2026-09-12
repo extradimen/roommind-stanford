@@ -3,6 +3,7 @@ import tempfile
 import unittest
 
 from app.g5.governance import CandidateGovernance
+from app.g5.model_auditor import Findings
 from app.g5.runtime import Runtime
 from app.g5.world import World, Decision
 from test_g5_runtime import spec, manifest
@@ -20,6 +21,28 @@ def view():
 
 
 class GovernanceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_exhausted_structured_repairs_conservatively_reject_candidate(self):
+        calls = []
+        async def auditor(context, candidate, feedback=None):
+            calls.append(copy.deepcopy(feedback))
+            result = Findings([finding(source_ids=[])])
+            result.raw_response_content = '{"findings":[]}'
+            result.model_evidence = {
+                "request_sha256": "a" * 64, "response_sha256": "b" * 64}
+            return result
+        adapter = CandidateGovernance(auditor, auditor_id="exhaustion-test",
+                                      max_structured_revisions=2)
+        result = await adapter(view(), Decision("speak", "All contained"))
+        self.assertFalse(result.allowed)
+        self.assertIn("audit unavailable", result.reason)
+        self.assertEqual(len(calls), 3)
+        evidence = __import__("json").loads(result.model_evidence_json)
+        self.assertTrue(evidence["repair_exhausted"])
+        self.assertEqual(len(evidence["rejected"]), 3)
+        self.assertEqual(adapter.runtime_specification()["audit_repair_exhaustion"], {
+            "schema": "g5-conservative-governance-repair-exhaustion-v1",
+            "action": "reject-candidate-and-let-runtime-revise-or-wait"})
+
     def adapter(self, findings):
         async def audit(context, candidate):
             self.assertNotIn("world_audit", context)

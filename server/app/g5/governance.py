@@ -39,6 +39,9 @@ class CandidateGovernance:
                 "replacement_speech": False}
         if self.max_structured_revisions:
             spec["structured_repair"] = repair_spec(self.max_structured_revisions)
+            spec["audit_repair_exhaustion"] = {
+                "schema": "g5-conservative-governance-repair-exhaustion-v1",
+                "action": "reject-candidate-and-let-runtime-revise-or-wait"}
         getter = getattr(self.auditor, "runtime_specification", None)
         if getter is not None:
             spec["auditor"] = deepcopy(getter())
@@ -100,6 +103,17 @@ class CandidateGovernance:
                             allowed_values={"source_ids": sorted(sources), "hard_codes": list(HARD_CODES)}))
                     if revision >= self.max_structured_revisions:
                         if rejected:
+                            if self.max_structured_revisions:
+                                from app.g5.model_auditor import Findings
+                                findings = Findings([])
+                                findings.model_evidence = {
+                                    "specification": getattr(self.auditor,
+                                        "runtime_specification", lambda: None)(),
+                                    "repair_exhausted": True,
+                                    "rejected": deepcopy(rejected)}
+                                reasons = ["Governance audit unavailable after structured "
+                                           "validation failures; revise the candidate or wait."]
+                                break
                             raise StructuredOutputError(str(error), rejected) from None
                         raise
                     if not rejected:
