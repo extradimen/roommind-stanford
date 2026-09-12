@@ -42,6 +42,17 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(secret, request.content.decode())
             self.assertNotIn(secret, decision.model_evidence_json)
 
+    async def test_reasoning_effort_is_explicitly_bound_and_sent(self):
+        captured = []
+        def handler(request):
+            captured.append(json.loads(request.content))
+            return httpx.Response(200, json=self.response())
+        adapter = self.adapter(handler, reasoning_effort="low")
+        await adapter(self.request())
+        self.assertEqual(captured[0]["think"], "low")
+        self.assertEqual(adapter.runtime_specification()["adapter"], "g5-ollama-http-v2")
+        self.assertEqual(adapter.runtime_specification()["reasoning_effort"], "low")
+
     async def test_invalid_request_never_sent(self):
         def handler(request):
             self.fail("Unexpected HTTP request")
@@ -90,6 +101,9 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
         for timeout in (0, float("nan"), True):
             with self.assertRaises(ValueError):
                 OllamaTransport(self.binding, "https://host", timeout=timeout)
+        for effort in (False, "minimal", "LOW"):
+            with self.assertRaises(ValueError):
+                OllamaTransport(self.binding, "https://host", reasoning_effort=effort)
 
     def test_transport_configuration_is_bound_without_credentials(self):
         adapter = self.adapter(lambda r: httpx.Response(200), api_key="test-secret")

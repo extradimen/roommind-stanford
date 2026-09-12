@@ -76,7 +76,7 @@ def _components(binding, transport):
 
 def execution_binding(source_revision, *, model=DEFAULT_MODEL, endpoint_id=DEFAULT_ENDPOINT,
                       max_steps=DEFAULT_MAX_STEPS, max_revisions=DEFAULT_MAX_REVISIONS,
-                      authorization_id):
+                      authorization_id, reasoning_effort=None):
     """Freeze the exact online pilot binding without contacting a provider."""
     if not isinstance(source_revision, str) or not REVISION.fullmatch(source_revision):
         raise ValueError("Exact deployed source revision required")
@@ -88,7 +88,8 @@ def execution_binding(source_revision, *, model=DEFAULT_MODEL, endpoint_id=DEFAU
     binding = ModelBinding("ollama", model, endpoint_id, 0.2, 2048)
     budget = RequestBudget(524288, 262144)
     # A credential-free route is sufficient to freeze public specifications.
-    route = OllamaTransport(binding, "https://ollama.com", timeout=240)
+    route = OllamaTransport(binding, "https://ollama.com", timeout=240,
+                            reasoning_effort=reasoning_effort)
     transport = BudgetTransport(route, budget, delegate_id=endpoint_id)
     parts = _components(binding, transport)
     component_specs = {name: specification(parts[name])
@@ -171,6 +172,8 @@ def execution_binding(source_revision, *, model=DEFAULT_MODEL, endpoint_id=DEFAU
         "evaluation_authorized": False,
         "complete_block_screening_authorized": False,
     }
+    if reasoning_effort is not None:
+        raw["reasoning_effort"] = reasoning_effort
     return {**raw, "sha256": digest(raw)}
 
 
@@ -237,7 +240,8 @@ async def run_execution(execution, output, *, api_key, base_url="https://ollama.
     budget = RequestBudget(524288, 262144)
 
     def route():
-        return OllamaTransport(binding, base_url, api_key=api_key, timeout=240)
+        return OllamaTransport(binding, base_url, api_key=api_key, timeout=240,
+                               reasoning_effort=execution.get("reasoning_effort"))
 
     assembler = ExplicitRouteAssembler(
         {execution["endpoint_id"]: lambda: route()},

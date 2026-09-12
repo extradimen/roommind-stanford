@@ -5,6 +5,7 @@ network firewall. No credentials, environment lookup, or route discovery occurs.
 """
 from copy import deepcopy
 
+from app.factorial_study import digest
 from app.g5.capacity import BudgetTransport, RequestBudget
 from app.g5.governance import CandidateGovernance
 from app.g5.memory import MemoryCognition
@@ -103,7 +104,10 @@ class OfflineAssembler:
                 raise ValueError("Assignment not in frozen manifest")
             d = manifest["design"]
             args = deepcopy(inputs[assignment["scenario_id"]])
-            args.update(world=world, world_id="assembly-validation", manifest=deepcopy(manifest), ordinal=assignment["ordinal"])
+            args.update(world=world,
+                world_id="g5-assembly-" + digest(
+                    [manifest["manifest_sha256"], assignment["ordinal"]]),
+                manifest=deepcopy(manifest), ordinal=assignment["ordinal"])
             arm = assignment["arm"]
             for name in ("policy", "cognition", "governance"):
                 enabled = name == "policy" or (name == "cognition" and arm in ("B", "D")) or (name == "governance" and arm in ("C", "D"))
@@ -135,7 +139,7 @@ class ExplicitRouteAssembler(OfflineAssembler):
 
     def _build(self, s):
         kind = s.get("adapter", s.get("schema", s.get("scheduler")))
-        if kind == "g5-ollama-http-v1":
+        if kind in ("g5-ollama-http-v1", "g5-ollama-http-v2"):
             binding = s.get("binding")
             if not isinstance(binding, dict) or binding.get("provider") != "ollama":
                 raise ValueError("Ollama transport requires an Ollama binding")
@@ -153,8 +157,8 @@ class ExplicitRouteAssembler(OfflineAssembler):
                         if transport.get("adapter") == "g5-budgeted-transport-v1" else transport)
             if kind == "g5-batch-cosine-v1" and provider != "offline":
                 raise ValueError("Ollama chat route is not an embedding transport")
-            if provider == "ollama" and delegate.get("adapter") != "g5-ollama-http-v1":
+            if provider == "ollama" and delegate.get("adapter") not in ("g5-ollama-http-v1", "g5-ollama-http-v2"):
                 raise ValueError("Ollama model requires the frozen Ollama transport")
-            if provider == "offline" and delegate.get("adapter") == "g5-ollama-http-v1":
+            if provider == "offline" and delegate.get("adapter") in ("g5-ollama-http-v1", "g5-ollama-http-v2"):
                 raise ValueError("Offline model cannot use an Ollama route")
         return result

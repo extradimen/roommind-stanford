@@ -51,6 +51,9 @@ class AssemblyTests(unittest.TestCase):
             self.assertEqual(one["policy"].runtime_specification(), self.options["policy"].runtime_specification())
             self.assertEqual(one["cognition"] is not None, assignment["arm"] in ("B", "D"))
             self.assertEqual(one["governance"] is not None, assignment["arm"] in ("C", "D"))
+        world_ids = {factory(assignment)["world_id"]
+                     for assignment in self.options["manifest"]["assignments"]}
+        self.assertEqual(len(world_ids), len(self.options["manifest"]["assignments"]))
 
     def test_unknown_fields_prompt_protocol_and_transport_drift_rejected(self):
         original = self.options["manifest"]["design"]["components"]["policy"]

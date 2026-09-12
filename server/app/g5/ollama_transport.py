@@ -18,7 +18,7 @@ from app.g5.model_policy import Completion, ModelBinding, _unique_object
 
 class OllamaTransport:
     def __init__(self, binding: ModelBinding, base_url: str, *, api_key: str | None = None,
-                 timeout: float = 120, http_transport=None):
+                 timeout: float = 120, http_transport=None, reasoning_effort: str | None = None):
         binding.validate()
         route = urlsplit(base_url)
         if (binding.provider != "ollama" or route.scheme not in ("https", "http")
@@ -31,17 +31,24 @@ class OllamaTransport:
         if api_key is not None and (not isinstance(api_key, str) or not api_key.strip()
                                     or any(c.isspace() for c in api_key)):
             raise ValueError("Invalid explicit credential")
+        if reasoning_effort not in (None, "low", "medium", "high"):
+            raise ValueError("Invalid explicit reasoning effort")
         self.binding = binding
         self._url = base_url.rstrip("/") + "/api/chat"
         self._api_key = api_key
         self._timeout = timeout
         self._http_transport = http_transport
+        self._reasoning_effort = reasoning_effort
 
     def runtime_specification(self):
-        return {"adapter": "g5-ollama-http-v1", "binding": asdict(self.binding),
+        result = {"adapter": ("g5-ollama-http-v2" if self._reasoning_effort is not None
+                              else "g5-ollama-http-v1"), "binding": asdict(self.binding),
                 "route_sha256": digest(self._url), "timeout": self._timeout,
                 "stream": False, "format": "json", "redirects": False,
                 "ambient_environment": False, "automatic_retries": 0}
+        if self._reasoning_effort is not None:
+            result["reasoning_effort"] = self._reasoning_effort
+        return result
 
     async def __call__(self, request: dict) -> Completion:
         if (not isinstance(request, dict) or set(request) != {"binding", "messages"}
@@ -57,6 +64,8 @@ class OllamaTransport:
         payload = {"model": self.binding.model, "messages": messages, "stream": False,
                    "format": "json", "options": {"temperature": self.binding.temperature,
                                                    "num_predict": self.binding.max_tokens}}
+        if self._reasoning_effort is not None:
+            payload["think"] = self._reasoning_effort
         headers = {"Authorization": "Bearer " + self._api_key} if self._api_key else {}
         # No ambient proxies, cookies, credential sources or redirect following.
         try:

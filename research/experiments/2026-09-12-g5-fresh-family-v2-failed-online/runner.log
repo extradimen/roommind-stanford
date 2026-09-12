@@ -1,0 +1,108 @@
+Traceback (most recent call last):
+  File "/home/ubuntu/roommind-stanford-staging/scripts/g5_run_fresh_validation_v2.py", line 43, in <module>
+    main()
+  File "/home/ubuntu/roommind-stanford-staging/scripts/g5_run_fresh_validation_v2.py", line 35, in main
+    result = asyncio.run(run_execution(execution, output, api_key=key,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/fresh_execution_v2.py", line 267, in run_execution
+    result = await runtime.step()
+             ^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/runtime.py", line 254, in step
+    return await self._step(reopen=reopen)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/runtime.py", line 375, in _step
+    session_annotation = await self._invoke("session_annotation", version, actor,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/runtime.py", line 74, in _invoke
+    result = await result
+             ^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/model_session.py", line 54, in __call__
+    result = await self.transport(deepcopy(request))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/capacity.py", line 57, in __call__
+    result = await self.delegate(deepcopy(request))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/ollama_transport.py", line 83, in __call__
+    raise ValueError("Incomplete or unsupported Ollama response")
+ValueError: Incomplete or unsupported Ollama response
+Traceback (most recent call last):
+  File "/home/ubuntu/roommind-stanford-staging/scripts/g5_run_fresh_validation_v2.py", line 43, in <module>
+    main()
+  File "/home/ubuntu/roommind-stanford-staging/scripts/g5_run_fresh_validation_v2.py", line 35, in main
+    result = asyncio.run(run_execution(execution, output, api_key=key,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/fresh_execution_v2.py", line 267, in run_execution
+    result = await runtime.step()
+             ^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/runtime.py", line 254, in step
+    return await self._step(reopen=reopen)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/runtime.py", line 393, in _step
+    annotations = await self._invoke("annotation", version, actor, self.annotator,
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/runtime.py", line 74, in _invoke
+    result = await result
+             ^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/model_questions.py", line 57, in __call__
+    result = await self.transport(deepcopy(request))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/capacity.py", line 57, in __call__
+    result = await self.delegate(deepcopy(request))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/ollama_transport.py", line 83, in __call__
+    raise ValueError("Incomplete or unsupported Ollama response")
+ValueError: Incomplete or unsupported Ollama response
+Traceback (most recent call last):
+  File "/home/ubuntu/roommind-stanford-staging/scripts/g5_run_fresh_validation_v2.py", line 43, in <module>
+    main()
+  File "/home/ubuntu/roommind-stanford-staging/scripts/g5_run_fresh_validation_v2.py", line 35, in main
+    result = asyncio.run(run_execution(execution, output, api_key=key,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/fresh_execution_v2.py", line 267, in run_execution
+    result = await runtime.step()
+             ^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/runtime.py", line 254, in step
+    return await self._step(reopen=reopen)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/runtime.py", line 375, in _step
+    session_annotation = await self._invoke("session_annotation", version, actor,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/runtime.py", line 74, in _invoke
+    result = await result
+             ^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/model_session.py", line 54, in __call__
+    result = await self.transport(deepcopy(request))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/capacity.py", line 57, in __call__
+    result = await self.delegate(deepcopy(request))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/ollama_transport.py", line 83, in __call__
+    raise ValueError("Incomplete or unsupported Ollama response")
+ValueError: Incomplete or unsupported Ollama response
