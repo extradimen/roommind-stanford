@@ -83,6 +83,50 @@ def session_hierarchy_options(world, arm):
 
 
 class HierarchyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_exhausted_update_repairs_conservatively_preserve_existing_plan(self):
+        source = view()
+        requests = []
+
+        async def reflector(context): return []
+
+        async def transport(request):
+            context = json.loads(request["messages"][1]["content"])
+            requests.append(context)
+            if context["previous_plan"] is None:
+                proposal = plan(context["actor"], [context["memory"]["retrieved"][0]["id"]],
+                                context["operations"])
+                body = {"goal": proposal["goal"], "updates": proposal["steps"]}
+            else:
+                old = copy.deepcopy(context["previous_plan"]["proposal"]["steps"][0])
+                old["text"] = "invalid identity replacement"
+                body = {"goal": context["previous_plan"]["proposal"]["goal"],
+                        "updates": [old]}
+            return Completion(json.dumps(body), "offline", "fixed", "mock",
+                              digest(request), "stop")
+
+        adapter = ReflectiveCognition(memory=MemoryCognition(top_k=8), reflector=reflector,
+            planner=ModelCognitionGenerator("hierarchical_updates",
+                ModelBinding("offline", "fixed", "mock", .2, 4096), transport),
+            reflector_id="none", planner_id="fallback-recovery", hierarchical=True,
+            plan_updates=True, max_plan_revisions=2)
+        initial = await adapter(source)
+        source["cognition_state"] = initial
+        source["observations"].append({"event_id": "changed", "kind": "claim",
+            "actor": "security", "content": "The scope changed."})
+        requests.clear()
+        result = await adapter(source)
+        self.assertEqual(len(requests), 3)
+        self.assertEqual(result["plans"][-1]["update_proposal"], {
+            "goal": initial["plans"][-1]["proposal"]["goal"], "updates": []})
+        self.assertEqual(result["plans"][-1]["proposal"],
+                         initial["plans"][-1]["proposal"])
+        rejected = [row for row in result["generation_receipts"]
+                    if row["stage"] == "structured_rejected"]
+        self.assertEqual(len(rejected), 3)
+        self.assertEqual(adapter.runtime_specification()["plan_repair_exhaustion"], {
+            "schema": "g5-conservative-plan-repair-exhaustion-v1",
+            "action": "preserve-existing-plan", "requires_previous_plan": True})
+
     async def test_identity_then_retroactive_completion_use_exact_recovery_contract(self):
         source = view()
         requests = []

@@ -86,6 +86,12 @@ class ReflectiveCognition:
         spec.pop("reflection_repair", None)
         if self.max_reflection_revisions and self.max_plan_revisions != self.max_reflection_revisions:
             spec["reflection_repair"] = repair_spec(self.max_reflection_revisions)
+        spec.pop("plan_repair_exhaustion", None)
+        if self.plan_updates and self.max_plan_revisions:
+            spec["plan_repair_exhaustion"] = {
+                "schema": "g5-conservative-plan-repair-exhaustion-v1",
+                "action": "preserve-existing-plan",
+                "requires_previous_plan": True}
         for name in ("reflector", "planner"):
             getter = getattr(getattr(self, name), "runtime_specification", None)
             spec.pop(name + "_specification", None)
@@ -223,6 +229,15 @@ class ReflectiveCognition:
                             error, field_path=path, allowed_values=allowed))
                     if revision >= self.max_plan_revisions:
                         if rejected_plans:
+                            if self.plan_updates and active_plan is not None:
+                                generated_proposal = {
+                                    "goal": planner_context["previous_plan"]["proposal"]["goal"],
+                                    "updates": []}
+                                proposal = expand_updates(
+                                    generated_proposal, active_plan, available)
+                                validate(proposal, active_plan, view["actor"],
+                                         view["operations"], validation_sources)
+                                break
                             raise StructuredOutputError(str(error), rejected_plans) from None
                         raise
                     if not rejected_plans:
