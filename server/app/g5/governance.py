@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from app.factorial_study import digest
 from app.g5.runtime import Review
 from app.g5.structured_output import (StructuredOutputError, capsule, feedback,
-                                      repair_spec)
+                                      rebased, repair_spec)
 
 HARD_CODES = ("protected_disclosure", "role_impersonation", "unsupported_fact")
 
@@ -92,7 +92,7 @@ class CandidateGovernance:
                 except ValueError as error:
                     inherited = getattr(error, "structured_failures", [])
                     if inherited:
-                        rejected.extend(deepcopy(inherited))
+                        rejected.extend(rebased(inherited, revision))
                     elif "findings" in locals() and hasattr(findings, "raw_response_content"):
                         evidence = findings.model_evidence
                         rejected.append(capsule("governance_auditor", revision,

@@ -2,7 +2,7 @@ import unittest
 
 from app.factorial_study import digest
 from app.g5.structured_output import (StructuredOutputError, capsule, feedback,
-                                      repair_spec, validate_failure)
+                                      rebased, repair_spec, validate_failure)
 
 
 class StructuredOutputTests(unittest.TestCase):
@@ -20,6 +20,7 @@ class StructuredOutputTests(unittest.TestCase):
         self.assertEqual(note["allowed_values"], ["event:1"])
         error = StructuredOutputError(row["message"], [row])
         self.assertEqual(error.structured_failures, [row])
+        self.assertEqual(rebased([row], 3)[0]["revision"], 3)
 
     def test_revision_limit_is_bounded(self):
         self.assertEqual(repair_spec(2)["max_revisions"], 2)

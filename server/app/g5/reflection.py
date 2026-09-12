@@ -10,7 +10,7 @@ from copy import deepcopy
 from app.factorial_study import digest
 from app.g5.memory import MemoryCognition
 from app.g5.structured_output import (StructuredOutputError, capsule, feedback,
-                                      repair_spec)
+                                      rebased, repair_spec)
 
 SCHEMA = "g5-reflection-plan-v1"
 PLAN_REPAIR_PROTOCOL = "g5-plan-validation-feedback-v1"
@@ -146,7 +146,7 @@ class ReflectiveCognition:
                 except ValueError as error:
                     inherited = getattr(error, "structured_failures", [])
                     if inherited:
-                        rejected_reflections.extend(deepcopy(inherited))
+                        rejected_reflections.extend(rebased(inherited, revision))
                     elif "generated" in locals() and hasattr(generated, "raw_response_content"):
                         evidence = generated.generation_evidence
                         rejected_reflections.append(capsule("cognition.reflection", revision,
@@ -188,7 +188,7 @@ class ReflectiveCognition:
                 except ValueError as error:
                     inherited = getattr(error, "structured_failures", [])
                     if inherited:
-                        rejected_plans.extend(deepcopy(inherited))
+                        rejected_plans.extend(rebased(inherited, revision))
                     elif "generated_proposal" in locals() and hasattr(generated_proposal, "raw_response_content"):
                         evidence = generated_proposal.generation_evidence
                         path = ("$.updates[*].status_source_ids"

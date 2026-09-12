@@ -56,11 +56,13 @@ async def run(args, api_key):
                             reasoning_effort="low")
     transport = BudgetTransport(route, RequestBudget(2097152, 1048576),
                                 delegate_id=args.endpoint_id)
-    parts = _components(binding, transport, max_structured_revisions=2)
+    parts = _components(binding, transport,
+                        max_structured_revisions=args.max_structured_revisions)
     frozen = manifest(args.source_revision, parts)
     header_raw = {"schema": "g5-v6-live-world-qualification-v1",
                   "classification": "synthetic-engineering-only",
                   "source_revision": args.source_revision,
+                  "max_structured_revisions": args.max_structured_revisions,
                   "manifest": frozen, "max_steps": 16, "max_revisions": 1,
                   "credential_serialized": False,
                   "research_use": "must_not_enter_development_or_confirmatory_evidence"}
@@ -141,9 +143,12 @@ def main():
     parser.add_argument("--model", default="gpt-oss:120b")
     parser.add_argument("--endpoint-id", default="ollama-cloud-g5-fresh-v2")
     parser.add_argument("--base-url", default="https://ollama.com")
+    parser.add_argument("--max-structured-revisions", type=int, default=2)
     args = parser.parse_args()
     if len(args.source_revision) != 40 or any(c not in "0123456789abcdef" for c in args.source_revision):
         raise SystemExit("Exact source revision required")
+    if not 0 <= args.max_structured_revisions <= 4:
+        raise SystemExit("Bounded structured revision limit required")
     values = dotenv_values(args.credential_source)
     key = values.get("OLLAMA_API_KEY") or values.get("OLLAMA_CLOUD_API_KEY")
     if not key:

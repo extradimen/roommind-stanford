@@ -112,3 +112,13 @@ def validate_failures(rows):
         raise ValueError("Nonempty structured rejection history required")
     for row in rows:
         validate_failure(row)
+
+
+def rebased(rows, revision):
+    """Assign the outer bounded-attempt index to parser/envelope failures."""
+    validate_failures(rows)
+    result = deepcopy(rows)
+    for row in result:
+        row["revision"] = revision
+        validate_failure(row)
+    return result

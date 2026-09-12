@@ -51,7 +51,8 @@ async def qualify(args, api_key):
                             reasoning_effort="low")
     transport = BudgetTransport(route, RequestBudget(524288, 262144),
                                 delegate_id=args.endpoint_id)
-    parts = _components(binding, transport, max_structured_revisions=2)
+    parts = _components(binding, transport,
+                        max_structured_revisions=args.max_structured_revisions)
     world = World(":memory:")
     try:
         world.create("g5-v6-interface-qualification", SPEC,
@@ -79,6 +80,7 @@ async def qualify(args, api_key):
                "source_revision": args.source_revision,
                "provider": "ollama", "model": args.model,
                "endpoint_id": args.endpoint_id, "reasoning_effort": "low",
+               "max_structured_revisions": args.max_structured_revisions,
                "credential_serialized": False,
                "interfaces": {
                    "policy": {"decision": asdict(policy)},
@@ -103,9 +105,12 @@ def main():
     parser.add_argument("--model", default="gpt-oss:120b")
     parser.add_argument("--endpoint-id", default="ollama-cloud-g5-fresh-v2")
     parser.add_argument("--base-url", default="https://ollama.com")
+    parser.add_argument("--max-structured-revisions", type=int, default=2)
     args = parser.parse_args()
     if len(args.source_revision) != 40 or any(c not in "0123456789abcdef" for c in args.source_revision):
         raise SystemExit("Exact source revision required")
+    if not 0 <= args.max_structured_revisions <= 4:
+        raise SystemExit("Bounded structured revision limit required")
     key = (dotenv_values(args.credential_source).get("OLLAMA_API_KEY")
            or dotenv_values(args.credential_source).get("OLLAMA_CLOUD_API_KEY"))
     if not key:
