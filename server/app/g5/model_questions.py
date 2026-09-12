@@ -143,6 +143,9 @@ class ModelQuestionAnnotator:
                 message = ("Invalid question annotation JSON" if isinstance(error, json.JSONDecodeError)
                            else str(error))
                 allowed = {"participants": context["participants"],
+                           "question_target_ids": [participant for participant
+                                                   in context["participants"]
+                                                   if participant != context["actor"]],
                            "question_ids": [q.get("id") for q in context["questions"]["questions"]]}
                 rejected.append(capsule("question_annotation", revision, request_hash,
                                         result.content, message, allowed_values=allowed))

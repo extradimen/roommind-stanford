@@ -59,6 +59,8 @@ class ModelQuestionTests(unittest.IsolatedAsyncioTestCase):
         feedback = __import__("json").loads(calls[1]["messages"][1]["content"])["context"]["validation_feedback"]
         self.assertEqual(feedback["error"]["message"], "Invalid question targets")
         self.assertEqual(feedback["error"]["error_code"], "reference")
+        self.assertEqual(feedback["allowed_values"]["participants"], ["a", "b"])
+        self.assertEqual(feedback["allowed_values"]["question_target_ids"], ["b"])
         self.assertEqual(len(output.model_evidence["rejected"]), 1)
         self.assertEqual(output.model_evidence["rejected"][0]["response_sha256"],
                          digest('{"annotations":[{"kind":"question","start":0,"end":6,"targets":["a"]}]}'))
