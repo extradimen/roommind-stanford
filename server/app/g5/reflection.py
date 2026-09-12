@@ -199,12 +199,13 @@ class ReflectiveCognition:
                         origins = (active_plan or {}).get("task_origins", {})
                         from app.g5.planning import completion_source_ids
                         allowed = {"source_ids": sorted(validation_sources),
-                            "mutable_existing_tasks": [
-                                {**{key: deepcopy(step[key]) for key in immutable},
-                                 "current_status": step["status"],
-                                 "completion_source_ids": completion_source_ids(
-                                     step, origins.get(step["id"]), validation_sources, view["actor"])}
+                            "mutable_existing_tasks": [{key: deepcopy(step[key]) for key in immutable}
                                 for step in existing if step["status"] not in {"completed", "cancelled"}],
+                            "current_status_by_task": {step["id"]: step["status"] for step in existing
+                                if step["status"] not in {"completed", "cancelled"}},
+                            "completion_source_ids_by_task": {step["id"]: completion_source_ids(
+                                step, origins.get(step["id"]), validation_sources, view["actor"])
+                                for step in existing if step["status"] not in {"completed", "cancelled"}},
                             "terminal_task_ids": [step["id"] for step in existing
                                                   if step["status"] in {"completed", "cancelled"}],
                             "new_task_initial_status": ["planned"]}
