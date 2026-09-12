@@ -10,6 +10,7 @@ from test_g5_cognition_storage import storage_options
 from app.g5.assembly import ExplicitRouteAssembler, OfflineAssembler
 from app.g5.capacity import BudgetTransport, RequestBudget
 from app.g5.model_policy import ModelBinding, ModelPolicy
+from app.g5.model_questions import ModelQuestionAnnotator
 from app.g5.ollama_transport import OllamaTransport
 from app.g5.world import World
 
@@ -65,6 +66,16 @@ class AssemblyTests(unittest.TestCase):
             value = copy.deepcopy(original); change(value)
             with self.assertRaises(ValueError): self.assembler.component(value)
         with self.assertRaises(ValueError): self.assembler.component({"adapter": "arbitrary.module"})
+
+    def test_question_repair_limit_roundtrips_from_frozen_specification(self):
+        original = self.options["manifest"]["design"]["question_annotation"]
+        value = copy.deepcopy(original)
+        value["question_repair"] = {
+            "schema": "g5-question-validation-feedback-v1", "max_revisions": 2}
+        rebuilt = self.assembler.component(value)
+        self.assertIsInstance(rebuilt, ModelQuestionAnnotator)
+        self.assertEqual(rebuilt.max_revisions, 2)
+        self.assertEqual(rebuilt.runtime_specification(), value)
 
     def test_changed_runtime_inputs_rejected_without_creating_world(self):
         values = inputs(self.options)

@@ -48,7 +48,7 @@ DEFAULT_MAX_STEPS = 16
 DEFAULT_MAX_REVISIONS = 1
 
 
-def _components(binding, transport, *, max_plan_revisions=0):
+def _components(binding, transport, *, max_plan_revisions=0, max_question_revisions=0):
     policy = ModelPolicy(binding, transport)
     memory = MemoryCognition(top_k=8)
     cognition = ReflectiveCognition(
@@ -68,7 +68,8 @@ def _components(binding, transport, *, max_plan_revisions=0):
         "policy": policy,
         "cognition": cognition,
         "governance": governance,
-        "question_annotator": ModelQuestionAnnotator(binding, transport),
+        "question_annotator": ModelQuestionAnnotator(
+            binding, transport, max_revisions=max_question_revisions),
         "session_annotator": ModelSessionAnnotator(binding, transport),
         "scheduler": QuestionScheduler(priority_enabled=True, max_priority_streak=1),
         "observation_window": ObservationWindow(max_observations=96, max_chars=262144),
@@ -77,7 +78,8 @@ def _components(binding, transport, *, max_plan_revisions=0):
 
 def execution_binding(source_revision, *, model=DEFAULT_MODEL, endpoint_id=DEFAULT_ENDPOINT,
                       max_steps=DEFAULT_MAX_STEPS, max_revisions=DEFAULT_MAX_REVISIONS,
-                      authorization_id, reasoning_effort=None, max_plan_revisions=0):
+                      authorization_id, reasoning_effort=None, max_plan_revisions=0,
+                      max_question_revisions=0):
     """Freeze the exact online pilot binding without contacting a provider."""
     if not isinstance(source_revision, str) or not REVISION.fullmatch(source_revision):
         raise ValueError("Exact deployed source revision required")
@@ -92,7 +94,8 @@ def execution_binding(source_revision, *, model=DEFAULT_MODEL, endpoint_id=DEFAU
     route = OllamaTransport(binding, "https://ollama.com", timeout=240,
                             reasoning_effort=reasoning_effort)
     transport = BudgetTransport(route, budget, delegate_id=endpoint_id)
-    parts = _components(binding, transport, max_plan_revisions=max_plan_revisions)
+    parts = _components(binding, transport, max_plan_revisions=max_plan_revisions,
+                        max_question_revisions=max_question_revisions)
     component_specs = {name: specification(parts[name])
                        for name in ("policy", "cognition", "governance")}
     question = specification(parts["question_annotator"])
@@ -177,6 +180,8 @@ def execution_binding(source_revision, *, model=DEFAULT_MODEL, endpoint_id=DEFAU
         raw["reasoning_effort"] = reasoning_effort
     if max_plan_revisions:
         raw["max_plan_revisions"] = max_plan_revisions
+    if max_question_revisions:
+        raw["max_question_revisions"] = max_question_revisions
     return {**raw, "sha256": digest(raw)}
 
 

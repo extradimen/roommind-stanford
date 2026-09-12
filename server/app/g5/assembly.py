@@ -64,6 +64,9 @@ class OfflineAssembler:
             transport = self.component(s["transport"])
             if kind == "g5-cognitive-json-v1":
                 return ModelCognitionGenerator(s["kind"], binding, transport)
+            if kind == "g5-model-questions-v1":
+                return ModelQuestionAnnotator(binding, transport,
+                    max_revisions=(s.get("question_repair") or {}).get("max_revisions", 0))
             return (EmbeddingScorer if kind == "g5-batch-cosine-v1" else models[kind])(binding, transport)
         if kind == "g5-source-memory-v1":
             semantic = s.get("semantic_specification")
