@@ -135,6 +135,10 @@ class HierarchyTests(unittest.IsolatedAsyncioTestCase):
                             first["allowed_values"]["completion_source_ids_by_task"].values()))
         self.assertEqual(first["allowed_values"]["required_goal_status_by_id"], {})
         self.assertEqual(first["allowed_values"]["terminal_task_ids"], [])
+        self.assertEqual(first["allowed_values"]["actor"], "sre")
+        self.assertEqual(first["allowed_values"]["operations"], ["contain"])
+        self.assertEqual(first["allowed_values"]["safe_no_change_update"], {
+            "goal": initial["plans"][-1]["proposal"]["goal"], "updates": []})
         self.assertEqual(second["error"]["field_path"], "$.updates[*].status")
         self.assertEqual(second["allowed_values"]["new_task_initial_status"], ["planned"])
         self.assertEqual(result["plans"][-1]["update_proposal"]["updates"], [])

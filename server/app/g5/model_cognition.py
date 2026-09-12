@@ -77,6 +77,9 @@ cannot complete it even when it reports a matching action or utterance.
 When required_goal_status_by_id is nonempty, emit updates for those goal IDs with
 exactly the listed status while copying every immutable field from the supplied
 mutable task template. This status describes plan progress, not world success.
+If safe_no_change_update is supplied and the rejected defect cannot be corrected
+with the listed values, return that exact object. Preserving the existing plan is
+safer than inventing a completion, operation, source, task identity or hierarchy.
 """
 
 

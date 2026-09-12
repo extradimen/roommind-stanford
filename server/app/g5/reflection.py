@@ -201,6 +201,8 @@ class ReflectiveCognition:
                         required_goals = (required_goal_statuses(proposal)
                             if str(error) == "Goal status must agree with children, not imply world success" else {})
                         allowed = {"source_ids": sorted(validation_sources),
+                            "actor": view["actor"],
+                            "operations": deepcopy(view["operations"]),
                             "mutable_existing_tasks": [{key: deepcopy(step[key]) for key in immutable}
                                 for step in existing if step["status"] not in {"completed", "cancelled"}],
                             "current_status_by_task": {step["id"]: step["status"] for step in existing
@@ -212,6 +214,10 @@ class ReflectiveCognition:
                             "terminal_task_ids": [step["id"] for step in existing
                                                   if step["status"] in {"completed", "cancelled"}],
                             "new_task_initial_status": ["planned"]}
+                        if active_plan is not None:
+                            allowed["safe_no_change_update"] = {
+                                "goal": planner_context["previous_plan"]["proposal"]["goal"],
+                                "updates": []}
                         rejected_plans.append(capsule("cognition.planning", revision,
                             evidence["request_sha256"], generated_proposal.raw_response_content,
                             error, field_path=path, allowed_values=allowed))
