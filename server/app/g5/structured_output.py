@@ -27,6 +27,10 @@ def classify(message):
     lower = text.lower()
     if "task transition needs observed evidence" in lower:
         return "transition_evidence", "$.updates[*].status_source_ids"
+    if "task identity cannot silently change" in lower:
+        return "identity", "$.updates[*]"
+    if "retroactively create completed intentions" in lower:
+        return "transition", "$.updates[*].status"
     if "completion requires" in lower:
         return "transition_evidence", "$.updates[*].status_source_ids"
     if "source" in lower or "evidence" in lower or "target" in lower or "question" in lower:

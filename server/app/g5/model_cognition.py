@@ -61,6 +61,10 @@ local validator. Correct that exact defect while preserving all valid prior-plan
 records. Never invent an ID: every source_ids and status_source_ids value must
 come from memory.retrieved. When memory.retrieved is nonempty, every new task,
 including a goal, ask, wait, defer or decline task, needs a nonempty source_ids.
+For an identity error, copy every immutable field of an existing task exactly and
+change only status/status_source_ids. A newly introduced task must start planned;
+never introduce it as active, deferred, cancelled or completed. Returning an empty
+updates list is valid when no evidence-bound change is needed.
 """
 
 

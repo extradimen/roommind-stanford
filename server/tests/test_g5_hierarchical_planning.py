@@ -83,6 +83,55 @@ def session_hierarchy_options(world, arm):
 
 
 class HierarchyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_identity_then_retroactive_completion_use_exact_recovery_contract(self):
+        source = view()
+        requests = []
+
+        async def reflector(context): return []
+
+        async def transport(request):
+            context = json.loads(request["messages"][1]["content"])
+            requests.append(context)
+            if context["previous_plan"] is None:
+                proposal = plan(context["actor"], [context["memory"]["retrieved"][0]["id"]],
+                                context["operations"])
+                return Completion(json.dumps({"goal": proposal["goal"], "updates": proposal["steps"]}),
+                                  "offline", "fixed", "mock", digest(request), "stop")
+            revision = len([row for row in requests if row["previous_plan"] is not None]) - 1
+            if revision == 0:
+                old = copy.deepcopy(context["previous_plan"]["proposal"]["steps"][0])
+                old["text"] = "silently changed identity"
+                updates = [old]
+            elif revision == 1:
+                source_id = context["memory"]["retrieved"][0]["id"]
+                updates = [step("invented-complete", context["actor"], [source_id],
+                                status="completed", status_source_ids=[source_id])]
+            else:
+                updates = []
+            return Completion(json.dumps({"goal": context["previous_plan"]["proposal"]["goal"],
+                                          "updates": updates}),
+                              "offline", "fixed", "mock", digest(request), "stop")
+
+        adapter = ReflectiveCognition(memory=MemoryCognition(top_k=8), reflector=reflector,
+            planner=ModelCognitionGenerator("hierarchical_updates",
+                ModelBinding("offline", "fixed", "mock", .2, 4096), transport),
+            reflector_id="none", planner_id="identity-recovery", hierarchical=True,
+            plan_updates=True, max_plan_revisions=2)
+        initial = await adapter(source)
+        source["cognition_state"] = initial
+        source["observations"].append({"event_id": "changed", "kind": "claim",
+            "actor": "security", "content": "The scope changed."})
+        requests.clear()
+        result = await adapter(source)
+        self.assertEqual(len(requests), 3)
+        first = requests[1]["validation_feedback"]
+        second = requests[2]["validation_feedback"]
+        self.assertEqual(first["error"]["error_code"], "identity")
+        self.assertTrue(first["allowed_values"]["existing_tasks"])
+        self.assertEqual(second["error"]["field_path"], "$.updates[*].status")
+        self.assertEqual(second["allowed_values"]["new_task_initial_status"], ["planned"])
+        self.assertEqual(result["plans"][-1]["update_proposal"]["updates"], [])
+
     async def test_v5_missing_transition_evidence_is_repaired_with_allowed_source(self):
         source = view()
         requests = []

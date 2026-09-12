@@ -193,9 +193,15 @@ class ReflectiveCognition:
                         evidence = generated_proposal.generation_evidence
                         path = ("$.updates[*].status_source_ids"
                                 if str(error) == "Task transition needs observed evidence" else None)
+                        immutable = ("id", "parent", "depends_on", "actor", "intent",
+                                     "text", "operation", "source_ids")
+                        allowed = {"source_ids": sorted(validation_sources),
+                            "existing_tasks": [{key: deepcopy(step[key]) for key in immutable}
+                                for step in (active_plan or {}).get("proposal", {}).get("steps", [])],
+                            "new_task_initial_status": ["planned"]}
                         rejected_plans.append(capsule("cognition.planning", revision,
                             evidence["request_sha256"], generated_proposal.raw_response_content,
-                            error, field_path=path, allowed_values=sorted(validation_sources)))
+                            error, field_path=path, allowed_values=allowed))
                     if revision >= self.max_plan_revisions:
                         if rejected_plans:
                             raise StructuredOutputError(str(error), rejected_plans) from None

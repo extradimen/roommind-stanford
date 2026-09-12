@@ -27,6 +27,16 @@ class StructuredOutputTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 repair_spec(value)
 
+    def test_plan_identity_and_new_terminal_paths_are_precise(self):
+        identity = capsule("cognition.planning", 0, "a" * 64, "{}",
+                           "Task identity cannot silently change; retain old task and create a new one")
+        terminal = capsule("cognition.planning", 1, "b" * 64, "{}",
+                           "Do not retroactively create completed intentions")
+        self.assertEqual((identity["error_code"], identity["field_path"]),
+                         ("identity", "$.updates[*]"))
+        self.assertEqual((terminal["error_code"], terminal["field_path"]),
+                         ("transition", "$.updates[*].status"))
+
 
 if __name__ == "__main__":
     unittest.main()
