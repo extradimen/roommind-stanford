@@ -2030,6 +2030,11 @@ v6绑定把全部结构接口的修订上限统一冻结为2。执行器将终�
 `docs/G5_V6_V7_ENGINEERING_QUALIFICATION_20260912.md`。资格产物仅是合成工程证据；8条评分器开发
 验证、32条架构筛查和确认性研究仍未启动。
 
+资格复核后发现 macOS Python 子进程可能在`onnxruntime::PosixTelemetry::Shutdown`退出清理阶段
+触发`SIGABRT`。关闭遥测后完整G5套件再次通过403项，测试前后崩溃报告新增或变化为0。新增本地
+测试入口`scripts/test_g5_local.sh`，在依赖导入前设置`ORT_DISABLE_TELEMETRY=1`并传递给子进程；
+这不改变远端资格运行、模型绑定或既有产物。
+
 回归期间本机macOS还记录了ONNX Runtime在`PosixTelemetry::Shutdown`退出清理阶段的子进程
 `SIGABRT`。它未发生在G5提交路径，且远端资格产物已独立复核，因此不撤销资格结果；但本机
 清洁退出门应记为未通过，后续须在初始化前关闭ORT遥测并以零新增崩溃报告复验。
