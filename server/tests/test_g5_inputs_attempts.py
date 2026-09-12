@@ -7,6 +7,7 @@ from app.factorial_study import freeze_design, digest
 from app.g5.attempts import new_record
 from app.g5.role_inputs import actor_view, validate_inputs
 from app.g5.runtime import Runtime
+from app.g5.structured_output import StructuredOutputError, capsule
 from app.g5.world import Decision, World
 from test_g5_runtime import manifest, spec
 
@@ -76,6 +77,19 @@ class AttemptTests(unittest.IsolatedAsyncioTestCase):
             await runtime.step()
         records = self.world.attempts("attempt")
         self.assertEqual([r["status"] for r in records], ["started", "failed"])
+        self.assertEqual(self.world.events("attempt"), [])
+
+    async def test_rejected_structured_body_is_retained_only_in_attempt_journal(self):
+        failure = capsule("policy", 0, "a" * 64, '{"action":"bad"}',
+                          "Invalid decision fields")
+        async def invalid(view, feedback):
+            raise StructuredOutputError("Invalid decision fields", [failure])
+
+        runtime = self.runtime(invalid)
+        with self.assertRaises(StructuredOutputError):
+            await runtime.step()
+        records = self.world.attempts("attempt")
+        self.assertEqual(records[-1]["structured_failures"], [failure])
         self.assertEqual(self.world.events("attempt"), [])
 
     async def test_role_card_change_cannot_reuse_frozen_manifest(self):

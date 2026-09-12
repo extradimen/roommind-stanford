@@ -83,6 +83,53 @@ def session_hierarchy_options(world, arm):
 
 
 class HierarchyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_v5_missing_transition_evidence_is_repaired_with_allowed_source(self):
+        source = view()
+        requests = []
+
+        async def reflector(context):
+            return []
+
+        async def transport(request):
+            context = json.loads(request["messages"][1]["content"])
+            requests.append(context)
+            if context["previous_plan"] is None:
+                proposal = plan(context["actor"], [context["memory"]["retrieved"][0]["id"]],
+                                context["operations"])
+                body = {"goal": proposal["goal"], "updates": proposal["steps"]}
+                return Completion(json.dumps(body), "offline", "fixed", "mock", digest(request), "stop")
+            ask = copy.deepcopy(next(row for row in context["previous_plan"]["proposal"]["steps"]
+                                     if row["id"] == "ask"))
+            ask["status"] = "completed"
+            ask["status_source_ids"] = []
+            if "validation_feedback" in context:
+                observed = next(row["id"] for row in context["memory"]["retrieved"]
+                                if "Can we proceed?" in row["text"])
+                ask["status_source_ids"] = [observed]
+            body = {"goal": context["previous_plan"]["proposal"]["goal"], "updates": [ask]}
+            return Completion(json.dumps(body), "offline", "fixed", "mock", digest(request), "stop")
+
+        adapter = ReflectiveCognition(memory=MemoryCognition(top_k=8), reflector=reflector,
+            planner=ModelCognitionGenerator("hierarchical_updates",
+                ModelBinding("offline", "fixed", "mock", .2, 4096), transport),
+            reflector_id="none", planner_id="v5-regression", hierarchical=True,
+            plan_updates=True, max_plan_revisions=2)
+        initial = await adapter(source)
+        source["cognition_state"] = initial
+        source["observations"].append({"event_id": "own-question", "kind": "claim",
+            "actor": "sre", "content": "Can we proceed?"})
+        requests.clear()
+        state = await adapter(source)
+        self.assertEqual(len(requests), 2)
+        error = requests[1]["validation_feedback"]["error"]
+        self.assertEqual(error["error_code"], "transition_evidence")
+        self.assertEqual(error["field_path"], "$.updates[*].status_source_ids")
+        self.assertTrue(state["plans"][-1]["proposal"]["steps"][1]["status_source_ids"])
+        rejected = [row["failure"] for row in state["generation_receipts"]
+                    if row["stage"] == "structured_rejected"]
+        self.assertEqual(len(rejected), 1)
+        self.assertIn('"status_source_ids": []', rejected[0]["response_content"])
+
     async def test_bounded_validation_feedback_repairs_without_inventing_sources(self):
         requests = []
         async def reflect(context):
@@ -106,12 +153,13 @@ class HierarchyTests(unittest.IsolatedAsyncioTestCase):
         state = await adapter(view())
         self.assertEqual(len(requests), 2)
         self.assertNotIn("validation_feedback", requests[0])
-        self.assertEqual(requests[1]["validation_feedback"]["error"], "Plan source required")
+        self.assertEqual(requests[1]["validation_feedback"]["error"]["message"], "Plan source required")
         self.assertTrue(all(row["source_ids"] for row in state["plans"][-1]["proposal"]["steps"]))
         rejected = [row for row in state["generation_receipts"]
-                    if row["stage"] == "planning_rejected"]
+                    if row["stage"] == "structured_rejected"]
         self.assertEqual(len(rejected), 1)
-        self.assertEqual(rejected[0]["validation_error"], "Plan source required")
+        self.assertEqual(rejected[0]["failure"]["message"], "Plan source required")
+        self.assertIn("response_content", rejected[0]["failure"])
 
     async def test_incremental_context_archives_terminal_bodies_without_erasing_history(self):
         requests = []

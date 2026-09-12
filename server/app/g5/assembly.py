@@ -66,7 +66,15 @@ class OfflineAssembler:
                 return ModelCognitionGenerator(s["kind"], binding, transport)
             if kind == "g5-model-questions-v1":
                 return ModelQuestionAnnotator(binding, transport,
-                    max_revisions=(s.get("question_repair") or {}).get("max_revisions", 0))
+                    max_revisions=((s.get("structured_repair") or s.get("question_repair") or {})
+                                   .get("max_revisions", 0)),
+                    unified_repair="structured_repair" in s)
+            if kind == "g5-decision-json-v1":
+                return ModelPolicy(binding, transport,
+                    max_revisions=(s.get("structured_repair") or {}).get("max_revisions", 0))
+            if kind == "g5-model-session-v1":
+                return ModelSessionAnnotator(binding, transport,
+                    max_revisions=(s.get("structured_repair") or {}).get("max_revisions", 0))
             return (EmbeddingScorer if kind == "g5-batch-cosine-v1" else models[kind])(binding, transport)
         if kind == "g5-source-memory-v1":
             semantic = s.get("semantic_specification")
@@ -74,14 +82,17 @@ class OfflineAssembler:
                                    semantic_scorer=self.component(semantic) if semantic else None)
         if kind == "g5-reflection-plan-v1":
             updates = s.get("plan_updates")
+            common_revisions = (s.get("structured_repair") or {}).get("max_revisions", 0)
             return ReflectiveCognition(memory=self.component(s["memory"]),
                 reflector=self.component(s["reflector_specification"]),
                 planner=self.component(s["planner_specification"]), reflector_id=s["reflector_id"],
                 planner_id=s["planner_id"], hierarchical="plan_protocol" in s,
                 plan_updates=updates is not None, max_active_tasks=updates["max_active_tasks"] if updates else 64,
-                max_plan_revisions=(s.get("plan_repair") or {}).get("max_revisions", 0))
+                max_plan_revisions=(s.get("plan_repair") or {}).get("max_revisions", common_revisions),
+                max_reflection_revisions=(s.get("reflection_repair") or {}).get("max_revisions", common_revisions))
         if kind == "g5-candidate-governance-v1":
-            return CandidateGovernance(self.component(s["auditor"]), auditor_id=s["auditor_id"])
+            return CandidateGovernance(self.component(s["auditor"]), auditor_id=s["auditor_id"],
+                max_structured_revisions=(s.get("structured_repair") or {}).get("max_revisions", 0))
         if kind == "g5-common-observation-window-v1":
             return ObservationWindow(s["max_observations"], s["max_chars"])
         if kind == "g5-bounded-question-opportunities-v1":

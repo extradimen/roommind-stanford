@@ -38,6 +38,7 @@ from app.g5.ollama_transport import OllamaTransport
 from app.g5.reflection import ReflectiveCognition
 from app.g5.scheduling import QuestionScheduler
 from app.g5.session_journal import SESSION_PROTOCOL
+from app.g5.structured_output import StructuredOutputError
 from app.g5.world import WORLD_CONTRACT_SHA256, World
 
 
@@ -48,8 +49,11 @@ DEFAULT_MAX_STEPS = 16
 DEFAULT_MAX_REVISIONS = 1
 
 
-def _components(binding, transport, *, max_plan_revisions=0, max_question_revisions=0):
-    policy = ModelPolicy(binding, transport)
+def _components(binding, transport, *, max_plan_revisions=0, max_question_revisions=0,
+                max_structured_revisions=0):
+    plan_revisions = max_plan_revisions or max_structured_revisions
+    question_revisions = max_question_revisions or max_structured_revisions
+    policy = ModelPolicy(binding, transport, max_revisions=max_structured_revisions)
     memory = MemoryCognition(top_k=8)
     cognition = ReflectiveCognition(
         memory=memory,
@@ -60,17 +64,21 @@ def _components(binding, transport, *, max_plan_revisions=0, max_question_revisi
         hierarchical=True,
         plan_updates=True,
         max_active_tasks=64,
-        max_plan_revisions=max_plan_revisions,
+        max_plan_revisions=plan_revisions,
+        max_reflection_revisions=max_structured_revisions,
     )
     governance = CandidateGovernance(
-        ModelAuditor(binding, transport), auditor_id="ollama-g5-fresh-v2-auditor")
+        ModelAuditor(binding, transport), auditor_id="ollama-g5-fresh-v2-auditor",
+        max_structured_revisions=max_structured_revisions)
     return {
         "policy": policy,
         "cognition": cognition,
         "governance": governance,
         "question_annotator": ModelQuestionAnnotator(
-            binding, transport, max_revisions=max_question_revisions),
-        "session_annotator": ModelSessionAnnotator(binding, transport),
+            binding, transport, max_revisions=question_revisions,
+            unified_repair=bool(max_structured_revisions)),
+        "session_annotator": ModelSessionAnnotator(
+            binding, transport, max_revisions=max_structured_revisions),
         "scheduler": QuestionScheduler(priority_enabled=True, max_priority_streak=1),
         "observation_window": ObservationWindow(max_observations=96, max_chars=262144),
     }
@@ -79,7 +87,7 @@ def _components(binding, transport, *, max_plan_revisions=0, max_question_revisi
 def execution_binding(source_revision, *, model=DEFAULT_MODEL, endpoint_id=DEFAULT_ENDPOINT,
                       max_steps=DEFAULT_MAX_STEPS, max_revisions=DEFAULT_MAX_REVISIONS,
                       authorization_id, reasoning_effort=None, max_plan_revisions=0,
-                      max_question_revisions=0):
+                      max_question_revisions=0, max_structured_revisions=0):
     """Freeze the exact online pilot binding without contacting a provider."""
     if not isinstance(source_revision, str) or not REVISION.fullmatch(source_revision):
         raise ValueError("Exact deployed source revision required")
@@ -87,6 +95,8 @@ def execution_binding(source_revision, *, model=DEFAULT_MODEL, endpoint_id=DEFAU
         raise ValueError("Explicit execution authorization record required")
     if type(max_steps) is not int or max_steps < 1 or type(max_revisions) is not int or max_revisions < 0:
         raise ValueError("Invalid frozen stopping limits")
+    if type(max_structured_revisions) is not int or not 0 <= max_structured_revisions <= 4:
+        raise ValueError("Invalid structured revision limit")
 
     binding = ModelBinding("ollama", model, endpoint_id, 0.2, 2048)
     budget = RequestBudget(524288, 262144)
@@ -95,7 +105,8 @@ def execution_binding(source_revision, *, model=DEFAULT_MODEL, endpoint_id=DEFAU
                             reasoning_effort=reasoning_effort)
     transport = BudgetTransport(route, budget, delegate_id=endpoint_id)
     parts = _components(binding, transport, max_plan_revisions=max_plan_revisions,
-                        max_question_revisions=max_question_revisions)
+                        max_question_revisions=max_question_revisions,
+                        max_structured_revisions=max_structured_revisions)
     component_specs = {name: specification(parts[name])
                        for name in ("policy", "cognition", "governance")}
     question = specification(parts["question_annotator"])
@@ -182,6 +193,8 @@ def execution_binding(source_revision, *, model=DEFAULT_MODEL, endpoint_id=DEFAU
         raw["max_plan_revisions"] = max_plan_revisions
     if max_question_revisions:
         raw["max_question_revisions"] = max_question_revisions
+    if max_structured_revisions:
+        raw["max_structured_revisions"] = max_structured_revisions
     return {**raw, "sha256": digest(raw)}
 
 
@@ -278,6 +291,10 @@ async def run_execution(execution, output, *, api_key, base_url="https://ollama.
                 try:
                     result = await runtime.step()
                     failures = 0
+                except StructuredOutputError:
+                    # A terminal semantic/shape failure has already consumed the
+                    # frozen component budget; restarting must not reset it.
+                    raise
                 except (TimeoutError, ConnectionError, ValueError, json.JSONDecodeError):
                     failures += 1
                     if failures > transient_retries:

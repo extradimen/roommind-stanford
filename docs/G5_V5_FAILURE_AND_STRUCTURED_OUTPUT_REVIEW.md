@@ -94,3 +94,29 @@ governance helps or harms dialogue quality. Starting scorer calibration on the
 three completed v5 sources would create selection bias because completion is
 correlated with scenario, arm and model-schema behavior. The valid next research
 gate remains one independently bound 8/8 development generation.
+
+## Local v6 implementation status
+
+The common layer was implemented locally after this review as
+`g5-validated-structured-generation-v1`. Policy decisions, reflections,
+hierarchical plan updates, governance findings, session annotations and question
+annotations now use the same bounded-revision evidence format. Each rejection
+capsule records component, revision, error class, JSON field path, invariant,
+request/response hashes and the rejected response text. Successful repairs retain
+the preceding capsules in internal evidence; exhausted repairs are written to the
+attempt journal and cannot create a public event.
+
+The v6 execution binding freezes two revisions for every structured interface.
+Terminal structured failures are excluded from process-level transient retries,
+so restarting the batch cannot reset an exhausted component budget. The assembler
+retains the legacy plan/question repair keys needed by v2–v5; archived executions
+remain tied to their exact recorded source revisions.
+
+Deterministic regression includes the exact v5 failure shape: an existing task is
+changed to `completed` with empty `status_source_ids`; the second request receives
+`transition_evidence`, `$.updates[*].status_source_ids`, the invariant and allowed
+source IDs, then succeeds only after returning an observed source. The complete
+local G5 suite passed 399 tests with 48 environment-dependent PostgreSQL tests
+skipped. Sixteen supporting server tests also passed under the repository's
+dependency-complete Python environment. No provider call, deployment or new
+experimental execution was made.

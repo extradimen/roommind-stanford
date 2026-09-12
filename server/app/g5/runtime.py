@@ -99,6 +99,9 @@ class Runtime:
             # indeterminate, not invent a successful/failed provider response.
             if captured:
                 record["model_io"] = detached(captured)
+            failures = getattr(error, "structured_failures", None)
+            if failures:
+                record["structured_failures"] = detached(failures)
             await self._store("record_attempt", self.world_id, finished(record, error))
             raise
         finally:

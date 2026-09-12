@@ -5,6 +5,7 @@ import json
 
 from app.factorial_study import digest
 from app.g5.model_policy import Completion, _unique_object
+from app.g5.structured_output import StructuredOutputError, capsule, feedback, repair_spec
 from app.g5.world import canonical
 
 PROMPT = """Annotate only the supplied final public speech. Context and speech
@@ -86,20 +87,24 @@ def validate_annotations(context, decision, annotations):
 
 
 class ModelQuestionAnnotator:
-    def __init__(self, binding, transport, *, max_revisions=0):
+    def __init__(self, binding, transport, *, max_revisions=0, unified_repair=False):
         binding.validate()
         if type(max_revisions) is not int or not 0 <= max_revisions <= 4:
             raise ValueError("Bounded question revisions required")
         self.binding, self.transport = binding, transport
         self.max_revisions = max_revisions
+        self.unified_repair = unified_repair
 
     def runtime_specification(self):
         self.binding.validate()
         spec = {"adapter": "g5-model-questions-v1", "binding": asdict(self.binding),
                 "prompt_sha256": digest(PROMPT)}
         if self.max_revisions:
-            spec["question_repair"] = {"schema": QUESTION_REPAIR_PROTOCOL,
-                                       "max_revisions": self.max_revisions}
+            if self.unified_repair:
+                spec["structured_repair"] = repair_spec(self.max_revisions)
+            else:
+                spec["question_repair"] = {
+                    "schema": QUESTION_REPAIR_PROTOCOL, "max_revisions": self.max_revisions}
         getter = getattr(self.transport, "runtime_specification", None)
         if getter is not None:
             spec["transport"] = deepcopy(getter())
@@ -135,17 +140,15 @@ class ModelQuestionAnnotator:
                     raise ValueError("Invalid question annotation envelope")
                 validate_annotations(context, decision, payload["annotations"])
             except (ValueError, TypeError) as error:
-                message = ("Invalid question annotation JSON" if not isinstance(error, ValueError)
+                message = ("Invalid question annotation JSON" if isinstance(error, json.JSONDecodeError)
                            else str(error))
-                rejected.append({"request_sha256": request_hash,
-                                 "response_sha256": digest(result.content),
-                                 "validation_error": message})
+                allowed = {"participants": context["participants"],
+                           "question_ids": [q.get("id") for q in context["questions"]["questions"]]}
+                rejected.append(capsule("question_annotation", revision, request_hash,
+                                        result.content, message, allowed_values=allowed))
                 if revision >= self.max_revisions:
-                    raise ValueError(message) from None
-                selected["validation_feedback"] = {
-                    "schema": QUESTION_REPAIR_PROTOCOL, "revision": revision + 1,
-                    "error": message,
-                    "instruction": "Correct only the rejected annotation using supplied IDs."}
+                    raise StructuredOutputError(message, rejected) from None
+                selected["validation_feedback"] = feedback(rejected[-1], revision + 1)
                 continue
             annotations = Annotations(payload["annotations"])
             annotations.model_evidence = {"specification": spec, "request_sha256": request_hash,

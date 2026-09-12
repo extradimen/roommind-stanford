@@ -1,4 +1,5 @@
 import unittest
+import json
 from dataclasses import replace
 
 from app.factorial_study import digest
@@ -43,3 +44,19 @@ class ModelSessionTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 await adapter(context, decision)
         self.assertEqual(self.calls, [])
+
+    async def test_invalid_span_is_repaired_with_machine_feedback(self):
+        bodies = iter([
+            '{"annotation":{"kind":"end_intent","start":0,"end":99}}',
+            '{"annotation":{"kind":"end_intent","start":0,"end":4}}',
+        ])
+        calls = []
+        binding = ModelBinding("ollama", "fixed", "offline", 0.2, 512)
+        async def transport(request):
+            calls.append(request)
+            return Completion(next(bodies), "ollama", "fixed", "offline", digest(request), "stop")
+        output = await ModelSessionAnnotator(binding, transport, max_revisions=2)(
+            self.context(), Decision("speak", "End."))
+        note = json.loads(calls[1]["messages"][1]["content"])["structured_validation_feedback"]
+        self.assertEqual(note["error"]["error_code"], "span")
+        self.assertEqual(len(output.model_evidence["rejected"]), 1)

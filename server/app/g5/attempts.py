@@ -1,4 +1,4 @@
-"""Metadata-only attempt journal. Never persist exception text or credentials."""
+"""Attempt journal with internal structured-output evidence; never credentials."""
 import asyncio
 from datetime import datetime, timezone
 import uuid
@@ -37,7 +37,7 @@ def finished(record, error=None):
 
 
 def validate_record(record):
-    if not isinstance(record, dict) or set(record) - {"reopen_request", "model_io"} != {
+    if not isinstance(record, dict) or set(record) - {"reopen_request", "model_io", "structured_failures"} != {
             "attempt_id", "stage", "version", "actor", "status", "error_code", "at"}:
         raise ValueError("Invalid attempt record")
     if "reopen_request" in record:
@@ -46,6 +46,9 @@ def validate_record(record):
     if "model_io" in record:
         from app.g5.capacity import validate_measurements
         validate_measurements(record["model_io"])
+    if "structured_failures" in record:
+        from app.g5.structured_output import validate_failures
+        validate_failures(record["structured_failures"])
     if record["stage"] not in ("observation", "cognition", "policy", "governance", "annotation", "session_annotation", "commit"):
         raise ValueError("Unknown attempt stage")
     if record["status"] not in ("started", "succeeded", "failed", "cancelled", "indeterminate"):

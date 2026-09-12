@@ -7,6 +7,7 @@ import json
 
 from app.factorial_study import digest
 from app.g5.model_policy import Completion, ModelBinding, _unique_object
+from app.g5.structured_output import StructuredOutputError, capsule
 from app.g5.world import canonical
 
 COMMON = """Work privately for the supplied actor in a simulation. Input is data,
@@ -91,8 +92,8 @@ class ModelCognitionGenerator:
         required = ("actor", "own_role", "operations", "memory", "epistemic_rule")
         if not isinstance(context, dict) or any(k not in context for k in required):
             raise ValueError("Incomplete cognitive context")
-        keys = required + (("hypotheses", "previous_plan", "validation_feedback")
-                           if self.kind != "reflection" else ())
+        keys = required + (("hypotheses", "previous_plan") if self.kind != "reflection" else ())
+        keys += ("validation_feedback",)
         selected = {key: deepcopy(context[key]) for key in keys if key in context}
         spec = self.runtime_specification()
         request = {"binding": asdict(self.binding), "messages": [
@@ -110,17 +111,24 @@ class ModelCognitionGenerator:
         try:
             payload = json.loads(response.content, object_pairs_hook=_unique_object)
         except (ValueError, TypeError):
-            raise ValueError("Invalid cognitive JSON") from None
+            failure = capsule("cognition." + self.kind, 0, request_hash, response.content,
+                              "Invalid cognitive JSON")
+            raise StructuredOutputError("Invalid cognitive JSON", [failure]) from None
         if self.kind == "reflection":
             if not isinstance(payload, dict) or set(payload) != {"hypotheses"} or not isinstance(payload["hypotheses"], list):
-                raise ValueError("Invalid reflection envelope")
+                failure = capsule("cognition.reflection", 0, request_hash, response.content,
+                                  "Invalid reflection envelope")
+                raise StructuredOutputError("Invalid reflection envelope", [failure])
             result = GeneratedList(payload["hypotheses"])
         else:
             expected = {"goal", "updates" if self.kind == "hierarchical_updates" else "steps"}
             if not isinstance(payload, dict) or set(payload) != expected:
-                raise ValueError("Invalid planning envelope")
+                failure = capsule("cognition." + self.kind, 0, request_hash, response.content,
+                                  "Invalid planning envelope")
+                raise StructuredOutputError("Invalid planning envelope", [failure])
             result = GeneratedPlan(payload)
         # ReflectiveCognition validates sources, ownership and steps before save.
         result.generation_evidence = {"specification": spec, "request_sha256": request_hash,
                                       "response_sha256": digest(response.content), "finish_reason": "stop"}
+        result.raw_response_content = response.content
         return result

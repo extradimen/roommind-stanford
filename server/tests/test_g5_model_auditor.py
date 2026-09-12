@@ -61,3 +61,19 @@ class AuditorTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await adapter(view(), Decision("speak", "abc"))
         self.assertEqual(calls, [])
+
+    async def test_invalid_source_is_repaired_inside_auditor(self):
+        bodies = iter([json.dumps({"findings": [finding(source_ids=["hidden"])]}),
+                       '{"findings":[]}'])
+        calls = []
+        async def transport(request):
+            calls.append(request)
+            return Completion(next(bodies), "ollama", "fixed", "offline", digest(request), "stop")
+        auditor = ModelAuditor(self.binding, transport)
+        adapter = CandidateGovernance(auditor, auditor_id="model-v1",
+                                      max_structured_revisions=2)
+        result = await adapter(view(), Decision("speak", "All contained"))
+        note = json.loads(calls[1]["messages"][1]["content"])["structured_validation_feedback"]
+        self.assertEqual(note["error"]["error_code"], "reference")
+        self.assertTrue(result.allowed)
+        self.assertEqual(len(json.loads(result.model_evidence_json)["rejected"]), 1)

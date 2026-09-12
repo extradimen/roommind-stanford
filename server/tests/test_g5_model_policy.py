@@ -69,6 +69,23 @@ class PolicyTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(TimeoutError):
             await ModelPolicy(self.binding, unavailable)(view(), ())
 
+    async def test_structured_failure_is_repaired_and_rejected_body_retained(self):
+        bodies = iter([
+            '{"action":"execute","content":"","operation":"invented"}',
+            '{"action":"execute","content":"","operation":"contain"}',
+        ])
+        requests = []
+        async def transport(request):
+            requests.append(request)
+            return Completion(next(bodies), self.binding.provider, self.binding.model,
+                              self.binding.endpoint_id, digest(request), "stop")
+        result = await ModelPolicy(self.binding, transport, max_revisions=2)(view(), ())
+        repair = json.loads(requests[1]["messages"][1]["content"])["structured_validation_feedback"]
+        self.assertEqual(repair["error"]["error_code"], "authority")
+        evidence = json.loads(result.model_evidence_json)
+        self.assertEqual(evidence["rejected"][0]["response_content"],
+                         '{"action":"execute","content":"","operation":"invented"}')
+
     async def test_model_adapter_runs_through_journal_and_world_commit(self):
         from app.factorial_study import freeze_design
         from app.g5.runtime import Runtime
