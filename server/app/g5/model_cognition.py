@@ -68,6 +68,10 @@ updates list is valid when no evidence-bound change is needed.
 Never emit an update whose ID is listed in terminal_task_ids. Those tasks are
 immutable and omitted from the active previous-plan projection; use a new unique,
 explicitly sourced ID if new work is needed.
+For an existing leaf task, status completed requires one of that task's listed
+completion_source_ids in status_source_ids. If completion_source_ids is empty,
+preserve a non-completed status. Evidence that predates task creation cannot
+complete it even when it reports a matching action or utterance.
 """
 
 

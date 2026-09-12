@@ -15,6 +15,29 @@ def require(value, message):
         raise ValueError(message)
 
 
+def completion_source_ids(row, origins, available, actor):
+    """Return only post-creation observations that can complete this leaf task."""
+    if row["intent"] == "goal" or not isinstance(origins, list):
+        return []
+    supported = []
+    for source_id, node in available.items():
+        if source_id in origins or node["kind"] not in {"claim", "simulation_receipt"}:
+            continue
+        observation = json.loads(node["text"])
+        if row["intent"] == "execute":
+            receipt = observation.get("receipt", {})
+            matches = (node["kind"] == "simulation_receipt" and observation.get("actor") == actor
+                       and receipt.get("operation") == row["operation"]
+                       and receipt.get("status") == "success")
+        else:
+            matches = (row["intent"] in {"ask", "speak", "decline"}
+                       and node["kind"] == "claim" and observation.get("actor") == actor
+                       and observation.get("content") == row["text"])
+        if matches:
+            supported.append(source_id)
+    return sorted(supported)
+
+
 def pin_sources(selected, memory, previous_plan, facts, *, active_only=False, extra_ids=()):
     """Retain only cited plan evidence beyond top-k, not the entire memory store."""
     selected = deepcopy(selected)
@@ -120,23 +143,9 @@ def validate(proposal, previous_plan, actor, operations, available):
             require(old is not None, "Do not retroactively create completed intentions")
             origins = previous_plan.get("task_origins", {}).get(key)
             require(isinstance(origins, list), "Task creation evidence boundary missing")
-            supported = False
-            for source_id in row["status_source_ids"]:
-                if source_id in origins:
-                    continue
-                node = available[source_id]
-                if node["kind"] not in {"claim", "simulation_receipt"}:
-                    continue
-                observation = json.loads(node["text"])
-                if row["intent"] == "execute":
-                    receipt = observation.get("receipt", {})
-                    supported |= (node["kind"] == "simulation_receipt" and observation.get("actor") == actor
-                        and receipt.get("operation") == row["operation"] and receipt.get("status") == "success")
-                elif row["intent"] in {"ask", "speak", "decline"}:
-                    # Completion means this utterance occurred, not that an issue was resolved.
-                    supported |= (node["kind"] == "claim" and observation.get("actor") == actor
-                                  and observation.get("content") == row["text"])
-            require(supported, "Completion requires own matching public utterance or successful simulation receipt")
+            supported = set(completion_source_ids(row, origins, available, actor))
+            require(bool(supported.intersection(row["status_source_ids"])),
+                    "Completion requires own matching public utterance or successful simulation receipt")
     visiting, done = set(), set()
     def visit(key):
         require(key not in visiting, "Cyclic hierarchy or prerequisites")

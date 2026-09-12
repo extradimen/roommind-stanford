@@ -128,6 +128,10 @@ class HierarchyTests(unittest.IsolatedAsyncioTestCase):
         second = requests[2]["validation_feedback"]
         self.assertEqual(first["error"]["error_code"], "identity")
         self.assertTrue(first["allowed_values"]["mutable_existing_tasks"])
+        self.assertTrue(all("current_status" in row and "completion_source_ids" in row
+                            for row in first["allowed_values"]["mutable_existing_tasks"]))
+        self.assertTrue(all(not row["completion_source_ids"]
+                            for row in first["allowed_values"]["mutable_existing_tasks"]))
         self.assertEqual(first["allowed_values"]["terminal_task_ids"], [])
         self.assertEqual(second["error"]["field_path"], "$.updates[*].status")
         self.assertEqual(second["allowed_values"]["new_task_initial_status"], ["planned"])
@@ -174,6 +178,9 @@ class HierarchyTests(unittest.IsolatedAsyncioTestCase):
         error = requests[1]["validation_feedback"]["error"]
         self.assertEqual(error["error_code"], "transition_evidence")
         self.assertEqual(error["field_path"], "$.updates[*].status_source_ids")
+        eligible = requests[1]["validation_feedback"]["allowed_values"]["mutable_existing_tasks"]
+        ask = next(row for row in eligible if row["id"] == "ask")
+        self.assertEqual(len(ask["completion_source_ids"]), 1)
         self.assertTrue(state["plans"][-1]["proposal"]["steps"][1]["status_source_ids"])
         rejected = [row["failure"] for row in state["generation_receipts"]
                     if row["stage"] == "structured_rejected"]

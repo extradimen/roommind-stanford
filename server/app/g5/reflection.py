@@ -196,8 +196,14 @@ class ReflectiveCognition:
                         immutable = ("id", "parent", "depends_on", "actor", "intent",
                                      "text", "operation", "source_ids")
                         existing = (active_plan or {}).get("proposal", {}).get("steps", [])
+                        origins = (active_plan or {}).get("task_origins", {})
+                        from app.g5.planning import completion_source_ids
                         allowed = {"source_ids": sorted(validation_sources),
-                            "mutable_existing_tasks": [{key: deepcopy(step[key]) for key in immutable}
+                            "mutable_existing_tasks": [
+                                {**{key: deepcopy(step[key]) for key in immutable},
+                                 "current_status": step["status"],
+                                 "completion_source_ids": completion_source_ids(
+                                     step, origins.get(step["id"]), validation_sources, view["actor"])}
                                 for step in existing if step["status"] not in {"completed", "cancelled"}],
                             "terminal_task_ids": [step["id"] for step in existing
                                                   if step["status"] in {"completed", "cancelled"}],
