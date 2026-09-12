@@ -11,6 +11,7 @@ from app.factorial_study import digest
 from app.g5.memory import MemoryCognition
 
 SCHEMA = "g5-reflection-plan-v1"
+PLAN_REPAIR_PROTOCOL = "g5-plan-validation-feedback-v1"
 
 
 def require(condition, message):
@@ -37,7 +38,8 @@ def history(rows):
 
 class ReflectiveCognition:
     def __init__(self, *, memory: MemoryCognition, reflector, planner, reflector_id: str, planner_id: str,
-                 hierarchical=False, plan_updates=False, max_active_tasks=64):
+                 hierarchical=False, plan_updates=False, max_active_tasks=64,
+                 max_plan_revisions=0):
         require(callable(reflector) and callable(planner), "Reflection and planning adapters required")
         require(all(isinstance(x, str) and x for x in (reflector_id, planner_id)), "Frozen adapter IDs required")
         self.memory, self.reflector, self.planner = memory, reflector, planner
@@ -45,7 +47,10 @@ class ReflectiveCognition:
         self.hierarchical = hierarchical
         require(type(plan_updates) is bool and (not plan_updates or hierarchical), "Updates require hierarchical plans")
         require(type(max_active_tasks) is int and max_active_tasks > 0, "Positive active task capacity required")
+        require(type(max_plan_revisions) is int and 0 <= max_plan_revisions <= 4,
+                "Bounded plan revisions required")
         self.plan_updates, self.max_active_tasks = plan_updates, max_active_tasks
+        self.max_plan_revisions = max_plan_revisions
         self.specification = {"schema": SCHEMA, "memory": deepcopy(memory.specification),
                               "reflector_id": reflector_id, "planner_id": planner_id}
         self.specification = self.runtime_specification()
@@ -67,6 +72,10 @@ class ReflectiveCognition:
             from app.g5.planning import DELTA_PROTOCOL
             require(type(self.max_active_tasks) is int and self.max_active_tasks > 0, "Invalid active task capacity")
             spec["plan_updates"] = {"schema": DELTA_PROTOCOL, "max_active_tasks": self.max_active_tasks}
+        spec.pop("plan_repair", None)
+        if self.max_plan_revisions:
+            spec["plan_repair"] = {"schema": PLAN_REPAIR_PROTOCOL,
+                                   "max_revisions": self.max_plan_revisions}
         for name in ("reflector", "planner"):
             getter = getattr(getattr(self, name), "runtime_specification", None)
             spec.pop(name + "_specification", None)
@@ -127,19 +136,36 @@ class ReflectiveCognition:
             if self.plan_updates:
                 from app.g5.planning import projection
                 previous_context = projection(active_plan, self.max_active_tasks)
-            generated_proposal = await self.planner({**deepcopy(context), "hypotheses": deepcopy(current_reflections),
-                                                    "previous_plan": previous_context})
-            proposal = generated_proposal
-            if self.plan_updates:
-                from app.g5.planning import expand_updates
-                proposal = expand_updates(proposal, active_plan, available)
-            require(isinstance(proposal, dict) and set(proposal) == {"goal", "steps"}, "Invalid plan fields")
-            require(isinstance(proposal["goal"], str) and proposal["goal"].strip(), "Empty plan goal")
-            require(isinstance(proposal["steps"], list) and proposal["steps"], "Plan requires explicit steps")
-            if self.hierarchical:
-                from app.g5.planning import validate
-                validation_sources = {node["id"]: node for node in memory["nodes"]} if self.plan_updates else available
-                validate(proposal, active_plan, view["actor"], view["operations"], validation_sources)
+            planner_context = {**deepcopy(context), "hypotheses": deepcopy(current_reflections),
+                               "previous_plan": previous_context}
+            rejected_plans = []
+            for revision in range(self.max_plan_revisions + 1):
+                generated_proposal = await self.planner(deepcopy(planner_context))
+                try:
+                    proposal = generated_proposal
+                    if self.plan_updates:
+                        from app.g5.planning import expand_updates
+                        proposal = expand_updates(proposal, active_plan, available)
+                    require(isinstance(proposal, dict) and set(proposal) == {"goal", "steps"}, "Invalid plan fields")
+                    require(isinstance(proposal["goal"], str) and proposal["goal"].strip(), "Empty plan goal")
+                    require(isinstance(proposal["steps"], list) and proposal["steps"], "Plan requires explicit steps")
+                    if self.hierarchical:
+                        from app.g5.planning import validate
+                        validation_sources = ({node["id"]: node for node in memory["nodes"]}
+                                              if self.plan_updates else available)
+                        validate(proposal, active_plan, view["actor"], view["operations"], validation_sources)
+                    break
+                except ValueError as error:
+                    evidence = getattr(generated_proposal, "generation_evidence", None)
+                    if evidence is not None:
+                        rejected_plans.append({"stage": "planning_rejected", "trigger": trigger,
+                            "evidence": deepcopy(evidence), "validation_error": str(error)})
+                    if revision >= self.max_plan_revisions:
+                        raise
+                    planner_context["validation_feedback"] = {
+                        "schema": PLAN_REPAIR_PROTOCOL, "revision": revision + 1,
+                        "error": str(error),
+                        "instruction": "Correct only the rejected structure using supplied source IDs."}
             for step in (() if self.hierarchical else proposal["steps"]):
                 require(isinstance(step, dict) and set(step) == {"actor", "intent", "text", "operation", "source_ids"},
                         "Invalid plan step fields")
@@ -169,6 +195,10 @@ class ReflectiveCognition:
             if self.plan_updates:
                 projection(active_plan, self.max_active_tasks)
             plans.append(active_plan)
+            for raw in rejected_plans:
+                row = {"id": digest(raw), **raw}
+                if not any(old["id"] == row["id"] for old in receipts):
+                    receipts.append(row)
             for stage, output in (("reflection", generated), ("planning", generated_proposal)):
                 evidence = getattr(output, "generation_evidence", None)
                 if evidence is not None:

@@ -1956,3 +1956,15 @@ G5 v2在线执行在第一世界提交14个公开事件后反复停在结构化�
 PostgreSQL）全部通过，无失败、错误或跳过。详细证据见
 `docs/G5_FRESH_EXECUTION_V2_FAILURE_AND_V3_RECOVERY.md`。该修复仍只授权8条评分器开发对话，
 不授权48项评分、32条架构筛查、确认研究或外部人工评审。
+
+## 第55轮：G5新家族v3计划证据失败与v4有界结构修复
+
+v3在全新目录中证明前两项修复有效：第一条A臂对话完成16轮并封存，第二assignment建立了独立
+world。随后第二世界在首个事件提交前连续生成缺少`source_ids`的层级计划，被既有严格验证器以
+`Plan source required`拒绝。v3停止时保留2个world、16个事件、152次模型尝试和1个freeze；
+全部绑定、SQLite、日志和source经加密SSH下载并哈希归档。没有把隔离探针或失败部分冒充完整批次。
+
+v4不采用任意补入证据ID的做法，而新增哈希绑定的`g5-plan-validation-feedback-v1`：验证失败时最多
+两次把固定错误反馈给同一模型重新生成，候选仍须只引用`memory.retrieved`中的真实ID并通过完整
+验证；被拒候选的响应摘要与错误进入认知收据。v4完整本地验收395项（含PostgreSQL）全部通过，
+零失败、错误或跳过。详细证据见`docs/G5_FRESH_EXECUTION_V3_FAILURE_AND_V4_RECOVERY.md`。

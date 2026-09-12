@@ -83,6 +83,36 @@ def session_hierarchy_options(world, arm):
 
 
 class HierarchyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_bounded_validation_feedback_repairs_without_inventing_sources(self):
+        requests = []
+        async def reflect(context):
+            return []
+        async def transport(request):
+            context = json.loads(request["messages"][1]["content"])
+            requests.append(context)
+            sources = ([context["memory"]["retrieved"][0]["id"]]
+                       if "validation_feedback" in context else [])
+            body = {"goal": "Keep the plan evidence-bound", "updates": [
+                step("root", context["actor"], sources, intent="goal", parent=None),
+                step("ask", context["actor"], sources),
+            ]}
+            return Completion(json.dumps(body), "offline", "fixed", "mock",
+                              digest(request), "stop")
+        adapter = ReflectiveCognition(memory=MemoryCognition(top_k=1), reflector=reflect,
+            planner=ModelCognitionGenerator("hierarchical_updates",
+                ModelBinding("offline", "fixed", "mock", .2, 4096), transport),
+            reflector_id="none", planner_id="repair-script", hierarchical=True,
+            plan_updates=True, max_plan_revisions=2)
+        state = await adapter(view())
+        self.assertEqual(len(requests), 2)
+        self.assertNotIn("validation_feedback", requests[0])
+        self.assertEqual(requests[1]["validation_feedback"]["error"], "Plan source required")
+        self.assertTrue(all(row["source_ids"] for row in state["plans"][-1]["proposal"]["steps"]))
+        rejected = [row for row in state["generation_receipts"]
+                    if row["stage"] == "planning_rejected"]
+        self.assertEqual(len(rejected), 1)
+        self.assertEqual(rejected[0]["validation_error"], "Plan source required")
+
     async def test_incremental_context_archives_terminal_bodies_without_erasing_history(self):
         requests = []
         async def reflector(context):

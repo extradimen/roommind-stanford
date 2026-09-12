@@ -48,7 +48,7 @@ DEFAULT_MAX_STEPS = 16
 DEFAULT_MAX_REVISIONS = 1
 
 
-def _components(binding, transport):
+def _components(binding, transport, *, max_plan_revisions=0):
     policy = ModelPolicy(binding, transport)
     memory = MemoryCognition(top_k=8)
     cognition = ReflectiveCognition(
@@ -60,6 +60,7 @@ def _components(binding, transport):
         hierarchical=True,
         plan_updates=True,
         max_active_tasks=64,
+        max_plan_revisions=max_plan_revisions,
     )
     governance = CandidateGovernance(
         ModelAuditor(binding, transport), auditor_id="ollama-g5-fresh-v2-auditor")
@@ -76,7 +77,7 @@ def _components(binding, transport):
 
 def execution_binding(source_revision, *, model=DEFAULT_MODEL, endpoint_id=DEFAULT_ENDPOINT,
                       max_steps=DEFAULT_MAX_STEPS, max_revisions=DEFAULT_MAX_REVISIONS,
-                      authorization_id, reasoning_effort=None):
+                      authorization_id, reasoning_effort=None, max_plan_revisions=0):
     """Freeze the exact online pilot binding without contacting a provider."""
     if not isinstance(source_revision, str) or not REVISION.fullmatch(source_revision):
         raise ValueError("Exact deployed source revision required")
@@ -91,7 +92,7 @@ def execution_binding(source_revision, *, model=DEFAULT_MODEL, endpoint_id=DEFAU
     route = OllamaTransport(binding, "https://ollama.com", timeout=240,
                             reasoning_effort=reasoning_effort)
     transport = BudgetTransport(route, budget, delegate_id=endpoint_id)
-    parts = _components(binding, transport)
+    parts = _components(binding, transport, max_plan_revisions=max_plan_revisions)
     component_specs = {name: specification(parts[name])
                        for name in ("policy", "cognition", "governance")}
     question = specification(parts["question_annotator"])
@@ -174,6 +175,8 @@ def execution_binding(source_revision, *, model=DEFAULT_MODEL, endpoint_id=DEFAU
     }
     if reasoning_effort is not None:
         raw["reasoning_effort"] = reasoning_effort
+    if max_plan_revisions:
+        raw["max_plan_revisions"] = max_plan_revisions
     return {**raw, "sha256": digest(raw)}
 
 

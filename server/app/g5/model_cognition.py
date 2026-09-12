@@ -55,6 +55,11 @@ tasks and compact terminal dependency statuses, not the archived task bodies.
 Do not reuse an old ID for a different task. Do not rewrite terminal tasks.
 Only cite supplied memory sources in updates. Capacity errors are not permission
 to erase unresolved intentions. The same evidence and completion rules apply.
+If validation_feedback is supplied, the prior output was rejected by the strict
+local validator. Correct that exact defect while preserving all valid prior-plan
+records. Never invent an ID: every source_ids and status_source_ids value must
+come from memory.retrieved. When memory.retrieved is nonempty, every new task,
+including a goal, ask, wait, defer or decline task, needs a nonempty source_ids.
 """
 
 
@@ -86,7 +91,8 @@ class ModelCognitionGenerator:
         required = ("actor", "own_role", "operations", "memory", "epistemic_rule")
         if not isinstance(context, dict) or any(k not in context for k in required):
             raise ValueError("Incomplete cognitive context")
-        keys = required + (("hypotheses", "previous_plan") if self.kind != "reflection" else ())
+        keys = required + (("hypotheses", "previous_plan", "validation_feedback")
+                           if self.kind != "reflection" else ())
         selected = {key: deepcopy(context[key]) for key in keys if key in context}
         spec = self.runtime_specification()
         request = {"binding": asdict(self.binding), "messages": [

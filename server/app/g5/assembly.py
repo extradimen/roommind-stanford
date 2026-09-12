@@ -75,7 +75,8 @@ class OfflineAssembler:
                 reflector=self.component(s["reflector_specification"]),
                 planner=self.component(s["planner_specification"]), reflector_id=s["reflector_id"],
                 planner_id=s["planner_id"], hierarchical="plan_protocol" in s,
-                plan_updates=updates is not None, max_active_tasks=updates["max_active_tasks"] if updates else 64)
+                plan_updates=updates is not None, max_active_tasks=updates["max_active_tasks"] if updates else 64,
+                max_plan_revisions=(s.get("plan_repair") or {}).get("max_revisions", 0))
         if kind == "g5-candidate-governance-v1":
             return CandidateGovernance(self.component(s["auditor"]), auditor_id=s["auditor_id"])
         if kind == "g5-common-observation-window-v1":
