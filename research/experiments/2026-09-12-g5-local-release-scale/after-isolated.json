@@ -1,0 +1,132 @@
+{
+  "schema": "g5-local-ledger-scale-audit-v1",
+  "python": "3.12.14",
+  "machine": "arm64",
+  "real_model_calls": 0,
+  "limitations": "Single process, one timing per operation, existing 4 synthetic sources; not throughput, long-dialogue or multiworker qualification.",
+  "inputs": [
+    {
+      "path": "research/experiments/2026-09-12-g5-local-prediction-ledger/panel.json",
+      "file_sha256": "d313d1d96f8b1419065d3e8f6ecd4c28cdd3b6ef774ad0f4533b84df688d81e6"
+    },
+    {
+      "path": "research/experiments/2026-09-12-g5-local-calibration-bridge/panel.json",
+      "file_sha256": "8b028724a7ce8379088a7bef9ad337b54156e01d272680709acbd1ec6e53a95e"
+    }
+  ],
+  "prediction_source_sha256": "30fd3f055f5c562ab2cef56ddfbecf0e490685d296ef1a8380b7a68b72d2068a",
+  "workloads": [
+    {
+      "workload": "four_cases_empty",
+      "cases": 4,
+      "sources": 4,
+      "label_records": 8,
+      "initial_events": 0,
+      "final_events": 1,
+      "initial_export_sha256": "91b411ce19522285f12dcb9ea88a464f03691279089265bca69ef4ec328c0f75",
+      "final_export_sha256": "fb8a729275ff1c71accdd42e31c6af6dcd0db9ea467f3076747af0fc4eef1eb5",
+      "export_bytes": 172031,
+      "measurements": [
+        {
+          "operation": "export",
+          "seconds": 0.1519089579815045,
+          "full_result_validations": 1,
+          "result_sha256": "c94cf6e0fd4b91015c20a144e6e056edd1314ba9d6fb8e496c5d098f671f6512"
+        },
+        {
+          "operation": "append",
+          "seconds": 0.14572312496602535,
+          "full_result_validations": 1,
+          "result_sha256": "ffd1b643d1e037a11034c9a181c86ad78b0fad626a861bad2798a6d88a0f92dc"
+        },
+        {
+          "operation": "export_after",
+          "seconds": 0.14816166699165478,
+          "full_result_validations": 1,
+          "result_sha256": "83a5b8b91a4b61718ccd5013419dfaf8d1a0f0cd72827725e8860966c0db78e9"
+        },
+        {
+          "operation": "idempotent_append",
+          "seconds": 0.16152737505035475,
+          "full_result_validations": 1,
+          "result_sha256": "ffd1b643d1e037a11034c9a181c86ad78b0fad626a861bad2798a6d88a0f92dc"
+        }
+      ]
+    },
+    {
+      "workload": "four_cases_completed",
+      "cases": 4,
+      "sources": 4,
+      "label_records": 8,
+      "initial_events": 8,
+      "final_events": 8,
+      "initial_export_sha256": "34bf144f4ab6fc4b3d61a44ad8c6f751234f686cc694f667f9cd3901810e7172",
+      "final_export_sha256": "34bf144f4ab6fc4b3d61a44ad8c6f751234f686cc694f667f9cd3901810e7172",
+      "export_bytes": 213733,
+      "measurements": [
+        {
+          "operation": "export",
+          "seconds": 0.14910270902328193,
+          "full_result_validations": 1,
+          "result_sha256": "0115688a86e07d0203d3b0a665c3c8d9cb9f0df1a316fe811474ce51936b3df8"
+        },
+        {
+          "operation": "append",
+          "seconds": 0.145910624996759,
+          "full_result_validations": 1,
+          "result_sha256": "5e82cf23ff77d0a15875a93811128c6d227414901366d88eaab03453f8e47da6"
+        },
+        {
+          "operation": "export_after",
+          "seconds": 0.14846608298830688,
+          "full_result_validations": 1,
+          "result_sha256": "0115688a86e07d0203d3b0a665c3c8d9cb9f0df1a316fe811474ce51936b3df8"
+        },
+        {
+          "operation": "idempotent_append",
+          "seconds": 0.15509895898867399,
+          "full_result_validations": 1,
+          "result_sha256": "5e82cf23ff77d0a15875a93811128c6d227414901366d88eaab03453f8e47da6"
+        }
+      ]
+    },
+    {
+      "workload": "twenty_four_cases_empty",
+      "cases": 24,
+      "sources": 4,
+      "label_records": 45,
+      "initial_events": 0,
+      "final_events": 1,
+      "initial_export_sha256": "7fdda4dc7efafb84c3a6aade7c14c062db699e47973cf95eb61787a08cc5a1f2",
+      "final_export_sha256": "952aeaef5a6b1af2a2fc77c2a50615adde638f17cd1e538f25db34f5f2fe8292",
+      "export_bytes": 192262,
+      "measurements": [
+        {
+          "operation": "export",
+          "seconds": 0.4227966659818776,
+          "full_result_validations": 1,
+          "result_sha256": "470d9793b806cc2ed4acf75fd8b6df8beec2c8da2020c5fc69e63523e76ca875"
+        },
+        {
+          "operation": "append",
+          "seconds": 0.43408541701501235,
+          "full_result_validations": 1,
+          "result_sha256": "ffd1b643d1e037a11034c9a181c86ad78b0fad626a861bad2798a6d88a0f92dc"
+        },
+        {
+          "operation": "export_after",
+          "seconds": 0.4749550420092419,
+          "full_result_validations": 1,
+          "result_sha256": "b9c8dcc2bde301b0f0f1683cda6f93adfa736a39d9c73ddfc773a066b93cb05c"
+        },
+        {
+          "operation": "idempotent_append",
+          "seconds": 0.4085055000032298,
+          "full_result_validations": 1,
+          "result_sha256": "ffd1b643d1e037a11034c9a181c86ad78b0fad626a861bad2798a6d88a0f92dc"
+        }
+      ]
+    }
+  ],
+  "sha256": "c8f244025cf5a17137603cf126e07042a34c0a2fd86cd2b0effe65c9bd9d7a10"
+}

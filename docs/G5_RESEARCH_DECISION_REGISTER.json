@@ -1,0 +1,61 @@
+{
+  "schema": "g5-research-decision-register-draft-v1",
+  "status": "draft_not_executable",
+  "protocol_document": "docs/G5_RESEARCH_PROTOCOL_DRAFT.md",
+  "scope": "cognition_governance_factorial_then_separate_product_track",
+  "proposed_primary_questions": [
+    {"effect": "C", "dimension": "epistemic_fidelity"},
+    {"effect": "C", "dimension": "temporal_coherence"},
+    {"effect": "G", "dimension": "procedural_fidelity"},
+    {"effect": "G", "dimension": "interaction_structure_fidelity"}
+  ],
+  "proposed_multiplicity": "retain_all_18_simultaneous_contrasts",
+  "confirmation_parameters": {
+    "target_sampling_frame": null,
+    "sampling_target_kind": null,
+    "family_exposure_registry_sha256": null,
+    "rubric_sha256": null,
+    "human_calibration_artifacts_sha256": null,
+    "fixed_judge_spec_sha256": null,
+    "meaningful_differences": null,
+    "harm_margins": null,
+    "alpha": null,
+    "target_precision": null,
+    "pilot_evidence_sha256": null,
+    "family_count": null,
+    "blocks_per_family": null,
+    "stopping_and_retry_policy_sha256": null,
+    "analysis_version_and_spec_sha256": null,
+    "source_revision": null
+  },
+  "local_work_remaining": [
+    "Actual historical inventory, semantic novelty and real calibration remain incomplete; offline preflight is implemented but not wired to an online launcher",
+    "Recovered provenance bound in G5_LEGACY_REGISTRY_20260912_RECOVERED: 74 downloaded files, 18 old batches, 38 registry events; old registry unchanged. Exhaustive local pilot history remains uncertified.",
+    "User authorized bounded Ollama Cloud gpt-oss:120b development calibration and memory-only SSH credential reuse on 2026-09-12. All 48 legacy public-text v1 predictions completed in 51 calls, raw evidence audited. References absent, accuracy not estimable. One rationale speaker-attribution error was verified.",
+    "User explicitly authorized resending the same eight internal public dialogues for the evidence-bound v2 review. The 48 cases used 90 requests: 10 completed under strict validation and 38 ended as technical failures. Attempt-level reasons were 37 incomplete responses, 39 quote/offset mismatches, 2 speaker mismatches and 2 evidence-count violations. These are protocol-adherence results, not accuracy or G5-effect estimates.",
+    "User explicitly authorized the v3 localized-evidence review. All 48 cases completed execution in 74 requests: 28 passed strict validation and 20 ended as technical failures. Attempt reasons were 28 valid, 40 quote missing, 5 evidence-count violations and 1 unknown message. Program-derived speaker and offsets improved strict completion from v2's 10/48 to 28/48, but exact quote copying remains unreliable. These are protocol-adherence results, not accuracy or G5-effect estimates.",
+    "User explicitly authorized the v4 immutable evidence-catalog review. All 48 cases executed in 53 requests: 46 passed strict validation and 2 ended as technical failures. Attempt reasons were 46 valid, 6 evidence-count violations and 1 unknown evidence ID. Evidence IDs raised strict completion from v3's 28/48 to 46/48; the two final failures both exceeded the frozen five-citation cap. These are protocol-adherence results, not accuracy or G5-effect estimates. Confirmation, deployment and human review remain unauthorized.",
+    "Independent human-reference preflight v2 is frozen locally for the same 48 cases: two differently randomized blinded reviewer packets, complete-response validation, post-label condition guesses, and disagreement-only third-person adjudication. Manifest SHA-256 is 6f3ccafb750c921bd7874e3af2123c932b58c7c0d2e36b3f8105dabc7b287adb; full SQLite/PostgreSQL acceptance passed 366 tests. The first local package was superseded before distribution because its response template had an importer-incompatible field. No reviewer is assigned, no human annotation is collected, and external distribution remains unauthorized.",
+    "At the user's direction, Codex completed one blinded AI expert pass over all 48 cases: 19 clear, 26 violation and 3 uncertain. After labels were frozen, comparison with the 46 completed v4 outputs found 31 exact agreements (67.4%), including 8/8 role-strategy agreement but only 2/8 epistemic-fidelity agreement. Baseline had 9 clear, 14 violation and 1 uncertain; RoomMind had 10 clear, 12 violation and 2 uncertain, with mixed family directions. This is development diagnosis only, not human annotation, inter-rater reliability, scorer accuracy, or G5-effect evidence. No external call, distribution, push or deployment occurred.",
+    "A condition-neutral semantic scoring contract was added after the frozen Codex comparison, without changing prior labels or predictions. Canonical SHA-256 ed9217e91cd502acabc27ae0c72f64b9496aebab5d5462af1bca06c78e6774f7 defines speech-versus-world evidence, verified simulation receipts, transcript-wide semantic repetition, valid handoff ownership, prerequisite-aware closure, and evidence-linked state revision. It is embedded in prompts, structured requests, calibration catalog requests and runtime specifications and forbids condition inference. This is a protocol correction, not effect evidence.",
+    "The user authorized one Ollama Cloud gpt-oss:120b re-evaluation of the same 48 development cases under the semantic contract. It used 52 requests: 46 valid, 4 incomplete-response attempts and 2 evidence-count attempts; 46 cases completed and 2 ended in technical failure. Agreement with the frozen single-Codex diagnosis was 29/46 (63.0%), versus prior v4's 31/46 (67.4%); on 44 mutually completed cases it declined from 30 to 27 agreements. Epistemic and interaction agreement improved while role-strategy and temporal agreement declined. Because the same development cases informed contract design and the reference is one AI pass, no accuracy or effect is estimable and further tuning on these cases is prohibited. Audit SHA-256 43d5ee470aa6d5f13c23ab46a5a642d01a9254e6cf9eaef6c862f47ed8ddaad2.",
+    "A dimension-scoped semantic contract v2 was implemented locally after the external run was frozen. It sends only the requested dimension's scope, explicitly forbids cross-dimension defect transfer, maps legacy short names to canonical G5 dimensions, and preserves the complete v1 contract/prompt for frozen-request reconstruction. V2 SHA-256 is 86157439752f7dba607de9af1d74acfa3ece4f997ed89f775d358bc6646f684d. No v2 external scoring was run. The recovered holdout audit has registered_exposure_free=false across all eight legacy families and semantic novelty is not established, so none may be relabeled as a fresh holdout.",
+    "A fresh pre-generation frame now freezes four new families with two distinct world instances each: library space allocation, research data release, museum loan/conservation, and community transit adjustment. Every world has four roles, role-authorized actions, explicit prerequisites, and structured simulation effects. Frame SHA-256 766f9dfb14dae5fd9fa576481a9c950f3a52bd9dcba7157c06e27d4fdb9ce352. A condition-neutral companion role pack fixes one player and three NPC roles per world; SHA-256 61e102a9de723cd947e45516979dd6f4de79c0b97bf5ed1b42336c05a302d0a4. No dialogue, label, external execution, push, deployment, or online batch was created by this step.",
+    "Per-scenario role-input binding is now supported throughout manifest validation, runtime configuration, evaluation packets and artifact verification, while manifests without the optional map retain the legacy shared-hash path. A frozen development validation plan assigns one dialogue per fresh world and balances A/B/C/D at two each; it yields 48 scenario-dimension cases and expressly prohibits architecture-effect inference. Plan SHA-256 cc1d4fd9f89173fd2936e583a995d31e15143100e2f659911114de97b54357ec. Source revision and model binding remain null, launch_authorized=false, and no additional external call occurred.",
+    "An explicit-route assembler can now reconstruct a frozen Ollama component only from a caller-injected transport whose public runtime specification matches exactly. It does not discover environment routes, archive credentials, contact a model during construction, or grant execution authority; the original offline assembler continues to reject network providers. Budget wrappers are checked recursively and the chat route is prohibited as an embedding transport.",
+    "A final pre-generation audit rejected the unexecuted v1 fresh inputs as insufficiently discriminating for epistemic and role-strategic fidelity: core world facts were public and private goals too generic. V1 is preserved without dialogue generation. V2 adds three role-visible disclosable facts and one role-visible protected fact per world plus distinct role goals. V2 frame, role-pack and balanced-plan SHA-256 values are a7d0bfa98450acdc6076e7100d9752cfa9f23c44dbd5785abe985bf8703a648e, 7bae19f2151f8ef298aee78abab4fd63c58480fddf659fbad4354ac8e6dfff53 and 6070c945965d61c4f29797b606cf8425ee50f1473096635e55e2c1ac2ac5c2fd. V2 remains unbound and unauthorized."
+  ],
+  "authorization_required_for": ["new external model calls or data transfer", "human review", "GitHub push", "deployment", "online batches"],
+  "completed_local_report_work": [
+    "Opt-in analysis v3 distinguishes observed fixed benchmark from independent-family population; heterogeneous/repeated/missing/N-A and joint interval controls archived",
+    "Evidence-bound offline study preflight rejects stale/exposed families and incomplete calibration; passing local checks never authorizes research",
+    "Append-only declared family/material/exposure registry and replayable unlabelled local review intake; synthetic audit only, not historical completeness or semantic novelty",
+    "Opt-in calibration report v2 adds unresolved-prediction bounds; v1 artifacts unchanged",
+    "Opt-in analysis v2 aligns interval metadata; old manifests reject substituted plans"
+  ],
+  "illustration_only": "docs/G5_ILLUSTRATIVE_PRECISION_20260912.json",
+  "human_annotations_collected": 0,
+  "real_model_calls": 320,
+  "launch_authorized": false,
+  "all_release_gates_complete": false
+}

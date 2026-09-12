@@ -1,0 +1,236 @@
+"""Long-horizon engineering acceptance with synthetic memories and model output."""
+import copy
+import json
+import unittest
+
+from app.factorial_study import digest
+from app.g5.memory import MemoryCognition
+from app.g5.model_cognition import ModelCognitionGenerator
+from app.g5.model_policy import ModelBinding, Completion
+from app.g5.planning import validate
+from app.g5.reflection import ReflectiveCognition
+from test_g5_reflection import view
+
+
+def step(key, actor, sources, *, intent="ask", parent="root", text="Can we proceed?", **updates):
+    return {"id": key, "actor": actor, "source_ids": sources, "parent": parent,
+            "depends_on": [], "intent": intent, "text": text, "operation": "",
+            "status": "planned", "status_source_ids": [], **updates}
+
+
+def plan(actor, sources, operations=("contain",)):
+    return {"goal": "Resolve a delayed commitment without inventing completion", "steps": [
+        step("root", actor, sources, intent="goal", parent=None),
+        step("ask", actor, sources),
+        step("execute", actor, sources, intent="execute" if "contain" in operations else "wait",
+             operation="contain" if "contain" in operations else "", depends_on=["ask"])]}
+
+
+class Script:
+    def __init__(self, mode="hold", top_k=1, updates=False):
+        self.calls = []
+        self.fail = False
+        async def transport(request):
+            self.calls.append(copy.deepcopy(request))
+            if self.fail:
+                raise TimeoutError("offline planning failure")
+            context = json.loads(request["messages"][1]["content"])
+            previous = context.get("previous_plan")
+            proposal = copy.deepcopy(previous["proposal"]) if previous else plan(
+                context["actor"], [context["memory"]["retrieved"][0]["id"]], context["operations"])
+            if mode == "progress" and previous:
+                for node in context["memory"]["retrieved"]:
+                    if node["kind"] not in {"claim", "simulation_receipt"}:
+                        continue
+                    observation = json.loads(node["text"])
+                    if observation.get("actor") != context["actor"]:
+                        continue
+                    if node["kind"] == "claim" and observation.get("content") == "Can we proceed?":
+                        proposal["steps"][1].update(status="completed", status_source_ids=[node["id"]])
+                    if node["kind"] == "simulation_receipt" and observation["receipt"]["status"] == "success":
+                        proposal["steps"][2].update(status="completed", status_source_ids=[node["id"]])
+                if all(r["status"] == "completed" for r in proposal["steps"][1:]):
+                    proposal["steps"][0]["status"] = "completed"
+            if mode == "defer":
+                proposal["steps"][0]["status"] = "deferred"
+                proposal["steps"][1].update(status="deferred", status_source_ids=proposal["steps"][1]["source_ids"])
+            body = {"goal": proposal["goal"], "updates": proposal["steps"]} if updates else proposal
+            return Completion(json.dumps(body), "offline", "fixed", "mock", digest(request), "stop")
+        async def reflect(context):
+            return []
+        self.cognition = ReflectiveCognition(memory=MemoryCognition(top_k=top_k), reflector=reflect,
+            planner=ModelCognitionGenerator("hierarchical_updates" if updates else "hierarchical_planning",
+                ModelBinding("offline", "fixed", "mock", 0.2, 4096), transport),
+            reflector_id="no-hypotheses-offline", planner_id="synthetic-hierarchy-v1", hierarchical=True, plan_updates=updates)
+
+
+def session_hierarchy_options(world, arm):
+    from test_g5_reopening import options
+    from app.factorial_study import ARMS, freeze_design
+    from app.g5.components import specification
+    harness, state, args = options(world, arm)
+    script = Script(updates=True)
+    hierarchy = ReflectiveCognition(memory=harness.cognition.memory, reflector=harness.cognition.reflector,
+        planner=script.cognition.planner, reflector_id="fixed-reflect", planner_id="synthetic-hierarchy-v1",
+        hierarchical=True, plan_updates=True)
+    design = args["manifest"]["design"]
+    design["components"]["cognition"] = specification(hierarchy)
+    for profile in design["arms"].values():
+        profile["shared"]["model_bindings_sha256"] = digest(design["components"])
+    args["manifest"] = freeze_design(design)
+    args["cognition"] = hierarchy if ARMS[arm]["cognition"] else None
+    return harness, state, script, args
+
+
+class HierarchyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_incremental_context_archives_terminal_bodies_without_erasing_history(self):
+        requests = []
+        async def reflector(context):
+            return []
+        async def transport(request):
+            requests.append(copy.deepcopy(request))
+            context = json.loads(request["messages"][1]["content"])
+            previous = context.get("previous_plan")
+            active = copy.deepcopy(previous["proposal"]["steps"]) if previous else []
+            if not active:
+                number = previous["terminal_counts"]["completed"] // 2 if previous else 0
+                ids = [context["memory"]["retrieved"][0]["id"]]
+                active = [step(f"root-{number}", "sre", ids, intent="goal", parent=None),
+                          step(f"task-{number}", "sre", ids, parent=f"root-{number}", text=f"Unique commitment {number}.")]
+            else:
+                task = active[1]
+                for node in context["memory"]["retrieved"]:
+                    if node["kind"] == "claim":
+                        observation = json.loads(node["text"])
+                        if observation.get("actor") == "sre" and observation.get("content") == task["text"]:
+                            task.update(status="completed", status_source_ids=[node["id"]])
+                            active[0]["status"] = "completed"
+            return Completion(json.dumps({"goal": "Keep sourced commitments", "updates": active}),
+                              "offline", "fixed", "mock", digest(request), "stop")
+        def adapter(capacity=4):
+            return ReflectiveCognition(memory=MemoryCognition(top_k=1), reflector=reflector,
+                planner=ModelCognitionGenerator("hierarchical_updates", ModelBinding("offline", "fixed", "mock", .2, 4096), transport),
+                reflector_id="none", planner_id="delta-script", hierarchical=True, plan_updates=True, max_active_tasks=capacity)
+        source = view()
+        source["observations"] = []
+        cognition = adapter()
+        state = None
+        for number in range(24):
+            if state:
+                source["cognition_state"] = state
+                source["observations"].append({"event_id": f"trigger-{number}", "actor": "security", "kind": "claim", "content": f"Next agenda {number}"})
+            state = await cognition(source)
+            source["cognition_state"] = state
+            source["observations"].append({"event_id": f"spoken-{number}", "actor": "sre", "kind": "claim", "content": f"Unique commitment {number}."})
+            state = await cognition(source)
+        self.assertEqual(len(state["plans"][-1]["proposal"]["steps"]), 48)
+        self.assertEqual(state["context"]["plan"]["proposal"]["steps"], [])
+        self.assertEqual(state["context"]["plan"]["terminal_counts"]["completed"], 48)
+        self.assertNotIn("Unique commitment 0.", requests[-1]["messages"][1]["content"])
+        self.assertTrue(all(len(r["messages"][1]["content"]) < 12000 for r in requests))
+        self.assertEqual(len(state["generation_receipts"]), 48)
+        source["cognition_state"] = state
+        self.assertEqual(await adapter()(source), state)
+        fresh = view()
+        with self.assertRaises(ValueError):
+            await adapter(capacity=1)(fresh)
+        self.assertEqual(fresh["cognition_state"], {})
+
+    async def test_delayed_intentions_survive_120_distractors_and_fact_reversal(self):
+        script = Script("defer", top_k=1)
+        source = view()
+        source["observations"] = []
+        state = await script.cognition(source)
+        first_plan = copy.deepcopy(state["plans"][0])
+        old_fact = state["memory"]["nodes"][0]["id"]
+        for index in range(120):
+            source["cognition_state"] = state
+            source["observations"].append({"event_id": f"noise-{index}", "kind": "claim",
+                "actor": "security", "content": f"Unrelated discussion item {index}"})
+            if index == 60:
+                source["facts"]["staffing"] = {"value": "fully staffed", "source": "new-simulation-receipt", "disclosable": True}
+            state = await script.cognition(source)
+        self.assertEqual(state["plans"][0], first_plan)
+        self.assertEqual(state["plans"][-1]["proposal"]["steps"][1]["status"], "deferred")
+        retained = next(row for row in state["context"]["retrieved"] if row["id"] == old_fact)
+        self.assertTrue(retained["historical_fact"])
+        self.assertEqual(retained["retrieval_reason"], "persistent_plan_source")
+        self.assertEqual(len(state["memory"]["nodes"]), 122)
+        self.assertEqual(len(state["plans"]), 121)
+        self.assertEqual(len(state["generation_receipts"]), 121)
+        source["cognition_state"] = copy.deepcopy(state)
+        reconstructed = Script("defer", top_k=1)
+        self.assertEqual(await reconstructed.cognition(source), state)
+        self.assertEqual(reconstructed.calls, [])
+
+    async def test_speech_then_receipt_progresses_hierarchy_not_world_facts(self):
+        script = Script("progress", top_k=8)
+        source = view()
+        state = await script.cognition(source)
+        source["cognition_state"] = state
+        source["observations"].append({"event_id": "own-question", "kind": "claim", "actor": "sre", "content": "Can we proceed?"})
+        state = await script.cognition(source)
+        self.assertEqual(state["plans"][-1]["proposal"]["steps"][1]["status"], "completed")
+        self.assertEqual(state["plans"][-1]["proposal"]["steps"][0]["status"], "planned")
+        source["cognition_state"] = state
+        source["observations"].append({"event_id": "actual-simulation", "kind": "simulation_receipt", "actor": "sre",
+            "receipt": {"operation": "contain", "status": "success", "scope": "simulation_only"}})
+        before = copy.deepcopy(source["facts"])
+        state = await script.cognition(source)
+        self.assertTrue(all(s["status"] == "completed" for s in state["plans"][-1]["proposal"]["steps"]))
+        self.assertEqual(source["facts"], before)
+        self.assertEqual(state["plans"][-1]["kind"], "intention")
+
+    async def test_structural_and_false_completion_rejections(self):
+        source = view()
+        state = await Script("hold", top_k=8).cognition(source)
+        previous = state["plans"][-1]
+        available = {n["id"]: n for n in state["memory"]["nodes"]}
+        def check(mutator):
+            proposal = copy.deepcopy(previous["proposal"])
+            mutator(proposal["steps"])
+            with self.assertRaises(ValueError):
+                validate(proposal, previous, "sre", ["contain"], available)
+        for mutation in (
+            lambda s: s.pop(),
+            lambda s: s[1].update(actor="security"),
+            lambda s: s[1].update(parent="ask"),
+            lambda s: s[1].update(depends_on=["execute"]),
+            lambda s: s[1].update(source_ids=["hidden-role-source"]),
+            lambda s: s[2].update(status="completed", status_source_ids=s[2]["source_ids"]),
+            lambda s: s[2].update(status="active", status_source_ids=s[2]["source_ids"]),
+            lambda s: s[0].update(status="completed"),
+            lambda s: s[2].update(operation="unregistered-upload"),
+        ):
+            check(mutation)
+
+    async def test_older_receipt_and_other_speaker_cannot_complete_new_intention(self):
+        source = view()
+        source["observations"].append({"event_id": "old-receipt", "kind": "simulation_receipt", "actor": "sre",
+            "receipt": {"operation": "contain", "status": "success"}})
+        initial = await Script("hold", top_k=8).cognition(source)
+        source["cognition_state"] = initial
+        source["observations"].append({"event_id": "later", "kind": "claim", "actor": "security", "content": "Can we proceed?"})
+        script = Script("progress", top_k=8)
+        with self.assertRaises(ValueError):
+            await script.cognition(source)
+        self.assertEqual(source["cognition_state"], initial)
+
+    async def test_failure_scope_isolation_and_configuration_drift(self):
+        script = Script()
+        source = view()
+        initial = await script.cognition(source)
+        source["cognition_state"] = copy.deepcopy(initial)
+        for field, replacement in (("actor", "security"), ("memory_scope", "another-experiment")):
+            altered = copy.deepcopy(source)
+            altered[field] = replacement
+            with self.assertRaises(ValueError):
+                await script.cognition(altered)
+        script.fail = True
+        source["observations"].append({"event_id": "new", "kind": "claim", "actor": "sre", "content": "New evidence"})
+        with self.assertRaises(TimeoutError):
+            await script.cognition(source)
+        self.assertEqual(source["cognition_state"], initial)
+        script.cognition.hierarchical = False
+        with self.assertRaises(ValueError):
+            await script.cognition(source)

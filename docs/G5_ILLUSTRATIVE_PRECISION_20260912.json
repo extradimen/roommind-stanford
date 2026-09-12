@@ -1,0 +1,92 @@
+{
+  "schema": "g5-illustrative-precision-planning-v1",
+  "status": "illustration_not_frozen_study",
+  "alpha": 0.05,
+  "simultaneous_contrasts": 18,
+  "unit": "independent_family_outcome",
+  "formula": "ceil(R^2*log(36/alpha)/(2*h^2))",
+  "rows": [
+    {
+      "target_half_width": 0.25,
+      "effects": {
+        "C": {
+          "families": 3369,
+          "range_width": 8,
+          "radius": 0.24998429085956142
+        },
+        "G": {
+          "families": 3369,
+          "range_width": 8,
+          "radius": 0.24998429085956142
+        },
+        "interaction": {
+          "families": 13475,
+          "range_width": 16,
+          "radius": 0.24999356654242244
+        }
+      },
+      "families_for_all_18": 13475,
+      "minimum_dialogues_one_block_per_family": 53900
+    },
+    {
+      "target_half_width": 0.5,
+      "effects": {
+        "C": {
+          "families": 843,
+          "range_width": 8,
+          "radius": 0.49974612627686726
+        },
+        "G": {
+          "families": 843,
+          "range_width": 8,
+          "radius": 0.49974612627686726
+        },
+        "interaction": {
+          "families": 3369,
+          "range_width": 16,
+          "radius": 0.49996858171912284
+        }
+      },
+      "families_for_all_18": 3369,
+      "minimum_dialogues_one_block_per_family": 13476
+    },
+    {
+      "target_half_width": 1.0,
+      "effects": {
+        "C": {
+          "families": 211,
+          "range_width": 8,
+          "radius": 0.9988999607965039
+        },
+        "G": {
+          "families": 211,
+          "range_width": 8,
+          "radius": 0.9988999607965039
+        },
+        "interaction": {
+          "families": 843,
+          "range_width": 16,
+          "radius": 0.9994922525537345
+        }
+      },
+      "families_for_all_18": 843,
+      "minimum_dialogues_one_block_per_family": 3372
+    }
+  ],
+  "assumptions": [
+    "all outcomes defined and fully observed",
+    "independent bounded family outcomes",
+    "fixed outcome definitions and judge",
+    "sampling target justified separately"
+  ],
+  "not_established": [
+    "real effect",
+    "power",
+    "family independence",
+    "label validity",
+    "external validity"
+  ],
+  "real_model_calls": 0,
+  "launch_authorized": false,
+  "sha256": "4ccde7c649db7973b2790e18f302c4fa83249a5b92bf93bafd968c0b1739b035"
+}
