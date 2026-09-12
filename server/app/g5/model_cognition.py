@@ -65,6 +65,9 @@ For an identity error, copy every immutable field of an existing task exactly an
 change only status/status_source_ids. A newly introduced task must start planned;
 never introduce it as active, deferred, cancelled or completed. Returning an empty
 updates list is valid when no evidence-bound change is needed.
+Never emit an update whose ID is listed in terminal_task_ids. Those tasks are
+immutable and omitted from the active previous-plan projection; use a new unique,
+explicitly sourced ID if new work is needed.
 """
 
 

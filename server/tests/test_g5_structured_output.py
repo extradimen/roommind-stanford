@@ -37,6 +37,10 @@ class StructuredOutputTests(unittest.TestCase):
                          ("identity", "$.updates[*]"))
         self.assertEqual((terminal["error_code"], terminal["field_path"]),
                          ("transition", "$.updates[*].status"))
+        immutable = capsule("cognition.planning", 2, "c" * 64, "{}",
+                            "Terminal task is immutable; use a new explicitly sourced task")
+        self.assertEqual((immutable["error_code"], immutable["field_path"]),
+                         ("terminal_identity", "$.updates[*].id"))
 
 
 if __name__ == "__main__":

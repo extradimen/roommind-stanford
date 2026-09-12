@@ -31,6 +31,10 @@ def classify(message):
         return "identity", "$.updates[*]"
     if "retroactively create completed intentions" in lower:
         return "transition", "$.updates[*].status"
+    if "terminal task is immutable" in lower:
+        return "terminal_identity", "$.updates[*].id"
+    if "updated task cites evidence outside supplied context" in lower:
+        return "reference", "$.updates[*].source_ids|status_source_ids"
     if "completion requires" in lower:
         return "transition_evidence", "$.updates[*].status_source_ids"
     if "source" in lower or "evidence" in lower or "target" in lower or "question" in lower:

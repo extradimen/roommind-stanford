@@ -195,9 +195,12 @@ class ReflectiveCognition:
                                 if str(error) == "Task transition needs observed evidence" else None)
                         immutable = ("id", "parent", "depends_on", "actor", "intent",
                                      "text", "operation", "source_ids")
+                        existing = (active_plan or {}).get("proposal", {}).get("steps", [])
                         allowed = {"source_ids": sorted(validation_sources),
-                            "existing_tasks": [{key: deepcopy(step[key]) for key in immutable}
-                                for step in (active_plan or {}).get("proposal", {}).get("steps", [])],
+                            "mutable_existing_tasks": [{key: deepcopy(step[key]) for key in immutable}
+                                for step in existing if step["status"] not in {"completed", "cancelled"}],
+                            "terminal_task_ids": [step["id"] for step in existing
+                                                  if step["status"] in {"completed", "cancelled"}],
                             "new_task_initial_status": ["planned"]}
                         rejected_plans.append(capsule("cognition.planning", revision,
                             evidence["request_sha256"], generated_proposal.raw_response_content,

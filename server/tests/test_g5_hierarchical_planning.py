@@ -127,7 +127,8 @@ class HierarchyTests(unittest.IsolatedAsyncioTestCase):
         first = requests[1]["validation_feedback"]
         second = requests[2]["validation_feedback"]
         self.assertEqual(first["error"]["error_code"], "identity")
-        self.assertTrue(first["allowed_values"]["existing_tasks"])
+        self.assertTrue(first["allowed_values"]["mutable_existing_tasks"])
+        self.assertEqual(first["allowed_values"]["terminal_task_ids"], [])
         self.assertEqual(second["error"]["field_path"], "$.updates[*].status")
         self.assertEqual(second["allowed_values"]["new_task_initial_status"], ["planned"])
         self.assertEqual(result["plans"][-1]["update_proposal"]["updates"], [])
