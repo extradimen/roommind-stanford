@@ -7,7 +7,7 @@ from app.factorial_study import digest
 from app.g5.memory import MemoryCognition
 from app.g5.model_cognition import ModelCognitionGenerator
 from app.g5.model_policy import ModelBinding, Completion
-from app.g5.planning import validate
+from app.g5.planning import required_goal_statuses, validate
 from app.g5.reflection import ReflectiveCognition
 from test_g5_reflection import view
 
@@ -133,6 +133,7 @@ class HierarchyTests(unittest.IsolatedAsyncioTestCase):
                             for row in first["allowed_values"]["mutable_existing_tasks"]))
         self.assertTrue(all(not ids for ids in
                             first["allowed_values"]["completion_source_ids_by_task"].values()))
+        self.assertEqual(first["allowed_values"]["required_goal_status_by_id"], {})
         self.assertEqual(first["allowed_values"]["terminal_task_ids"], [])
         self.assertEqual(second["error"]["field_path"], "$.updates[*].status")
         self.assertEqual(second["allowed_values"]["new_task_initial_status"], ["planned"])
@@ -338,6 +339,13 @@ class HierarchyTests(unittest.IsolatedAsyncioTestCase):
             lambda s: s[2].update(operation="unregistered-upload"),
         ):
             check(mutation)
+
+    def test_required_goal_status_feedback_is_derived_from_children(self):
+        proposal = plan("sre", ["source"])
+        self.assertEqual(required_goal_statuses(proposal), {"root": "planned"})
+        proposal["steps"][1]["status"] = "completed"
+        proposal["steps"][2]["status"] = "completed"
+        self.assertEqual(required_goal_statuses(proposal), {"root": "completed"})
 
     async def test_older_receipt_and_other_speaker_cannot_complete_new_intention(self):
         source = view()

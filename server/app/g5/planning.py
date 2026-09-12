@@ -38,6 +38,24 @@ def completion_source_ids(row, origins, available, actor):
     return sorted(supported)
 
 
+def required_goal_statuses(proposal):
+    """Derive goal statuses from child task statuses after structural validation."""
+    rows = {row["id"]: row for row in proposal["steps"]}
+    children = {key: [] for key in rows}
+    for key, row in rows.items():
+        if row["parent"] is not None:
+            children[row["parent"]].append(key)
+    result = {}
+    for key, row in rows.items():
+        if row["intent"] != "goal":
+            continue
+        statuses = [rows[child]["status"] for child in children[key]]
+        result[key] = ("completed" if all(status == "completed" for status in statuses) else
+            "cancelled" if all(status in {"completed", "cancelled"} for status in statuses) else
+            "active" if "active" in statuses else "deferred" if "deferred" in statuses else "planned")
+    return result
+
+
 def pin_sources(selected, memory, previous_plan, facts, *, active_only=False, extra_ids=()):
     """Retain only cited plan evidence beyond top-k, not the entire memory store."""
     selected = deepcopy(selected)
@@ -158,15 +176,13 @@ def validate(proposal, previous_plan, actor, operations, available):
         done.add(key)
     for key in rows:
         visit(key)
+    goal_statuses = required_goal_statuses(proposal)
     for key, row in rows.items():
         if row["intent"] == "goal":
             require(bool(children[key]), "Goal requires child intentions")
             if key in previous and previous[key]["status"] in {"completed", "cancelled"}:
                 require(set(children[key]) == {r["id"] for r in previous.values() if r["parent"] == key},
                         "Do not add work beneath a terminal goal")
-            statuses = [rows[k]["status"] for k in children[key]]
-            expected = ("completed" if all(s == "completed" for s in statuses) else
-                "cancelled" if all(s in {"completed", "cancelled"} for s in statuses) else
-                "active" if "active" in statuses else "deferred" if "deferred" in statuses else "planned")
-            require(row["status"] == expected, "Goal status must agree with children, not imply world success")
+            require(row["status"] == goal_statuses[key],
+                    "Goal status must agree with children, not imply world success")
     return deepcopy(proposal)

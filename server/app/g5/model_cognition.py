@@ -74,6 +74,9 @@ If its list is empty, preserve a non-completed status. The explanatory mappings
 current_status_by_task and completion_source_ids_by_task are feedback only; never
 copy their names into an update record. Evidence that predates task creation
 cannot complete it even when it reports a matching action or utterance.
+When required_goal_status_by_id is nonempty, emit updates for those goal IDs with
+exactly the listed status while copying every immutable field from the supplied
+mutable task template. This status describes plan progress, not world success.
 """
 
 

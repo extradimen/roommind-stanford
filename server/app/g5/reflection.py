@@ -197,7 +197,9 @@ class ReflectiveCognition:
                                      "text", "operation", "source_ids")
                         existing = (active_plan or {}).get("proposal", {}).get("steps", [])
                         origins = (active_plan or {}).get("task_origins", {})
-                        from app.g5.planning import completion_source_ids
+                        from app.g5.planning import completion_source_ids, required_goal_statuses
+                        required_goals = (required_goal_statuses(proposal)
+                            if str(error) == "Goal status must agree with children, not imply world success" else {})
                         allowed = {"source_ids": sorted(validation_sources),
                             "mutable_existing_tasks": [{key: deepcopy(step[key]) for key in immutable}
                                 for step in existing if step["status"] not in {"completed", "cancelled"}],
@@ -206,6 +208,7 @@ class ReflectiveCognition:
                             "completion_source_ids_by_task": {step["id"]: completion_source_ids(
                                 step, origins.get(step["id"]), validation_sources, view["actor"])
                                 for step in existing if step["status"] not in {"completed", "cancelled"}},
+                            "required_goal_status_by_id": required_goals,
                             "terminal_task_ids": [step["id"] for step in existing
                                                   if step["status"] in {"completed", "cancelled"}],
                             "new_task_initial_status": ["planned"]}
