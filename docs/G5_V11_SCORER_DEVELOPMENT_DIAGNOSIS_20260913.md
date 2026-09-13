@@ -163,3 +163,19 @@ coastal shelter activation, field expedition launch, municipal water advisory, a
 handover. Automated checks confirm that domain IDs, role IDs, and public role names do not overlap the
 v11 set. The execution module and resumable eight-dialogue entry point are locally ready, but no deployed
 revision or external authorization is bound and no new dialogue has been generated.
+
+## v12 execution failure and v13 recovery
+
+The authorized v12 run sealed its first dialogue and stopped after three committed events in the
+second. A cognition-planning response emitted two top-level goals without required child intentions,
+raising `Goal requires child intentions`. The failed directory remains intact: SQLite integrity is
+`ok`, with 19 committed events, 194 attempt rows, and one sealed source. The v12 execution binding is
+`c5a5434bfb5157f8dda6d89b0fe3e8082510b8fd7db58214ff64688cbcfcb9cd`; the sealed source is
+`4a81d822f60c996348cc190db7f5e8aeefb9871ad8d15076e946f62d7da6e2a4`. It remains a 1/8 failed
+development batch and will not be pooled with its successor.
+
+The cause was an execution-wrapper omission: v12 retained the base default of zero structured-output
+revisions instead of carrying forward the qualified v11 settings. v13 restores
+`reasoning_effort=low` and three structured revisions while holding the v3 worlds, roles, assignments,
+model, 16-step stopping rule, and request budgets fixed. Its binding records the exact v12 predecessor.
+Evaluation, the 32-dialogue screen, and confirmatory work remain disabled.
