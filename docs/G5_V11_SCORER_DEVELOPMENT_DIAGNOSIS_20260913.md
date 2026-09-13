@@ -154,3 +154,12 @@ false-positive and false-negative rates no greater than 15%, at least six decisi
 at least 75% agreement in every dimension, and no more than 15% scorer abstention. All conditions must
 hold. The new set will use four new domains with two worlds each and cannot reuse v11 names, numbers,
 templates, or event sequences. No new material or external call is covered by this local plan freeze.
+
+After the gate freeze, the local untouched frame, role pack, and balanced eight-dialogue assignment were
+created with hashes `b4535a7beece985c630c23653f3205a021c99608b4697ab84b11c0d0968eea37`,
+`083178129d978918bbd4ac3146f519a43938bca2e06ac8e373c032321fe02125`, and
+`1b5f48ef2d5532bd9330fe61a7c6fdd241541c6768adbb468360b0bcb924d0d0`. The four domains are
+coastal shelter activation, field expedition launch, municipal water advisory, and microgrid service
+handover. Automated checks confirm that domain IDs, role IDs, and public role names do not overlap the
+v11 set. The execution module and resumable eight-dialogue entry point are locally ready, but no deployed
+revision or external authorization is bound and no new dialogue has been generated.
