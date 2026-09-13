@@ -29,6 +29,7 @@ def read(path):
 
 
 def validate_authorization(path):
+    path = Path(path)
     value = read(path)
     unsigned = {key: item for key, item in value.items() if key != "sha256"}
     if value.get("sha256") != digest(unsigned):
