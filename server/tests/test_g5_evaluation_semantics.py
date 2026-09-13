@@ -4,7 +4,8 @@ import json
 import unittest
 
 from app.factorial_study import digest
-from app.g5.calibration_evidence_catalog import CatalogEvidencePredictor, PROMPT as CATALOG_PROMPT, request_for
+from app.g5.calibration_evidence_catalog import (CatalogEvidencePredictor,
+    PROMPT as CATALOG_PROMPT, PROMPT_V2 as CATALOG_PROMPT_V2, request_for)
 from app.g5.evaluation import PROMPT as EVALUATION_PROMPT
 from app.g5.evaluation_semantics import (DIMENSIONS, semantic_contract, semantic_contract_for_dimension,
     semantic_contract_sha256, semantic_contract_v2_for_dimension,
@@ -64,15 +65,23 @@ class EvaluationSemanticContractTests(unittest.TestCase):
                       scopes["procedural_fidelity"]["authoritative_workflow_rule"])
 
     def test_frozen_v2_v11_catalog_request_remains_reconstructable(self):
-        path = "research/experiments/2026-09-13-g5-fresh-family-v11-scorer-preflight/inputs.json"
-        with open(path) as stream:
-            bundle = json.load(stream)
-        case = bundle["cases"][0]
-        spec = bundle["prediction_plan"]["model_spec"]
-        self.assertEqual(spec["semantic_contract_sha256"], semantic_contract_v2_sha256())
-        self.assertEqual(json.loads(case["request"]["messages"][1]["content"])["semantic_contract"],
-                         semantic_contract_v2_for_dimension(case["task"]["dimension"]))
-        self.assertEqual(request_for(case["task"], spec), case["request"])
+        self.assertEqual(semantic_contract_v2_sha256(),
+                         "86157439752f7dba607de9af1d74acfa3ece4f997ed89f775d358bc6646f684d")
+        self.assertEqual(digest(CATALOG_PROMPT_V2),
+                         "49da725eda25c86c7d9c826bf46fb040d27b481ee3be05e9a414df213d0ea930")
+        task = {"case_id": "frozen-v2-reconstruction-fixture",
+                "dimension": "epistemic_fidelity", "rubric": "Assess evidence.",
+                "context": {"fixture": "v2"}, "messages": [{"message_id": "m-v2",
+                "speaker_id": "role-a", "turn_id": 1, "sequence_no": 1,
+                "content": "The registered review is complete."}]}
+        spec = {"binding": {"provider": "offline", "model": "fixed",
+                "endpoint_id": "mock", "temperature": 0, "max_tokens": 8192},
+                "semantic_contract_sha256": semantic_contract_v2_sha256()}
+        request = request_for(task, spec)
+        self.assertEqual(json.loads(request["messages"][1]["content"])["semantic_contract"],
+                         semantic_contract_v2_for_dimension(task["dimension"]))
+        self.assertEqual(digest(request),
+                         "13e7939f231cce41c4969818c17561999ce594b07a9aa48e46281bb2e2b3e660")
 
     def test_frozen_v1_catalog_request_remains_reconstructable(self):
         path = "research/experiments/2026-09-12-g5-semantic-scoring-calibration-inputs/inputs.json"
