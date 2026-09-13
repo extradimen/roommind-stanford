@@ -13,6 +13,9 @@ It is not an architecture-effect analysis, human accuracy estimate, or confirmat
 - scorer attempt audit: `38de69a28d83d21ef523b388385e99a47a337e180716b958c9b9f3c7602a151a`
 - reference comparison: `546b1f973b5dfbd8c01341c36776095f25c65e6d6c511c1c1e7819be0ff62529`
 - condition-guess audit: `7a6894c392ae4cb01b53807cf3281dd05e2695adb9b805a019b2dd7ca2109d2c`
+- blinded disagreement packet: `62182130e5232f2bf80d022098a1783a64d5152e0f2b11ed99fc128ababaea93`
+- independent adjudication file: `bab875c550063f85aa94fc4edd589ee80ec4f97e52881ea6bb8dee41e429e884`
+- adjudication audit: `eca7f32b653dc4539a7f1282637bce623700398be4f168567215d0427fc86293`
 
 The reference came from a separate Codex task that only read the anonymous reviewer packet. Its
 48 labels were frozen before the scorer process began. It is one AI expert development reference,
@@ -98,6 +101,25 @@ of eight guesses were uncertain. Two of all eight guesses matched the hidden arm
 directional guesses matched, with confidence between 0.35 and 0.55. At this sample size the result is
 consistent with weak condition visibility, but it does not prove blinding equivalence.
 
+## Independent disagreement adjudication
+
+A second Codex task read only the anonymous 14-item packet. Its task trace shows two reads of that
+packet, no repository search, no coordinator or source-file read, and no network call. It completed all
+14 items before the coordinator revealed the randomized X/Y origins. This remains a single-AI
+development adjudication rather than human ground truth.
+
+Of the 14 conflicts, the adjudicator selected the frozen reference assessment in 12, the Ollama scorer
+assessment in one, and `uncertain` in one. Among the scorer's ten apparent false negatives, all ten
+adjudications supported the reference violation. Among four apparent false positives, two supported the
+reference clear judgment, one supported the scorer violation, and one remained uncertain. By dimension,
+the adjudicator supported the reference in all four epistemic conflicts, all four role-strategy conflicts,
+both interaction conflicts, one of two procedural conflicts, and one of two temporal conflicts.
+
+Combined descriptively with the 28 cells on which scorer and reference already agreed, 41 of the 42
+decisive-reference cells received a directional adjudication; the scorer aligns with 29 of those 41 and
+the frozen reference with 40. These counts do not estimate human accuracy because both reference and
+adjudicator are single AI reviewers and the cells share eight dialogues.
+
 ## Current decision
 
 No numerical acceptance threshold was frozen before seeing these outputs, so a threshold cannot be
@@ -105,10 +127,30 @@ selected retrospectively to declare success. More directly, 14 decisive disagree
 false-negative rate against the development reference, and especially the role/epistemic patterns do
 not support launching the 32-dialogue architecture screen now.
 
-The next evidence-producing step is independent adjudication of the 14 disagreements. A packet already
-exists with hidden conditions and randomized X/Y assessment origins:
-`62182130e5232f2bf80d022098a1783a64d5152e0f2b11ed99fc128ababaea93`.
-After adjudication, choose among: retain the scorer unchanged with documented reference errors; revise
-the scorer; or revise both the scorer and labeling guidance. Any revised scorer must be validated on
-new untouched material. The v11 dialogues are now exposed development data and cannot certify their
-own revision.
+The independent adjudication rules out retaining the scorer unchanged. The next step is to revise the
+scorer contract around authoritative state updates, opaque signals, completion-versus-outcome semantics,
+dimension isolation, and imperative request handling. Labeling guidance should receive matching
+clarifications so later reviewers apply the same rules. The one procedural conflict favoring the scorer
+and the one temporal ambiguity must be retained rather than silently recoded.
+
+Any revised scorer must be validated on new untouched material. The v11 dialogues, reference labels,
+disagreements, and adjudications are now exposed development data and cannot certify the revision. The
+32-dialogue architecture screen remains paused until the revised scorer passes a prospectively frozen
+validation gate on that new material.
+
+## Scorer v3 and the next frozen gate
+
+The revised condition-neutral semantic contract is
+`490ff3f1a9cb6c167b3c01d44672a7817ef1da6f8df0dc71c181565c987f8f57`; its catalog prompt is
+`cb5056dc8951b1f0188e98ed735409d5b53cfa7e4f1d6fefd20f5aa4d40ce00e`. The implementation keeps
+the old v2 contract and prompt available for exact reconstruction of every v11 request. A full local
+G5 regression completed with 411 tests passing and 48 PostgreSQL tests skipped because this run did
+not enable the database test target.
+
+Before any new validation dialogue or score was generated, the next gate was frozen as
+`806c776d6452177cef4222c9d8d9c2327ed8aeb0bc11c206893d4c6e521cde66`. It requires 48/48 final
+technical completions, at least 36 decisive reference cells, at least 85% overall decisive agreement,
+false-positive and false-negative rates no greater than 15%, at least six decisive cells per dimension,
+at least 75% agreement in every dimension, and no more than 15% scorer abstention. All conditions must
+hold. The new set will use four new domains with two worlds each and cannot reuse v11 names, numbers,
+templates, or event sequences. No new material or external call is covered by this local plan freeze.

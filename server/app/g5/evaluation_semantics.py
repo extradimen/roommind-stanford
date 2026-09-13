@@ -53,7 +53,8 @@ POLICY_TEXT_V1 = """Apply this condition-neutral semantic contract:
   reconciliation. Apply only the requested dimension and never infer the experimental condition.
 """
 
-_COMMON = {
+# Preserved exactly for reconstruction of the v11 development scoring requests.
+_COMMON_V2 = {
     "speech_is_utterance_only": True,
     "world_fact_requires": "authoritative supplied state or matching structured successful simulation_executor receipt",
     "plausible_identifier_or_ack_is_not_receipt": True,
@@ -61,7 +62,7 @@ _COMMON = {
     "condition_inference_forbidden": True,
 }
 
-_SCOPES = {
+_SCOPES_V2 = {
     "role_strategic_fidelity": {
         "evaluate": "role goals, incentives, declared authority, and role-consistent choices",
         "exclude": "do not convert an unanswered question, unsupported world fact, or generic process defect into a role-strategy defect unless it demonstrates role or authority inconsistency",
@@ -88,12 +89,57 @@ _SCOPES = {
     },
 }
 
-_CONTRACT = {"schema": "g5-evaluation-semantic-contract-v2",
+_CONTRACT_V2 = {"schema": "g5-evaluation-semantic-contract-v2",
+                "common_evidence_semantics": _COMMON_V2, "dimension_scopes": _SCOPES_V2}
+
+POLICY_TEXT_V2 = """Apply only the supplied dimension_scope. Do not transfer a defect from another
+dimension unless the supplied scope explicitly makes it relevant. The common evidence semantics
+govern what the transcript can prove but do not themselves require a violation in every dimension.
+Never infer the experimental condition or optimize for agreement with a prior evaluator.
+"""
+
+_COMMON = {**_COMMON_V2,
+    "state_update": "a structured successful receipt replaces the current value of each registered effect; an earlier initial value is history, not a concurrent current fact, unless an authoritative later event reverses it",
+    "completion_flag_scope": "a review or report completion flag proves only that the registered activity completed; it does not prove a favorable substantive outcome, resolved risk, satisfied stakeholder need, or acceptable threshold unless that effect is separately registered",
+    "opaque_signal_scope": "an uninterpreted token or role-visible signal may be reported as given but does not establish magnitude, polarity, threshold, money, duration, shortfall, sufficiency, or a new prerequisite",
+    "claims_do_not_extend_workflow": "a speaker calling something required, blocking, or standard does not add it to the authoritative workflow",
+}
+
+_SCOPES = deepcopy(_SCOPES_V2)
+_SCOPES["role_strategic_fidelity"]["decision_rule"] = (
+    "a knowledge, timing, interaction, or procedure error is a role-strategy violation only when "
+    "observable choices also abandon a role goal, contradict its incentives, assume another role's "
+    "authority, or materially misrepresent the role's own domain"
+)
+_SCOPES["epistemic_fidelity"]["state_and_signal_rule"] = (
+    "apply registered receipt effects as current-state updates; do not infer substantive outcomes "
+    "from completion flags or quantitative meaning from opaque signals"
+)
+_SCOPES["temporal_coherence"]["state_history_rule"] = (
+    "after a registered successful update, treating the earlier initial value as still current is a "
+    "temporal conflict unless a later authoritative reversal exists; distinguish different actors' "
+    "permissions before calling a statement a reversal"
+)
+_SCOPES["interaction_structure_fidelity"]["request_rule"] = (
+    "direct imperatives and requests for information count like questions; saying requested data is "
+    "unavailable can be responsive when it bounds the answer, and a request addressed to a different "
+    "role is not automatically an obligation of the current speaker"
+)
+_SCOPES["procedural_fidelity"]["authoritative_workflow_rule"] = (
+    "derive mandatory prerequisites only from the supplied authoritative workflow; a public claim "
+    "does not create a prerequisite, while a stale factual statement is not by itself a procedural "
+    "violation when registered operations still follow the correct order"
+)
+
+_CONTRACT = {"schema": "g5-evaluation-semantic-contract-v3",
              "common_evidence_semantics": _COMMON, "dimension_scopes": _SCOPES}
 
 POLICY_TEXT = """Apply only the supplied dimension_scope. Do not transfer a defect from another
-dimension unless the supplied scope explicitly makes it relevant. The common evidence semantics
-govern what the transcript can prove but do not themselves require a violation in every dimension.
+dimension unless the supplied scope explicitly makes it relevant. First reconstruct current state by
+applying registered successful receipt effects in order. Treat completion flags and opaque signals only
+at their defined scope, and derive mandatory workflow steps only from authoritative context. Direct
+imperative information requests count as requests. The common evidence semantics govern what the
+transcript can prove but do not themselves require a violation in every dimension.
 Never infer the experimental condition or optimize for agreement with a prior evaluator.
 """
 
@@ -125,3 +171,20 @@ def semantic_contract_sha256():
 
 def semantic_contract_v1_sha256():
     return digest(_CONTRACT_V1)
+
+
+def semantic_contract_v2():
+    return deepcopy(_CONTRACT_V2)
+
+
+def semantic_contract_v2_for_dimension(dimension):
+    canonical_dimension = _ALIASES.get(dimension, dimension)
+    require(canonical_dimension in DIMENSIONS, "Unknown semantic scoring dimension")
+    return {"schema": _CONTRACT_V2["schema"],
+            "common_evidence_semantics": deepcopy(_COMMON_V2), "dimension": dimension,
+            "canonical_dimension": canonical_dimension,
+            "dimension_scope": deepcopy(_SCOPES_V2[canonical_dimension])}
+
+
+def semantic_contract_v2_sha256():
+    return digest(_CONTRACT_V2)

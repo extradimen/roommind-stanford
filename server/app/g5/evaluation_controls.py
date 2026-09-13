@@ -37,12 +37,15 @@ def validate_cell(plan, cell):
 
 
 def request_for(spec, packet, dimension, rubric, cell=None):
-    from app.g5.evaluation import PROMPT, PROMPT_V1
+    from app.g5.evaluation import PROMPT, PROMPT_V1, PROMPT_V2
     from app.g5.evaluation_semantics import (semantic_contract_for_dimension,
-        semantic_contract_sha256, semantic_contract_v1, semantic_contract_v1_sha256)
+        semantic_contract_sha256, semantic_contract_v1, semantic_contract_v1_sha256,
+        semantic_contract_v2_for_dimension, semantic_contract_v2_sha256)
     semantic_sha = spec.get("semantic_contract_sha256")
     if semantic_sha == semantic_contract_v1_sha256():
         contract, prompt = semantic_contract_v1(), PROMPT_V1
+    elif semantic_sha == semantic_contract_v2_sha256():
+        contract, prompt = semantic_contract_v2_for_dimension(dimension), PROMPT_V2
     elif semantic_sha == semantic_contract_sha256():
         contract, prompt = semantic_contract_for_dimension(dimension), PROMPT
     else:
