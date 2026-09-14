@@ -271,6 +271,42 @@ class HierarchyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rejected[0]["failure"]["message"], "Plan source required")
         self.assertIn("response_content", rejected[0]["failure"])
 
+    async def test_repair_allowlist_matches_retrieved_context_not_hidden_memory(self):
+        requests = []
+
+        async def reflect(context):
+            return []
+
+        async def transport(request):
+            context = json.loads(request["messages"][1]["content"])
+            requests.append(context)
+            retrieved = [row["id"] for row in context["memory"]["retrieved"]]
+            if "validation_feedback" not in context:
+                body = {"goal": "Keep evidence scoped", "updates": [
+                    step("root", context["actor"], [retrieved[0]], intent="goal", parent=None)]}
+            else:
+                allowed = context["validation_feedback"]["allowed_values"]["source_ids"]
+                self.assertEqual(sorted(retrieved), allowed)
+                body = {"goal": "Keep evidence scoped", "updates": [
+                    step("root", context["actor"], [allowed[0]], intent="goal", parent=None),
+                    step("ask", context["actor"], [allowed[0]])]}
+            return Completion(json.dumps(body), "offline", "fixed", "mock",
+                              digest(request), "stop")
+
+        source = view()
+        source["facts"].update({
+            f"extra-{index}": {"value": index, "source": f"fixture-{index}", "disclosable": True}
+            for index in range(10)})
+        adapter = ReflectiveCognition(memory=MemoryCognition(top_k=2), reflector=reflect,
+            planner=ModelCognitionGenerator("hierarchical_updates",
+                ModelBinding("offline", "fixed", "mock", .2, 4096), transport),
+            reflector_id="none", planner_id="retrieved-allowlist", hierarchical=True,
+            plan_updates=True, max_plan_revisions=1)
+        result = await adapter(source)
+        self.assertEqual(len(requests), 2)
+        self.assertGreater(len(result["memory"]["nodes"]), len(requests[1]["memory"]["retrieved"]))
+        self.assertEqual(len(result["plans"][-1]["proposal"]["steps"]), 2)
+
     async def test_incremental_context_archives_terminal_bodies_without_erasing_history(self):
         requests = []
         async def reflector(context):

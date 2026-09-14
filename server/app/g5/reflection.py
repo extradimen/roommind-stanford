@@ -206,7 +206,10 @@ class ReflectiveCognition:
                         from app.g5.planning import completion_source_ids, required_goal_statuses
                         required_goals = (required_goal_statuses(proposal)
                             if str(error) == "Goal status must agree with children, not imply world success" else {})
-                        allowed = {"source_ids": sorted(validation_sources),
+                        # Incremental updates are parsed against the evidence actually
+                        # supplied in this request.  The full memory store remains
+                        # available only to revalidate unchanged durable plan rows.
+                        allowed = {"source_ids": sorted(available),
                             "source_id_copy_rule": (
                                 "copy each complete source ID character-for-character from source_ids; "
                                 "never type, shorten, extend, or reconstruct it from memory"),
@@ -221,7 +224,7 @@ class ReflectiveCognition:
                             "current_status_by_task": {step["id"]: step["status"] for step in existing
                                 if step["status"] not in {"completed", "cancelled"}},
                             "completion_source_ids_by_task": {step["id"]: completion_source_ids(
-                                step, origins.get(step["id"]), validation_sources, view["actor"])
+                                step, origins.get(step["id"]), available, view["actor"])
                                 for step in existing if step["status"] not in {"completed", "cancelled"}},
                             "required_goal_status_by_id": required_goals,
                             "terminal_task_ids": [step["id"] for step in existing

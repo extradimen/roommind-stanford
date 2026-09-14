@@ -309,3 +309,22 @@ revisions instead of three. The model, reasoning effort, eight worlds, arm alloc
 stopping rules, scorer v4, and prospective gate are unchanged. v16 must rerun all eight dialogues in a
 new directory and bind the v15 failed execution hash. The five sealed v15 dialogues remain failure
 evidence and do not count toward v16 completion.
+
+## v16 execution failure and proposed v17 recovery
+
+v16 sealed four of eight dialogues and failed on event three of the fifth, in the orchard-frost
+family. The preserved batch contains five worlds, 67 committed events, 678 model attempts, four
+freezes, and zero reopenings. SQLite integrity is `ok`; the execution-binding hash is
+`74c402748592cf17867a48dcb5787bed8405a2f68589727783e100d743114a6a`. All raw responses, source
+bundles, logs, and SQLite remain in the separate `v16-development-online-failed` archive and cannot
+be pooled with a recovery batch.
+
+The model followed v16's exact-copy instruction. The actual defect was a mismatch between two local
+sets: repair feedback advertised IDs from the complete private memory store, while incremental-update
+parsing correctly accepted only evidence retrieved into the current model request. Some IDs declared
+valid by the feedback were therefore rejected at the next layer. v17 makes the repair allowlist and
+task-completion evidence list use the current retrieved set. The complete store remains available only
+to revalidate sources already fixed in durable plan rows. This aligns feedback with validation without
+expanding model-visible evidence. The model, materials, arm allocation, 16-event limit, stopping rules,
+scorer v4, and prospective gate remain unchanged. v17 must rerun all eight dialogues in a new directory
+and bind the v16 failed execution hash.
