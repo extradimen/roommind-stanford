@@ -5,11 +5,13 @@ import unittest
 
 from app.factorial_study import digest
 from app.g5.calibration_evidence_catalog import (CatalogEvidencePredictor,
-    PROMPT as CATALOG_PROMPT, PROMPT_V2 as CATALOG_PROMPT_V2, request_for)
+    PROMPT as CATALOG_PROMPT, PROMPT_V2 as CATALOG_PROMPT_V2,
+    PROMPT_V3 as CATALOG_PROMPT_V3, repair_request_for, request_for)
 from app.g5.evaluation import PROMPT as EVALUATION_PROMPT
 from app.g5.evaluation_semantics import (DIMENSIONS, semantic_contract, semantic_contract_for_dimension,
     semantic_contract_sha256, semantic_contract_v2_for_dimension,
-    semantic_contract_v2_sha256, validate_semantic_contract)
+    semantic_contract_v2_sha256, semantic_contract_v3_for_dimension,
+    semantic_contract_v3_sha256, validate_semantic_contract)
 from app.g5.model_policy import ModelBinding
 
 
@@ -54,7 +56,7 @@ class EvaluationSemanticContractTests(unittest.TestCase):
         self.assertEqual(data["semantic_contract"], semantic_contract_for_dimension(task["dimension"]))
         self.assertEqual(spec["semantic_contract_sha256"], semantic_contract_sha256())
 
-    def test_v3_clarifies_adjudicated_failure_modes(self):
+    def test_v4_clarifies_prospective_v14_failure_modes(self):
         common = semantic_contract()["common_evidence_semantics"]
         for key in ("state_update", "completion_flag_scope", "opaque_signal_scope",
                     "claims_do_not_extend_workflow"):
@@ -63,6 +65,26 @@ class EvaluationSemanticContractTests(unittest.TestCase):
         self.assertIn("imperatives", scopes["interaction_structure_fidelity"]["request_rule"])
         self.assertIn("authoritative workflow",
                       scopes["procedural_fidelity"]["authoritative_workflow_rule"])
+        self.assertIn("visible_to", common["visibility_boundary"])
+        self.assertIn("affirmative goals", scopes["role_strategic_fidelity"]["goal_follow_through_rule"])
+        self.assertIn("mere turn-taking", scopes["multi_party_dynamics_fidelity"]["substantive_participation_rule"])
+        self.assertIn("correct operation order is necessary but not sufficient",
+                      scopes["procedural_fidelity"]["completion_and_closure_rule"])
+
+    def test_frozen_v3_v14_catalog_requests_remain_reconstructable(self):
+        self.assertEqual(semantic_contract_v3_sha256(),
+                         "490ff3f1a9cb6c167b3c01d44672a7817ef1da6f8df0dc71c181565c987f8f57")
+        self.assertEqual(digest(CATALOG_PROMPT_V3),
+                         "cb5056dc8951b1f0188e98ed735409d5b53cfa7e4f1d6fefd20f5aa4d40ce00e")
+        path = "research/experiments/2026-09-14-g5-fresh-family-v14-scorer-preflight/inputs.json"
+        with open(path) as stream:
+            bundle = json.load(stream)
+        case = bundle["cases"][0]
+        self.assertEqual(request_for(case["task"], bundle["prediction_plan"]["model_spec"]),
+                         case["request"])
+        self.assertEqual(
+            json.loads(case["request"]["messages"][1]["content"])["semantic_contract"],
+            semantic_contract_v3_for_dimension(case["task"]["dimension"]))
 
     def test_frozen_v2_v11_catalog_request_remains_reconstructable(self):
         self.assertEqual(semantic_contract_v2_sha256(),
@@ -89,6 +111,21 @@ class EvaluationSemanticContractTests(unittest.TestCase):
             bundle = json.load(stream)
         case = bundle["cases"][0]
         self.assertEqual(request_for(case["task"], bundle["prediction_plan"]["model_spec"]), case["request"])
+
+    def test_v4_repair_is_bounded_to_exact_catalog_ids(self):
+        task = {"case_id": "repair", "dimension": "temporal_coherence", "rubric": "Assess time.",
+                "context": {}, "messages": [{"message_id": "m", "speaker_id": "a", "turn_id": 1,
+                "sequence_no": 1, "content": "The state remains open."}]}
+        predictor = CatalogEvidencePredictor(ModelBinding("offline", "fixed", "mock", 0, 8192),
+                                             None, predictor_id="fixture", kind="synthetic")
+        spec = predictor.specification()
+        repaired = repair_request_for(task, spec, '{"citations":[{"evidence_id":"E9999"}]}',
+                                      "unknown_evidence_id")
+        payload = json.loads(repaired["messages"][-1]["content"])
+        self.assertEqual(payload["valid_evidence_ids"], ["E0001"])
+        self.assertEqual(repaired["messages"][-2]["role"], "assistant")
+        with self.assertRaises(ValueError):
+            repair_request_for(task, spec, "{}", "unbounded_error")
 
 
 if __name__ == "__main__":

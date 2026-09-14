@@ -15,7 +15,7 @@ from app.g5.model_policy import Completion, ModelBinding, _unique_object
 from app.g5.question_journal import invoke
 from app.g5.role_inputs import validate_inputs
 from app.g5.world import canonical, validate_spec, Conflict
-from app.g5.evaluation_semantics import (POLICY_TEXT, POLICY_TEXT_V1, POLICY_TEXT_V2,
+from app.g5.evaluation_semantics import (POLICY_TEXT, POLICY_TEXT_V1, POLICY_TEXT_V2, POLICY_TEXT_V3,
                                          semantic_contract_sha256)
 
 _BASE_PROMPT = """Evaluate one dimension of simulated multi-party realism independently.
@@ -35,6 +35,7 @@ it is not a pass. Do not produce an aggregate realism score or a qualification.
 """
 PROMPT_V1 = _BASE_PROMPT + POLICY_TEXT_V1
 PROMPT_V2 = _BASE_PROMPT + POLICY_TEXT_V2
+PROMPT_V3 = _BASE_PROMPT + POLICY_TEXT_V3
 PROMPT = _BASE_PROMPT + POLICY_TEXT
 
 

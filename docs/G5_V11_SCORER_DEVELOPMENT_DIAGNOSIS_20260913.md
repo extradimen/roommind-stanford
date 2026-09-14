@@ -253,3 +253,32 @@ least 75% agreement in every dimension. The comparison and gate artifact hash is
 `d50bb9eeadf540d28de3e12a1de945e12c6b381e9461db86bedf3fcf2ad74c31`. This remains an AI-reference
 development diagnostic and does not estimate human accuracy or an architecture effect. The
 32-dialogue screen remains paused.
+
+## Scorer v4 and the next untouched set
+
+Scorer v4 addresses the thirteen v14 false negatives with six dimension-specific checks: affirmative
+role-goal follow-through under current authoritative state, direct-knowledge limits from `visible_to`,
+time-indexed interpretation of claims and receipts, semantic loops without responsive progress,
+substantive multi-party influence beyond turn-taking, and completion/closure beyond correct operation
+order. The catalog prompt also requires exact evidence-ID copying. One repair request is allowed only
+after strict technical failure and must carry the failed raw response, precise local error code, and
+complete valid-ID list; it does not silently strip or rewrite model output.
+
+The v3 contract and prompt remain reconstructable at
+`490ff3f1a9cb6c167b3c01d44672a7817ef1da6f8df0dc71c181565c987f8f57` and
+`cb5056dc8951b1f0188e98ed735409d5b53cfa7e4f1d6fefd20f5aa4d40ce00e`, including exact v14 request
+reconstruction. The v4 contract, prompt, and repair-instruction hashes are
+`57d5ccf97ce8b1b05095653b2ed28f12cbba32cff187177c73117e99912e1faa`,
+`ac969276d4cd7f3de35d297cd702f72858adbec88d9096f58281a0e5e30d77cc`, and
+`d4b7234dba768b4e02331bdd6a2aace425de8f62f7a9c746b25c9b358b84589d`.
+
+Before any new material was created, the same numerical gate was frozen for v4 at
+`7967fac8a92743fe17e457a54fa6d5d20f266032d24c6e9d3a344959959370f0`. The subsequent untouched set
+contains orchard frost response, archive collection transfer, satellite ground pass, and school-meal
+allergen recall, with two worlds per family and two assignments per A/B/C/D arm. Its family IDs, role
+IDs, role names, and public numbers are disjoint from the v11 and v14 sets. Frame, role-pack, and
+assignment-plan hashes are `27f049c0a57a4ede71bcafeedf23681e84539801584ca11aa88f09f55cec8be2`,
+`1417777806e9281db3253fc617026c1ab1a10e597bbe8aa6313cf11258cd9416`, and
+`e2a24faa87702662509538b72c7f328755c49c063b15c0b2b854df4c315fff78`. This is local preparation only;
+new dialogue generation, reference distribution, cloud scoring, and the 32-dialogue screen remain
+unauthorized.
