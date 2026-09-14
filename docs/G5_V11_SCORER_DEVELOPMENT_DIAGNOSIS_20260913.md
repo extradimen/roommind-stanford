@@ -343,3 +343,18 @@ and the offline-audit hash is
 The eight-dialogue generation stage is complete. The v15 and v16 failures remain separate archives
 and are not pooled with v17. No independent AI reference has yet been created for v17, scorer v4 has
 not been run on its 48 cells, and the 32-dialogue complete-block screen remains paused.
+
+## v17 independent AI reference freeze
+
+Before any scorer-v4 call, the eight sealed v17 dialogues were converted into 48 dimension tasks and
+two independently ordered blinded packets. The scorer-input hash is
+`ea35300e0680a1146f0daf998a3d28ebfe786cdf587cd6e65430b97e589c68ea`; its scorer prompt, semantic
+contract, and repair instruction exactly match the prospective v4 plan. The two AI reviewers labeled
+35 clear/13 violation and 30 clear/18 violation. They agreed on 41 of 48 tasks. A third AI adjudicated
+the seven disagreements without reviewer origins, arm conditions, or scorer outputs.
+
+The frozen final reference has 48 decisive labels: 30 clear and 18 violation, with eight decisive
+cells in every dimension. Its hash is
+`a7b9dad9ede1d5cdab753be841b8c47551c89ed2eefdced2cc9797b892a89a30`. This remains an AI-only
+development diagnostic rather than human gold and cannot estimate human accuracy or support a
+confirmatory claim. Scorer v4 has not yet been called and the 32-dialogue screen remains paused.
