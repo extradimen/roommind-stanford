@@ -358,3 +358,26 @@ cells in every dimension. Its hash is
 `a7b9dad9ede1d5cdab753be841b8c47551c89ed2eefdced2cc9797b892a89a30`. This remains an AI-only
 development diagnostic rather than human gold and cannot estimate human accuracy or support a
 confirmatory claim. Scorer v4 has not yet been called and the 32-dialogue screen remains paused.
+
+## v17 scorer-v4 prospective gate result
+
+Scorer v4 completed all 48 frozen tasks in 48 requests, with no repair retry, abstention, or technical
+failure. It produced 34 clear and 14 violation predictions. Every start record, raw HTTP response, and
+parsed result is retained. The offline-audit hash is
+`ea9a03c43c763487e6ee726c7c9142d9ccff4dffe2d00099a3ad9e812f17b64d`.
+
+Against the reference frozen before scoring, exact agreement is 34/48 (70.8%): nine true positives,
+25 true negatives, five false positives, and nine false negatives. The false-positive rate is 16.7%
+and the false-negative rate is 50.0%. Agreement by dimension is 50.0% epistemic fidelity, 62.5%
+interaction-structure fidelity, 100% multi-party dynamics, 62.5% procedural fidelity, 75.0% role
+strategy, and 75.0% temporal coherence. Errors cluster by family: three false positives in archive
+transfer, four false negatives in orchard frost response, one false positive and one false negative in
+satellite ground pass, and one false positive plus four false negatives in school allergen recall.
+
+The frozen all-must-hold gate therefore fails overall agreement, false-positive rate, false-negative
+rate, and per-dimension agreement. The comparison-and-gate hash is
+`c8d4bff17e037d0eae0b1e0f4bbf2ccc04efdd7f29eb6a31373e31b2faf69080`. Version 4 removed the v3
+technical failure but did not improve total label agreement or solve missed violations; it also added
+false positives, so the error is no longer only permissive. Phase 6 remains unqualified and the
+32-dialogue screen must not start. This is still an AI-reference development diagnostic and cannot
+estimate human accuracy or an architecture effect.
