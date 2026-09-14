@@ -75,6 +75,30 @@ class ModelQuestionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(adapter.runtime_specification()["question_repair"], {
             "schema": "g5-question-validation-feedback-v1", "max_revisions": 2})
 
+    async def test_extra_question_id_receives_exact_field_feedback_and_can_repair(self):
+        bodies = iter([
+            '{"annotations":[{"kind":"question","start":0,"end":6,"targets":["b"],'
+            '"question_id":"existing"}]}',
+            '{"annotations":[{"kind":"question","start":0,"end":6,"targets":["b"]}]}',
+        ])
+        calls = []
+
+        async def transport(request):
+            calls.append(request)
+            return Completion(next(bodies), "ollama", "fixed", "offline", digest(request), "stop")
+
+        adapter = ModelQuestionAnnotator(self.binding, transport, max_revisions=1,
+                                         unified_repair=True)
+        output = await adapter(self.context(), Decision("speak", "Ready?"))
+        self.assertEqual(output, [{"kind": "question", "start": 0, "end": 6,
+                                   "targets": ["b"]}])
+        repair = __import__("json").loads(calls[1]["messages"][1]["content"])["context"]["validation_feedback"]
+        self.assertIn("remove unexpected question_id", repair["error"]["message"])
+        self.assertEqual(repair["allowed_values"]["question_fields"],
+                         ["kind", "start", "end", "targets"])
+        self.assertEqual(repair["allowed_values"]["response_fields"],
+                         ["kind", "start", "end", "question_id", "status"])
+
     async def test_response_must_belong_to_pending_target(self):
         context = self.context()
         context["questions"] = {"questions": [{

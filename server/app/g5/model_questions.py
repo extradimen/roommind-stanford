@@ -53,8 +53,14 @@ def validate_annotations(context, decision, annotations):
         kind = item.get("kind")
         fields = ({"kind", "start", "end", "targets"} if kind == "question"
                   else {"kind", "start", "end", "question_id", "status"})
-        if kind not in ("question", "response") or set(item) != fields:
-            raise ValueError("Invalid annotation fields")
+        if kind not in ("question", "response"):
+            raise ValueError("Invalid annotation kind; expected question or response")
+        if set(item) != fields:
+            missing = ",".join(sorted(fields - set(item))) or "none"
+            unexpected = ",".join(sorted(set(item) - fields)) or "none"
+            raise ValueError(
+                f"Invalid {kind} annotation fields; expected {','.join(sorted(fields))}; "
+                f"missing {missing}; remove unexpected {unexpected}")
         start, end = item["start"], item["end"]
         if (type(start) is not int or type(end) is not int
                 or not 0 <= start < end <= len(decision.content)):
@@ -146,7 +152,9 @@ class ModelQuestionAnnotator:
                            "question_target_ids": [participant for participant
                                                    in context["participants"]
                                                    if participant != context["actor"]],
-                           "question_ids": [q.get("id") for q in context["questions"]["questions"]]}
+                           "question_ids": [q.get("id") for q in context["questions"]["questions"]],
+                           "question_fields": ["kind", "start", "end", "targets"],
+                           "response_fields": ["kind", "start", "end", "question_id", "status"]}
                 rejected.append(capsule("question_annotation", revision, request_hash,
                                         result.content, message, allowed_values=allowed))
                 if revision >= self.max_revisions:

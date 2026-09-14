@@ -179,3 +179,19 @@ revisions instead of carrying forward the qualified v11 settings. v13 restores
 `reasoning_effort=low` and three structured revisions while holding the v3 worlds, roles, assignments,
 model, 16-step stopping rule, and request budgets fixed. Its binding records the exact v12 predecessor.
 Evaluation, the 32-dialogue screen, and confirmatory work remain disabled.
+
+## v13 failure and proposed v14 repair
+
+v13 used the intended three-revision budget. It sealed the first dialogue, committed 12 events in the
+second, and then stopped after the question annotator returned the same schema conflict in all four
+attempts: `kind=question` included a `question_id` field that is valid only for `kind=response`. The
+generic “Invalid annotation fields” feedback did not identify the extra field. The preserved v13 store
+passes SQLite integrity and contains 28 committed events, 320 attempt rows, and one sealed source. Its
+execution binding is `a4c7e6d50bbbdbe026e3177da2e13b7feadf94138c97fc6b33c60b3f711105a4`; the sealed source is
+`8bcfd812a9bc7da96ffce28a637437b4afd4dd13d2e91280778c4b502bfaa21f`.
+
+The v14 candidate keeps fail-closed validation and does not silently delete fields or infer annotation
+intent. On a field mismatch, its bounded repair feedback identifies missing and unexpected keys and
+supplies the exact allowed key sets for questions and responses. This shared annotator change applies
+equally to every arm. Worlds, roles, assignments, model, stopping rule, budgets, and evaluation barrier
+remain fixed.
