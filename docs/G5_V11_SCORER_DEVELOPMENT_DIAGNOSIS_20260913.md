@@ -229,3 +229,27 @@ references rather than human gold labels.
 The user then explicitly authorized the 48 frozen Ollama scorer tasks, at most 96 requests with every
 raw response retained, while excluding the 32-dialogue screen. The authorization-record hash is
 `b0151e890826b2b75efe04970dbfa6308dd170b0c6e56e3074914a3072f2d8ba`.
+
+## v14 prospective gate result
+
+The 48 frozen tasks used 50 requests. Forty-seven cells produced final predictions. One procedural
+cell cited an unknown evidence ID on its first attempt and succeeded on retry. The microgrid-v2
+temporal-coherence cell cited unknown evidence IDs on both permitted attempts and remains a final
+technical failure. The output contains 34 clear predictions, 13 violation predictions, and one failed
+cell; every raw HTTP response and attempt record is retained. The offline audit hash is
+`d8c1e80b570a5864fd10d8c6dd6bfcd0d3a11a82539b5faffdf7353a71ceac75`.
+
+Against the pre-scoring frozen two-AI reference, exact agreement is 34/48 (70.8%): 13 true positives,
+21 true negatives, zero false positives, 13 false negatives, and one technical failure whose reference
+label is clear. The false-positive rate is 0% and the false-negative rate is 50%. Agreement by dimension
+is 75.0% epistemic fidelity, 87.5% interaction structure fidelity, 87.5% multi-party dynamics, 62.5%
+procedural fidelity, 50.0% role strategy, and 62.5% temporal coherence. Thirteen of the fourteen
+disagreements or failures are reference violations scored clear, so the dominant error is missed
+violations rather than overcalling violations.
+
+The prospectively frozen all-must-hold gate therefore fails five checks: 48/48 final completion, zero
+technical failures after retry, at least 85% overall agreement, at most 15% false negatives, and at
+least 75% agreement in every dimension. The comparison and gate artifact hash is
+`d50bb9eeadf540d28de3e12a1de945e12c6b381e9461db86bedf3fcf2ad74c31`. This remains an AI-reference
+development diagnostic and does not estimate human accuracy or an architecture effect. The
+32-dialogue screen remains paused.
