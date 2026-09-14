@@ -215,3 +215,17 @@ condition-free reference packets. The scorer input hash is
 `1ff927a8488a995e5e893cc8a286fee6c1070b47316635121409586e2a8b370f`. The packets contain no model
 predictions, condition labels, or source run IDs. No reference label or model score has been collected,
 and external packet distribution remains unauthorized. The 32-dialogue screen stays paused.
+
+Two isolated Codex AI reviewers then completed all 48 tasks independently. Reviewer A labeled 23 clear
+and 25 violation; reviewer B labeled 25 clear and 23 violation. They agreed on 40 cells and disagreed on
+eight. Their outputs were frozen before any scorer-output directory existed, with freeze hash
+`b9e403f1129a44a5bf222d127c4ae395fa4432e54fa6b6312bb735d1c9a7a045`. A third Codex AI reviewer read
+only an anonymous X/Y packet and adjudicated all eight disagreements without condition, reviewer-origin,
+or model-score information. The final reference contains 22 clear and 26 violation labels, with eight
+decisive labels in every dimension; its hash is
+`d2c4420fc6d7241b315bd6ff53c0b0663ffcb60403c76c224e74a6c8f045e934`. These remain AI development
+references rather than human gold labels.
+
+The user then explicitly authorized the 48 frozen Ollama scorer tasks, at most 96 requests with every
+raw response retained, while excluding the 32-dialogue screen. The authorization-record hash is
+`b0151e890826b2b75efe04970dbfa6308dd170b0c6e56e3074914a3072f2d8ba`.
