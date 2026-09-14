@@ -328,3 +328,18 @@ to revalidate sources already fixed in durable plan rows. This aligns feedback w
 expanding model-visible evidence. The model, materials, arm allocation, 16-event limit, stopping rules,
 scorer v4, and prospective gate remain unchanged. v17 must rerun all eight dialogues in a new directory
 and bind the v16 failed execution hash.
+
+## v17 dialogue completion
+
+v17 completed and sealed all eight development dialogues, with two assignments per A/B/C/D arm and
+16 events per dialogue. The final archive contains 128 committed events, 1,434 model attempts, eight
+freezes, and zero reopenings. SQLite integrity is `ok`; all eight source bundles pass manifest and seal
+verification, and each transcript maps to the corresponding world, seal, and 16-event source. The
+execution-binding hash is `b95cbe3786761ded454fc36ab5e40a0b771698cb5f6a78779733cbf7cfc92ec6`,
+the transcript hash is `8900620420a654df6326de9fbfe9015740f73b93bb244b5a1bbfb0c71f0080c2`,
+and the offline-audit hash is
+`aa9b9844414233e52b0d5e451fa41542b9dfc6fe406f0068b1284b7d1f4c66d2`.
+
+The eight-dialogue generation stage is complete. The v15 and v16 failures remain separate archives
+and are not pooled with v17. No independent AI reference has yet been created for v17, scorer v4 has
+not been run on its 48 cells, and the 32-dialogue complete-block screen remains paused.
