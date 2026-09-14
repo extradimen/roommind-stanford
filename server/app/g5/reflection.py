@@ -207,6 +207,13 @@ class ReflectiveCognition:
                         required_goals = (required_goal_statuses(proposal)
                             if str(error) == "Goal status must agree with children, not imply world success" else {})
                         allowed = {"source_ids": sorted(validation_sources),
+                            "source_id_copy_rule": (
+                                "copy each complete source ID character-for-character from source_ids; "
+                                "never type, shorten, extend, or reconstruct it from memory"),
+                            "new_goal_rule": (
+                                "a newly introduced goal node requires at least one newly introduced "
+                                "non-goal child whose parent is that goal ID"),
+                            "non_execute_operation": "",
                             "actor": view["actor"],
                             "operations": deepcopy(view["operations"]),
                             "mutable_existing_tasks": [{key: deepcopy(step[key]) for key in immutable}

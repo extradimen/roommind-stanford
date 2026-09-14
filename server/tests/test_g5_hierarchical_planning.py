@@ -260,6 +260,10 @@ class HierarchyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 2)
         self.assertNotIn("validation_feedback", requests[0])
         self.assertEqual(requests[1]["validation_feedback"]["error"]["message"], "Plan source required")
+        allowed = requests[1]["validation_feedback"]["allowed_values"]
+        self.assertIn("character-for-character", allowed["source_id_copy_rule"])
+        self.assertIn("at least one", allowed["new_goal_rule"])
+        self.assertEqual(allowed["non_execute_operation"], "")
         self.assertTrue(all(row["source_ids"] for row in state["plans"][-1]["proposal"]["steps"]))
         rejected = [row for row in state["generation_receipts"]
                     if row["stage"] == "structured_rejected"]

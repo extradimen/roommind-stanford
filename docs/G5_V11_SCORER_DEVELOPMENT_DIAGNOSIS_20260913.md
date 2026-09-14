@@ -282,3 +282,30 @@ assignment-plan hashes are `27f049c0a57a4ede71bcafeedf23681e84539801584ca11aa88f
 `e2a24faa87702662509538b72c7f328755c49c063b15c0b2b854df4c315fff78`. This is local preparation only;
 new dialogue generation, reference distribution, cloud scoring, and the 32-dialogue screen remain
 unauthorized.
+
+## v15 execution failure and proposed v16 recovery
+
+Subsequent authorization covered only generation of the eight development dialogues through the
+Ollama cloud model and retention of raw responses. It did not cover AI-reference construction,
+scoring, or the 32-dialogue screen. v15 sealed five of eight dialogues and then failed on event three
+of the sixth, in the satellite-ground-pass family. The preserved failed batch contains six worlds,
+83 committed events, 902 model attempts, five freezes, and zero reopenings. SQLite integrity is `ok`
+and the execution-binding hash is
+`0a121e25e2c4bc3aa1d277dab58e507d3f269aed64613aedeaa5bc50dcd16463`. Raw attempts, generated source
+bundles, the runner log, and SQLite remain in the separate `v15-development-online-failed` archive
+and cannot be pooled with a recovery batch.
+
+The failure arose during a `payload_coordinator` hierarchical-plan update. Four successive outputs
+introduced a goal without a child intention, invented an unavailable operation, again introduced a
+childless goal, and finally truncated the last character from an otherwise valid source ID. The final
+error was `Updated task cites evidence outside supplied context`. Strict validation therefore blocked
+an invalid commit as designed; the execution weakness was insufficiently explicit exact-copy feedback
+after a source-reference rejection.
+
+The v16 recovery candidate changes only structured-plan repair guidance and the revision allowance. It
+returns the complete source-ID allowlist with a character-for-character copy instruction, repeats the
+new-goal child requirement and the empty operation for non-execution, and permits four structured
+revisions instead of three. The model, reasoning effort, eight worlds, arm allocation, 16-event limit,
+stopping rules, scorer v4, and prospective gate are unchanged. v16 must rerun all eight dialogues in a
+new directory and bind the v15 failed execution hash. The five sealed v15 dialogues remain failure
+evidence and do not count toward v16 completion.

@@ -68,6 +68,10 @@ updates list is valid when no evidence-bound change is needed.
 Never emit an update whose ID is listed in terminal_task_ids. Those tasks are
 immutable and omitted from the active previous-plan projection; use a new unique,
 explicitly sourced ID if new work is needed.
+On any source/reference rejection, copy each replacement ID character-for-character
+from validation_feedback.allowed_values.source_ids. Do not reproduce an ID from
+memory, shorten it, add a character, or repair it by guessing. Recheck the complete
+string before returning.
 For an existing leaf task, status completed requires one of the IDs listed for
 that task in completion_source_ids_by_task. Put that ID in status_source_ids.
 If its list is empty, preserve a non-completed status. The explanatory mappings
