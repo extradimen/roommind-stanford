@@ -195,3 +195,23 @@ intent. On a field mismatch, its bounded repair feedback identifies missing and 
 supplies the exact allowed key sets for questions and responses. This shared annotator change applies
 equally to every arm. Worlds, roles, assignments, model, stopping rule, budgets, and evaluation barrier
 remain fixed.
+
+## v14 completion and scoring preflight
+
+v14 completed all eight dialogues: two per arm, 16 events each, 128 committed events, 1,424 model
+attempt records, eight seals, and zero reopenings. SQLite integrity is `ok`. The execution binding is
+`89ccb30ec547c1542597f3c16aca143905b6c15fd3e604a951877f4d68e49354`; the public transcript content
+hash is `f9a626e5ba3be2310d955d3ff2c5d16e397cb8562b20c788409ce88563c72994`. Offline verification passed
+for all eight internal sources and reconciled their attempt counts exactly with SQLite.
+
+Structural review found no protected value in public speech and verified registered action authority
+through source replay. One microgrid dialogue contains four exact duplicate speech events, and two
+dialogues end at the fixed 16-step cutoff with one pending question target each. These observations are
+retained for blinded quality assessment; no dialogue was removed or selected based on them.
+
+A local-only preflight froze all 48 dialogue-by-dimension scorer tasks and two independently ordered,
+condition-free reference packets. The scorer input hash is
+`3c6a948f396fa7d68426df10b506f342188eccf8b57088701c7e841e11744f48`; the preflight summary hash is
+`1ff927a8488a995e5e893cc8a286fee6c1070b47316635121409586e2a8b370f`. The packets contain no model
+predictions, condition labels, or source run IDs. No reference label or model score has been collected,
+and external packet distribution remains unauthorized. The 32-dialogue screen stays paused.
