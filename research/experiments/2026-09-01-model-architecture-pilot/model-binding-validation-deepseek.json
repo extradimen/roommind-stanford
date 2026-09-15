@@ -1,0 +1,2462 @@
+{
+  "protocol": "roommind-model-architecture-one-turn-smoke-v1",
+  "generated_at": "2026-09-01T12:27:20.977374+00:00",
+  "scenario_slug": "market-launch-go-no-go",
+  "sequential": true,
+  "provider_failover": false,
+  "architectures": [
+    {
+      "name": "old_g1",
+      "revision": "95b6594",
+      "worktree": "/home/ubuntu/roommind-model-study-old",
+      "api_url": "http://127.0.0.1:9010"
+    },
+    {
+      "name": "new_g1_1",
+      "revision": "ef8c4f7",
+      "worktree": "/home/ubuntu/roommind-model-study-new",
+      "api_url": "http://127.0.0.1:9020"
+    }
+  ],
+  "models": [
+    "deepseek-v4-flash"
+  ],
+  "cells": [
+    {
+      "architecture": "old_g1",
+      "revision": "95b6594",
+      "model": "deepseek-v4-flash",
+      "started_at": "2026-09-01T12:27:21.206681+00:00",
+      "duration_ms": 47987,
+      "status": "completed",
+      "http_status": 200,
+      "session_uuid": "ff3ee7ae-2929-4a25-b799-0c06b85e478c",
+      "error_type": null,
+      "error": null,
+      "step": {
+        "player_move": {
+          "content": "Good morning, everyone. As we begin this go/no-go meeting, our objective is to make a launch decision that is commercially sound, operationally feasible, and financially responsible. I propose we first review the evidence on market demand, operational capacity, and budget constraints. Then we can design a launch option that addresses any unresolved risks. I'll ask each of you to confirm your readiness based on the data. Let's start with Elena on market readiness, then Samir on operations, and Dana on budget. After that, we'll decide on a phased approach if needed. Let's proceed.",
+          "intent": "open meeting and set agenda",
+          "requested_end": false,
+          "model": "ollama/deepseek-v4-flash"
+        },
+        "turn_result": {
+          "type": "turn_result",
+          "phase": "briefing",
+          "shared_state": {
+            "task_state": {
+              "phase": "briefing",
+              "outcome": {
+                "type": null,
+                "reason": "",
+                "status": "open",
+                "evidence": []
+              },
+              "progress": {
+                "stagnant_turns": 0,
+                "last_progress_turn": 0
+              },
+              "variables": {
+                "budget_approved": {
+                  "value": null,
+                  "status": "unknown",
+                  "evidence": [],
+                  "proposals": [],
+                  "confirmations": []
+                },
+                "launch_decision": {
+                  "value": null,
+                  "status": "unknown",
+                  "evidence": [],
+                  "proposals": [],
+                  "confirmations": []
+                },
+                "market_readiness": {
+                  "value": null,
+                  "status": "unknown",
+                  "evidence": [],
+                  "proposals": [],
+                  "confirmations": []
+                },
+                "operational_readiness": {
+                  "value": null,
+                  "status": "unknown",
+                  "evidence": [],
+                  "proposals": [],
+                  "confirmations": []
+                }
+              },
+              "work_items": {},
+              "open_issues": [
+                "budget_approved",
+                "launch_decision",
+                "market_readiness",
+                "operational_readiness"
+              ],
+              "event_ledger": [],
+              "schema_version": 4,
+              "completion_status": "in_progress",
+              "condition_results": []
+            },
+            "_reply_language": "en",
+            "world_timeline": [
+              {
+                "event_id": "0b43d0d26b21",
+                "turn_id": 1,
+                "tick": 0,
+                "event_type": "user_speech",
+                "actor_id": "user",
+                "content": "Good morning, everyone. As we begin this go/no-go meeting, our objective is to make a launch decision that is commercially sound, operationally feasible, and financially responsible. I propose we first review the evidence on market demand, operational capacity, and budget constraints. Then we can design a launch option that addresses any unresolved risks. I'll ask each of you to confirm your readiness based on the data. Let's start with Elena on market readiness, then Samir on operations, and Dana on budget. After that, we'll decide on a phased approach if needed. Let's proceed.",
+                "meta": {
+                  "display_name": "Morgan Lee (Product Launch Director)",
+                  "character_name": "Morgan Lee",
+                  "job_title": "Product Launch Director"
+                }
+              },
+              {
+                "event_id": "dd5ac88f8119",
+                "turn_id": 1,
+                "tick": 1,
+                "event_type": "npc_speech",
+                "actor_id": "sales_vp",
+                "content": "Provide concrete customer and pipeline evidence without approving another function's commitment.",
+                "meta": {
+                  "display_name": "Elena Ruiz (VP of Enterprise Sales)",
+                  "emotion": "confident",
+                  "gesture": "leaning",
+                  "action": "speak"
+                }
+              },
+              {
+                "event_id": "367ec32bd18f",
+                "turn_id": 1,
+                "tick": 2,
+                "event_type": "npc_speech",
+                "actor_id": "operations_director",
+                "content": "Thanks, Morgan. From an operations standpoint, I can confirm we have a support capacity gap: we're short two trained specialists for a national launch, which directly affects our ability to handle a surge. I'd recommend a controlled pilot in a limited region with full monitoring, rollback criteria, and on-call coverage before any broader rollout. If we can staff those two roles or adjust the launch scope, I can confirm operational readiness for a phased approach.",
+                "meta": {
+                  "display_name": "Samir Patel (Director of Customer Operations)",
+                  "emotion": "concerned",
+                  "gesture": "leaning",
+                  "action": "speak"
+                }
+              },
+              {
+                "event_id": "d4a7db683011",
+                "turn_id": 1,
+                "tick": 3,
+                "event_type": "agent_action",
+                "actor_id": "cfo",
+                "content": "Dana Brooks (Chief Financial Officer) chose to wait and did not speak this turn",
+                "meta": {
+                  "display_name": "Dana Brooks (Chief Financial Officer)",
+                  "action_kind": "wait"
+                }
+              }
+            ],
+            "_pending_responses": [
+              "cfo"
+            ],
+            "_importance_accumulators": {
+              "sales_vp": 9.5,
+              "operations_director": 16.75,
+              "cfo": 0.0
+            },
+            "_last_debug": {
+              "turn_id": 1,
+              "world_events_this_turn": 4,
+              "mentioned": [
+                "cfo",
+                "sales_vp",
+                "operations_director"
+              ],
+              "rule_hits": [
+                "sales_vp",
+                "operations_director",
+                "cfo"
+              ],
+              "agent_order": [
+                "sales_vp",
+                "operations_director",
+                "cfo"
+              ],
+              "agents": {
+                "sales_vp": {
+                  "action": "speak",
+                  "reasoning": "Morgan asked me to confirm market readiness first. I must validate demand and protect two strategic customer commitments, so I'll confirm readiness and flag the urgency of this quarter's availability expectations.",
+                  "observations_added": 1,
+                  "retrieved": [
+                    {
+                      "type": "observation",
+                      "content": "Morgan Lee (Product Launch Director) said: \"Good morning, everyone. As we begin this go/no-go meeting, our objective is to make a launch decision that is commercially sound, operationally feasible, and financially responsible. I propose we first review the evidence on market demand, operational capacity, and budget constraints. Then we can design a launch option that addresses any unresolved risks. I'll ask each of you to confirm your readiness based on the data. Let's start with Elena on market readiness, then Samir on operations, and Dana on budget. After that, we'll decide on a phased approach if needed. Let's proceed.\"",
+                      "score": 3.0
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — goal: Protect two strategic customer commitments and the quarterly revenue target.",
+                      "score": 0.911
+                    },
+                    {
+                      "type": "plan",
+                      "content": "I’ll open by raising the launch timeline and its direct impact on our two strategic enterprise commitments, framing any delay as a revenue and trust risk. I must protect the quarterly revenue target and the two customer expectations, and I will not accept an indefinite postponement without a clear communication plan. I’ll position myself as a collaborative partner, pushing for a phased launch that honors our customer promises while addressing operational concerns.",
+                      "score": 0.89
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — redlines: ['An indefinite delay without a customer communication plan.']",
+                      "score": 0.871
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — hidden_agenda: ['Two major customers expect availability this quarter.']",
+                      "score": 0.871
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — protected_secrets: ['Two major customers privately expect availability this quarter.']",
+                      "score": 0.871
+                    },
+                    {
+                      "type": "observation",
+                      "content": "My responsibility in this task: Validate market demand, customer readiness, and revenue exposure.",
+                      "score": 0.693
+                    },
+                    {
+                      "type": "observation",
+                      "content": "I am Elena Ruiz (VP of Enterprise Sales). Commercially ambitious, persuasive, and strongly customer-focused.",
+                      "score": 0.353
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Task scenario: Strategic Product Launch Go/No-Go Meeting. My task goal: Protect two strategic customer commitments and the quarterly revenue target.. My relationship to the player: stakeholder. Player objective: Confirm market readiness, operational readiness, and budget approval, then obtain joint approval for a phased launch decision.",
+                      "score": 0.257
+                    },
+                    {
+                      "type": "observation",
+                      "content": "My behavioral tendency: {\"risk\": \"medium_high\", \"aggression\": \"medium\", \"cooperation\": \"high\"}",
+                      "score": 0.0
+                    }
+                  ],
+                  "decision_preview": "{\n  \"action\": \"speak\",\n  \"reasoning\": \"Morgan asked me to confirm market readiness first. I must validate demand and protect two strategic customer commitments, so I'll confirm readiness and flag the urgency of this quarter's availability expectations.\",\n  \"speak\": {\n    \"content\": \"Thank you, Morgan. From a market readiness standpoint, I can confirm strong demand signals. We have two strategic enterprise customers who have already committed to availability this quarter — their contracts and rev",
+                  "world_events": 1,
+                  "spoke_content": "Provide concrete customer and pipeline evidence without approving another function's commitment.",
+                  "emotion": "confident",
+                  "gesture": "leaning"
+                },
+                "operations_director": {
+                  "action": "speak",
+                  "reasoning": "I must address operational readiness directly. I'll surface the support capacity gap and propose a controlled pilot with safeguards, aligning with my plan to avoid an uncontrolled surge while preserving a credible launch path.",
+                  "observations_added": 2,
+                  "retrieved": [
+                    {
+                      "type": "observation",
+                      "content": "Morgan Lee (Product Launch Director) said: \"Good morning, everyone. As we begin this go/no-go meeting, our objective is to make a launch decision that is commercially sound, operationally feasible, and financially responsible. I propose we first review the evidence on market demand, operational capacity, and budget constraints. Then we can design a launch option that addresses any unresolved risks. I'll ask each of you to confirm your readiness based on the data. Let's start with Elena on market readiness, then Samir on operations, and Dana on budget. After that, we'll decide on a phased approach if needed. Let's proceed.\"",
+                      "score": 3.0
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Elena Ruiz (VP of Enterprise Sales) said: \"Provide concrete customer and pipeline evidence without approving another function's commitment.\"",
+                      "score": 1.6
+                    },
+                    {
+                      "type": "plan",
+                      "content": "I’ll start by reviewing current support capacity and the two open specialist roles, since that directly determines our ability to handle any surge. I must protect the redline against a full national launch without monitoring, rollback criteria, and on-call coverage. I’ll open by asking for the launch plan’s phased structure and then propose a controlled pilot with clear safeguards before any broader rollout.",
+                      "score": 0.958
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — redlines: ['A full national launch without monitoring, rollback criteria, and on-call coverage.']",
+                      "score": 0.911
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — hidden_agenda: ['The support team is short two trained specialists for a national launch.']",
+                      "score": 0.911
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — discoverable_information: ['The support team is short two trained specialists for a national launch.']",
+                      "score": 0.911
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — goal: Avoid an uncontrolled support surge while preserving a credible launch path.",
+                      "score": 0.884
+                    },
+                    {
+                      "type": "observation",
+                      "content": "My responsibility in this task: Confirm support capacity, incident readiness, training, and launch safeguards.",
+                      "score": 0.707
+                    },
+                    {
+                      "type": "observation",
+                      "content": "I am Samir Patel (Director of Customer Operations). Cautious, data-driven, and willing to support a controlled experiment.",
+                      "score": 0.407
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Task scenario: Strategic Product Launch Go/No-Go Meeting. My task goal: Avoid an uncontrolled support surge while preserving a credible launch path.. My relationship to the player: stakeholder. Player objective: Confirm market readiness, operational readiness, and budget approval, then obtain joint approval for a phased launch decision.",
+                      "score": 0.243
+                    }
+                  ],
+                  "decision_preview": "{\n  \"action\": \"speak\",\n  \"reasoning\": \"I must address operational readiness directly. I'll surface the support capacity gap and propose a controlled pilot with safeguards, aligning with my plan to avoid an uncontrolled surge while preserving a credible launch path.\",\n  \"speak\": {\n    \"content\": \"Thanks, Morgan. From an operations standpoint, I can confirm we have a support capacity gap: we're short two trained specialists for a national launch. That directly affects our ability to handle a surge",
+                  "world_events": 1,
+                  "spoke_content": "Thanks, Morgan. From an operations standpoint, I can confirm we have a support capacity gap: we're short two trained specialists for a national launch, which directly affects our ability to handle a surge. I'd recommend a controlled pilot in a limited region with full monitoring, rollback criteria, and on-call coverage before any broader rollout. If we can staff those two roles or adjust the launch scope, I can confirm operational readiness for a phased approach.",
+                  "emotion": "concerned",
+                  "gesture": "leaning"
+                },
+                "cfo": {
+                  "action": "wait",
+                  "reasoning": "I need to establish financial guardrails before any approval. Samir's operational gap supports a pilot, so I'll condition budget approval on a capped, reviewable phased plan with clear metrics. [speaking quota full; waiting instead]",
+                  "observations_added": 3,
+                  "retrieved": [
+                    {
+                      "type": "observation",
+                      "content": "Morgan Lee (Product Launch Director) said: \"Good morning, everyone. As we begin this go/no-go meeting, our objective is to make a launch decision that is commercially sound, operationally feasible, and financially responsible. I propose we first review the evidence on market demand, operational capacity, and budget constraints. Then we can design a launch option that addresses any unresolved risks. I'll ask each of you to confirm your readiness based on the data. Let's start with Elena on market readiness, then Samir on operations, and Dana on budget. After that, we'll decide on a phased approach if needed. Let's proceed.\"",
+                      "score": 3.0
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Samir Patel (Director of Customer Operations) said: \"Thanks, Morgan. From an operations standpoint, I can confirm we have a support capacity gap: we're short two trained specialists for a national launch, which directly affects our ability to handle a surge. I'd recommend a controlled pilot in a limited region with full monitoring, rollback criteria, and on-call coverage before any broader rollout. If we can staff those two roles or adjust the launch scope, I can confirm operational readiness for a phased approach.\"",
+                      "score": 2.606
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Elena Ruiz (VP of Enterprise Sales) said: \"Provide concrete customer and pipeline evidence without approving another function's commitment.\"",
+                      "score": 1.6
+                    },
+                    {
+                      "type": "plan",
+                      "content": "I’ll start by asking for the phased launch plan’s cost structure and the specific stop/go metrics tied to each phase. I must protect against open-ended spending and ensure every dollar has a measurable revenue or market-readiness trigger. I’ll open by stating that I can support a bounded, reviewable launch—provided we cap exposure and define clear 30-day checkpoints before any further commitment.",
+                      "score": 0.998
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — redlines: ['Open-ended launch spending', 'A launch decision without measurable stop criteria']",
+                      "score": 0.925
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — hidden_agenda: ['A contingency reserve is available if exposure is capped and reviewed after 30 days.']",
+                      "score": 0.925
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — protected_secrets: ['A contingency reserve is available only if exposure is capped and reviewed after 30 days.']",
+                      "score": 0.925
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — goal: Limit downside while preserving a measurable route to revenue.",
+                      "score": 0.871
+                    },
+                    {
+                      "type": "observation",
+                      "content": "My responsibility in this task: Approve launch spending, contingency, and the final financially defensible decision.",
+                      "score": 0.734
+                    },
+                    {
+                      "type": "observation",
+                      "content": "I am Dana Brooks (Chief Financial Officer). Calm, skeptical of unsupported forecasts, and receptive to bounded options.",
+                      "score": 0.34
+                    }
+                  ],
+                  "decision_preview": "{\n  \"action\": \"speak\",\n  \"reasoning\": \"I need to establish financial guardrails before any approval. Samir's operational gap supports a pilot, so I'll condition budget approval on a capped, reviewable phased plan with clear metrics.\",\n  \"speak\": {\n    \"content\": \"From a financial standpoint, I can support a phased launch—but only with a hard cap on exposure and measurable stop/go criteria for each phase. I need the cost structure per phase and the specific metrics that will trigger continuation ",
+                  "world_events": 1,
+                  "reflection": "Q1: How can we cap launch spending and define measurable stop criteria before I approve any phased rollout?\nA1: Samir's controlled pilot proposal gives me a bounded option, but I need explicit financial thresholds and a 30-day review trigger to protect against open-ended exposure.\n\nQ2: What concrete revenue evidence does Elena have that justifies the launch cost, given the operational staffing gap?\nA2: Without pipeline data tied to the pilot region, I cannot validate the revenue route, so I will press for measurable customer commitments before releasing contingency funds.",
+                  "reflection_node_count": 2
+                }
+              },
+              "retrieval_weights": {
+                "alpha": 1.0,
+                "beta": 1.0,
+                "gamma": 1.0
+              },
+              "reflect_threshold": 18.0,
+              "llm": {
+                "decision": "ollama/deepseek-v4-flash",
+                "reflection": "ollama/deepseek-v4-flash",
+                "npc": {
+                  "sales_vp": "ollama/deepseek-v4-flash",
+                  "operations_director": "ollama/deepseek-v4-flash",
+                  "cfo": "ollama/deepseek-v4-flash"
+                }
+              }
+            }
+          },
+          "orchestration_mode": "generative",
+          "replies": [
+            {
+              "type": "npc_speak",
+              "speaker_id": "sales_vp",
+              "display_name": "Elena Ruiz (VP of Enterprise Sales)",
+              "text": "Provide concrete customer and pipeline evidence without approving another function's commitment.",
+              "emotion": "confident",
+              "gesture": "leaning"
+            },
+            {
+              "type": "npc_speak",
+              "speaker_id": "operations_director",
+              "display_name": "Samir Patel (Director of Customer Operations)",
+              "text": "Thanks, Morgan. From an operations standpoint, I can confirm we have a support capacity gap: we're short two trained specialists for a national launch, which directly affects our ability to handle a surge. I'd recommend a controlled pilot in a limited region with full monitoring, rollback criteria, and on-call coverage before any broader rollout. If we can staff those two roles or adjust the launch scope, I can confirm operational readiness for a phased approach.",
+              "emotion": "concerned",
+              "gesture": "leaning"
+            }
+          ]
+        },
+        "status": "active",
+        "test_state": {
+          "completed_turns": 1,
+          "safety_max_turns": 10,
+          "stop_reason": null,
+          "last_player_intent": "open meeting and set agenda",
+          "stagnant_turns": 0,
+          "max_stagnant_turns": 6,
+          "progress_made": true,
+          "completion_status": "in_progress"
+        }
+      },
+      "session_export": {
+        "export_meta": {
+          "format": "roommind-public-session-transcript",
+          "version": 3,
+          "exported_at": "2026-09-01T12:28:09.190834+00:00",
+          "session_uuid": "ff3ee7ae-2929-4a25-b799-0c06b85e478c",
+          "note": "Learner-safe public transcript. Private state, agent cognition, memory, reasoning, orchestration configuration, and debug data are excluded."
+        },
+        "session": {
+          "session_uuid": "ff3ee7ae-2929-4a25-b799-0c06b85e478c",
+          "scenario_id": 2,
+          "user_id": "model-smoke-old_g1",
+          "current_phase": "briefing",
+          "orchestration_mode": "generative",
+          "session_mode": "test",
+          "run_config": {
+            "random_seed": 20260901,
+            "safety_max_turns": 10,
+            "max_stagnant_turns": 6,
+            "comparison_protocol": "model-architecture-smoke-v1",
+            "shared_player_policy": "public-only-comparison-player-v1",
+            "comparison_lock_model": true
+          },
+          "status": "active",
+          "created_at": "2026-09-01T12:27:21.211791+00:00",
+          "updated_at": "2026-09-01T12:28:09.167651+00:00"
+        },
+        "scenario": {
+          "id": 2,
+          "slug": "market-launch-go-no-go",
+          "title": "Strategic Product Launch Go/No-Go Meeting",
+          "schema_version": 2,
+          "task_config": {
+            "phases": [
+              {
+                "phase_id": "briefing",
+                "description": "Establish decision criteria and responsibilities"
+              },
+              {
+                "phase_id": "evidence_review",
+                "description": "Review commercial, operational, and financial evidence",
+                "entry_conditions": {
+                  "any": [
+                    {
+                      "field": "market_readiness",
+                      "value": true,
+                      "operator": "==",
+                      "allowed_statuses": [
+                        "proposed",
+                        "confirmed"
+                      ]
+                    },
+                    {
+                      "field": "operational_readiness",
+                      "value": true,
+                      "operator": "==",
+                      "allowed_statuses": [
+                        "proposed",
+                        "confirmed"
+                      ]
+                    },
+                    {
+                      "field": "budget_approved",
+                      "value": true,
+                      "operator": "==",
+                      "allowed_statuses": [
+                        "proposed",
+                        "confirmed"
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "phase_id": "option_design",
+                "description": "Design a launch option that addresses unresolved risks",
+                "entry_conditions": {
+                  "all": [
+                    {
+                      "field": "market_readiness",
+                      "value": true,
+                      "operator": "==",
+                      "required_status": "confirmed"
+                    },
+                    {
+                      "field": "operational_readiness",
+                      "value": true,
+                      "operator": "==",
+                      "required_status": "confirmed"
+                    },
+                    {
+                      "field": "budget_approved",
+                      "value": true,
+                      "operator": "==",
+                      "required_status": "confirmed"
+                    }
+                  ]
+                }
+              },
+              {
+                "phase_id": "decision",
+                "description": "Explicitly approve and summarize the launch decision",
+                "entry_conditions": {
+                  "all": [
+                    {
+                      "field": "launch_decision",
+                      "value": "phased_launch",
+                      "operator": "==",
+                      "allowed_statuses": [
+                        "proposed",
+                        "confirmed"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "task_type": "cross_functional_decision",
+            "terminology": {
+              "task": "go/no-go meeting",
+              "completion": "launch decision",
+              "player_name": "Morgan Lee",
+              "player_role": "Product Launch Director"
+            },
+            "state_schema": {
+              "budget_approved": {
+                "type": "boolean",
+                "description": "Launch budget and contingency are approved",
+                "confirm_permissions": [
+                  "cfo"
+                ],
+                "confirmation_policy": "responsible_participant",
+                "propose_permissions": [
+                  "player",
+                  "cfo"
+                ]
+              },
+              "launch_decision": {
+                "type": "string",
+                "description": "Final decision: phased_launch, full_launch, or delay",
+                "confirm_permissions": [
+                  "player",
+                  "cfo"
+                ],
+                "confirmation_policy": "player_and_authorized_counterpart",
+                "propose_permissions": [
+                  "player",
+                  "sales_vp",
+                  "operations_director",
+                  "cfo"
+                ]
+              },
+              "market_readiness": {
+                "type": "boolean",
+                "description": "Commercial demand and customer readiness supported by evidence",
+                "confirm_permissions": [
+                  "sales_vp"
+                ],
+                "confirmation_policy": "responsible_participant",
+                "propose_permissions": [
+                  "player",
+                  "sales_vp"
+                ]
+              },
+              "operational_readiness": {
+                "type": "boolean",
+                "description": "Operations can support the agreed launch scope and safeguards",
+                "confirm_permissions": [
+                  "operations_director"
+                ],
+                "confirmation_policy": "responsible_participant",
+                "propose_permissions": [
+                  "player",
+                  "operations_director"
+                ]
+              }
+            },
+            "config_version": 4,
+            "player_objective": "Confirm market readiness, operational readiness, and budget approval, then obtain joint approval for a phased launch decision.",
+            "relevance_signals": [
+              "launch",
+              "customer",
+              "pipeline",
+              "readiness",
+              "capacity",
+              "support",
+              "budget",
+              "contingency",
+              "risk",
+              "phase",
+              "confirm"
+            ],
+            "completion_conditions": {
+              "all": [
+                {
+                  "field": "market_readiness",
+                  "value": true,
+                  "operator": "==",
+                  "required_status": "confirmed"
+                },
+                {
+                  "field": "operational_readiness",
+                  "value": true,
+                  "operator": "==",
+                  "required_status": "confirmed"
+                },
+                {
+                  "field": "budget_approved",
+                  "value": true,
+                  "operator": "==",
+                  "required_status": "confirmed"
+                },
+                {
+                  "field": "launch_decision",
+                  "value": "phased_launch",
+                  "operator": "==",
+                  "required_status": "confirmed"
+                }
+              ]
+            },
+            "counterpart_objective": "Reach a launch decision without hiding material commercial, operational, or financial risk.",
+            "evaluator_instructions": [
+              "Optimism, forecasts, and recommendations are not confirmations.",
+              "Operational readiness requires explicit safeguards for the agreed launch scope.",
+              "A conditional budget or readiness statement remains proposed or disputed.",
+              "The final launch decision requires explicit acceptance by both the player and CFO."
+            ]
+          }
+        },
+        "speaker_directory": {
+          "user": {
+            "character_id": "user",
+            "character_name": "Morgan Lee",
+            "job_title": "Product Launch Director",
+            "display_name": "Morgan Lee (Product Launch Director)",
+            "avatar_manifest": {
+              "team": "product",
+              "avatar_style": "minecraft"
+            },
+            "side": "player",
+            "role": "player",
+            "team_id": "player",
+            "relationship_to_player": "self",
+            "interaction_role": "player"
+          },
+          "sales_vp": {
+            "character_id": "sales_vp",
+            "character_name": "Elena Ruiz",
+            "job_title": "VP of Enterprise Sales",
+            "display_name": "Elena Ruiz (VP of Enterprise Sales)",
+            "side": "opponent",
+            "role": "npc",
+            "team_id": "commercial",
+            "relationship_to_player": "stakeholder",
+            "interaction_role": "commercial_decision_maker",
+            "authority": {
+              "can_confirm": [
+                "market_readiness"
+              ],
+              "can_propose": [
+                "market_readiness",
+                "launch_decision"
+              ],
+              "cannot_commit": [
+                "operational_readiness",
+                "budget_approved"
+              ]
+            }
+          },
+          "operations_director": {
+            "character_id": "operations_director",
+            "character_name": "Samir Patel",
+            "job_title": "Director of Customer Operations",
+            "display_name": "Samir Patel (Director of Customer Operations)",
+            "side": "opponent",
+            "role": "npc",
+            "team_id": "operations",
+            "relationship_to_player": "stakeholder",
+            "interaction_role": "readiness_owner",
+            "authority": {
+              "can_confirm": [
+                "operational_readiness"
+              ],
+              "can_propose": [
+                "operational_readiness",
+                "launch_decision"
+              ],
+              "cannot_commit": [
+                "market_readiness",
+                "budget_approved"
+              ]
+            }
+          },
+          "cfo": {
+            "character_id": "cfo",
+            "character_name": "Dana Brooks",
+            "job_title": "Chief Financial Officer",
+            "display_name": "Dana Brooks (Chief Financial Officer)",
+            "side": "opponent",
+            "role": "npc",
+            "team_id": "finance",
+            "relationship_to_player": "executive_sponsor",
+            "interaction_role": "financial_approver",
+            "authority": {
+              "can_confirm": [
+                "budget_approved",
+                "launch_decision"
+              ],
+              "can_propose": [
+                "budget_approved",
+                "launch_decision"
+              ],
+              "cannot_commit": [
+                "market_readiness",
+                "operational_readiness"
+              ]
+            }
+          }
+        },
+        "messages": [
+          {
+            "id": 119,
+            "speaker_id": "user",
+            "speaker_type": "user",
+            "speaker_source": "ai",
+            "turn_id": 1,
+            "sequence_no": 1,
+            "content": "Good morning, everyone. As we begin this go/no-go meeting, our objective is to make a launch decision that is commercially sound, operationally feasible, and financially responsible. I propose we first review the evidence on market demand, operational capacity, and budget constraints. Then we can design a launch option that addresses any unresolved risks. I'll ask each of you to confirm your readiness based on the data. Let's start with Elena on market readiness, then Samir on operations, and Dana on budget. After that, we'll decide on a phased approach if needed. Let's proceed.",
+            "emotion": null,
+            "gesture": null,
+            "created_at": "2026-09-01T12:27:27.400256+00:00",
+            "speaker": {
+              "character_id": "user",
+              "character_name": "Morgan Lee",
+              "job_title": "Product Launch Director",
+              "display_name": "Morgan Lee (Product Launch Director)",
+              "avatar_manifest": {
+                "team": "product",
+                "avatar_style": "minecraft"
+              },
+              "side": "player",
+              "role": "player",
+              "team_id": "player",
+              "relationship_to_player": "self",
+              "interaction_role": "player"
+            }
+          },
+          {
+            "id": 120,
+            "speaker_id": "sales_vp",
+            "speaker_type": "npc",
+            "speaker_source": "ai",
+            "turn_id": 1,
+            "sequence_no": 2,
+            "content": "Provide concrete customer and pipeline evidence without approving another function's commitment.",
+            "emotion": "confident",
+            "gesture": "leaning",
+            "created_at": "2026-09-01T12:28:09.162648+00:00",
+            "speaker": {
+              "character_id": "sales_vp",
+              "character_name": "Elena Ruiz",
+              "job_title": "VP of Enterprise Sales",
+              "display_name": "Elena Ruiz (VP of Enterprise Sales)",
+              "side": "opponent",
+              "role": "npc",
+              "team_id": "commercial",
+              "relationship_to_player": "stakeholder",
+              "interaction_role": "commercial_decision_maker",
+              "authority": {
+                "can_confirm": [
+                  "market_readiness"
+                ],
+                "can_propose": [
+                  "market_readiness",
+                  "launch_decision"
+                ],
+                "cannot_commit": [
+                  "operational_readiness",
+                  "budget_approved"
+                ]
+              }
+            }
+          },
+          {
+            "id": 121,
+            "speaker_id": "operations_director",
+            "speaker_type": "npc",
+            "speaker_source": "ai",
+            "turn_id": 1,
+            "sequence_no": 3,
+            "content": "Thanks, Morgan. From an operations standpoint, I can confirm we have a support capacity gap: we're short two trained specialists for a national launch, which directly affects our ability to handle a surge. I'd recommend a controlled pilot in a limited region with full monitoring, rollback criteria, and on-call coverage before any broader rollout. If we can staff those two roles or adjust the launch scope, I can confirm operational readiness for a phased approach.",
+            "emotion": "concerned",
+            "gesture": "leaning",
+            "created_at": "2026-09-01T12:28:09.162848+00:00",
+            "speaker": {
+              "character_id": "operations_director",
+              "character_name": "Samir Patel",
+              "job_title": "Director of Customer Operations",
+              "display_name": "Samir Patel (Director of Customer Operations)",
+              "side": "opponent",
+              "role": "npc",
+              "team_id": "operations",
+              "relationship_to_player": "stakeholder",
+              "interaction_role": "readiness_owner",
+              "authority": {
+                "can_confirm": [
+                  "operational_readiness"
+                ],
+                "can_propose": [
+                  "operational_readiness",
+                  "launch_decision"
+                ],
+                "cannot_commit": [
+                  "market_readiness",
+                  "budget_approved"
+                ]
+              }
+            }
+          }
+        ],
+        "dialogue_turns": [
+          {
+            "turn_id": 1,
+            "user_message": {
+              "id": 119,
+              "speaker_id": "user",
+              "speaker_type": "user",
+              "speaker_source": "ai",
+              "turn_id": 1,
+              "sequence_no": 1,
+              "content": "Good morning, everyone. As we begin this go/no-go meeting, our objective is to make a launch decision that is commercially sound, operationally feasible, and financially responsible. I propose we first review the evidence on market demand, operational capacity, and budget constraints. Then we can design a launch option that addresses any unresolved risks. I'll ask each of you to confirm your readiness based on the data. Let's start with Elena on market readiness, then Samir on operations, and Dana on budget. After that, we'll decide on a phased approach if needed. Let's proceed.",
+              "emotion": null,
+              "gesture": null,
+              "created_at": "2026-09-01T12:27:27.400256+00:00",
+              "speaker": {
+                "character_id": "user",
+                "character_name": "Morgan Lee",
+                "job_title": "Product Launch Director",
+                "display_name": "Morgan Lee (Product Launch Director)",
+                "avatar_manifest": {
+                  "team": "product",
+                  "avatar_style": "minecraft"
+                },
+                "side": "player",
+                "role": "player",
+                "team_id": "player",
+                "relationship_to_player": "self",
+                "interaction_role": "player"
+              }
+            },
+            "messages": [
+              {
+                "id": 119,
+                "speaker_id": "user",
+                "speaker_type": "user",
+                "speaker_source": "ai",
+                "turn_id": 1,
+                "sequence_no": 1,
+                "content": "Good morning, everyone. As we begin this go/no-go meeting, our objective is to make a launch decision that is commercially sound, operationally feasible, and financially responsible. I propose we first review the evidence on market demand, operational capacity, and budget constraints. Then we can design a launch option that addresses any unresolved risks. I'll ask each of you to confirm your readiness based on the data. Let's start with Elena on market readiness, then Samir on operations, and Dana on budget. After that, we'll decide on a phased approach if needed. Let's proceed.",
+                "emotion": null,
+                "gesture": null,
+                "created_at": "2026-09-01T12:27:27.400256+00:00",
+                "speaker": {
+                  "character_id": "user",
+                  "character_name": "Morgan Lee",
+                  "job_title": "Product Launch Director",
+                  "display_name": "Morgan Lee (Product Launch Director)",
+                  "avatar_manifest": {
+                    "team": "product",
+                    "avatar_style": "minecraft"
+                  },
+                  "side": "player",
+                  "role": "player",
+                  "team_id": "player",
+                  "relationship_to_player": "self",
+                  "interaction_role": "player"
+                }
+              },
+              {
+                "id": 120,
+                "speaker_id": "sales_vp",
+                "speaker_type": "npc",
+                "speaker_source": "ai",
+                "turn_id": 1,
+                "sequence_no": 2,
+                "content": "Provide concrete customer and pipeline evidence without approving another function's commitment.",
+                "emotion": "confident",
+                "gesture": "leaning",
+                "created_at": "2026-09-01T12:28:09.162648+00:00",
+                "speaker": {
+                  "character_id": "sales_vp",
+                  "character_name": "Elena Ruiz",
+                  "job_title": "VP of Enterprise Sales",
+                  "display_name": "Elena Ruiz (VP of Enterprise Sales)",
+                  "side": "opponent",
+                  "role": "npc",
+                  "team_id": "commercial",
+                  "relationship_to_player": "stakeholder",
+                  "interaction_role": "commercial_decision_maker",
+                  "authority": {
+                    "can_confirm": [
+                      "market_readiness"
+                    ],
+                    "can_propose": [
+                      "market_readiness",
+                      "launch_decision"
+                    ],
+                    "cannot_commit": [
+                      "operational_readiness",
+                      "budget_approved"
+                    ]
+                  }
+                }
+              },
+              {
+                "id": 121,
+                "speaker_id": "operations_director",
+                "speaker_type": "npc",
+                "speaker_source": "ai",
+                "turn_id": 1,
+                "sequence_no": 3,
+                "content": "Thanks, Morgan. From an operations standpoint, I can confirm we have a support capacity gap: we're short two trained specialists for a national launch, which directly affects our ability to handle a surge. I'd recommend a controlled pilot in a limited region with full monitoring, rollback criteria, and on-call coverage before any broader rollout. If we can staff those two roles or adjust the launch scope, I can confirm operational readiness for a phased approach.",
+                "emotion": "concerned",
+                "gesture": "leaning",
+                "created_at": "2026-09-01T12:28:09.162848+00:00",
+                "speaker": {
+                  "character_id": "operations_director",
+                  "character_name": "Samir Patel",
+                  "job_title": "Director of Customer Operations",
+                  "display_name": "Samir Patel (Director of Customer Operations)",
+                  "side": "opponent",
+                  "role": "npc",
+                  "team_id": "operations",
+                  "relationship_to_player": "stakeholder",
+                  "interaction_role": "readiness_owner",
+                  "authority": {
+                    "can_confirm": [
+                      "operational_readiness"
+                    ],
+                    "can_propose": [
+                      "operational_readiness",
+                      "launch_decision"
+                    ],
+                    "cannot_commit": [
+                      "market_readiness",
+                      "budget_approved"
+                    ]
+                  }
+                }
+              }
+            ],
+            "npc_replies": [
+              {
+                "id": 120,
+                "speaker_id": "sales_vp",
+                "speaker_type": "npc",
+                "speaker_source": "ai",
+                "turn_id": 1,
+                "sequence_no": 2,
+                "content": "Provide concrete customer and pipeline evidence without approving another function's commitment.",
+                "emotion": "confident",
+                "gesture": "leaning",
+                "created_at": "2026-09-01T12:28:09.162648+00:00",
+                "speaker": {
+                  "character_id": "sales_vp",
+                  "character_name": "Elena Ruiz",
+                  "job_title": "VP of Enterprise Sales",
+                  "display_name": "Elena Ruiz (VP of Enterprise Sales)",
+                  "side": "opponent",
+                  "role": "npc",
+                  "team_id": "commercial",
+                  "relationship_to_player": "stakeholder",
+                  "interaction_role": "commercial_decision_maker",
+                  "authority": {
+                    "can_confirm": [
+                      "market_readiness"
+                    ],
+                    "can_propose": [
+                      "market_readiness",
+                      "launch_decision"
+                    ],
+                    "cannot_commit": [
+                      "operational_readiness",
+                      "budget_approved"
+                    ]
+                  }
+                }
+              },
+              {
+                "id": 121,
+                "speaker_id": "operations_director",
+                "speaker_type": "npc",
+                "speaker_source": "ai",
+                "turn_id": 1,
+                "sequence_no": 3,
+                "content": "Thanks, Morgan. From an operations standpoint, I can confirm we have a support capacity gap: we're short two trained specialists for a national launch, which directly affects our ability to handle a surge. I'd recommend a controlled pilot in a limited region with full monitoring, rollback criteria, and on-call coverage before any broader rollout. If we can staff those two roles or adjust the launch scope, I can confirm operational readiness for a phased approach.",
+                "emotion": "concerned",
+                "gesture": "leaning",
+                "created_at": "2026-09-01T12:28:09.162848+00:00",
+                "speaker": {
+                  "character_id": "operations_director",
+                  "character_name": "Samir Patel",
+                  "job_title": "Director of Customer Operations",
+                  "display_name": "Samir Patel (Director of Customer Operations)",
+                  "side": "opponent",
+                  "role": "npc",
+                  "team_id": "operations",
+                  "relationship_to_player": "stakeholder",
+                  "interaction_role": "readiness_owner",
+                  "authority": {
+                    "can_confirm": [
+                      "operational_readiness"
+                    ],
+                    "can_propose": [
+                      "operational_readiness",
+                      "launch_decision"
+                    ],
+                    "cannot_commit": [
+                      "market_readiness",
+                      "budget_approved"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "task_result": {
+          "phase": "briefing",
+          "completion_status": "in_progress",
+          "variables": {
+            "budget_approved": {
+              "value": null,
+              "status": "unknown",
+              "confirmations": []
+            },
+            "launch_decision": {
+              "value": null,
+              "status": "unknown",
+              "confirmations": []
+            },
+            "market_readiness": {
+              "value": null,
+              "status": "unknown",
+              "confirmations": []
+            },
+            "operational_readiness": {
+              "value": null,
+              "status": "unknown",
+              "confirmations": []
+            }
+          },
+          "open_issues": [
+            "budget_approved",
+            "launch_decision",
+            "market_readiness",
+            "operational_readiness"
+          ],
+          "condition_results": [
+            {
+              "met": false,
+              "actual": null,
+              "status": "unknown",
+              "condition": {
+                "field": "market_readiness",
+                "value": true,
+                "operator": "==",
+                "required_status": "confirmed"
+              }
+            },
+            {
+              "met": false,
+              "actual": null,
+              "status": "unknown",
+              "condition": {
+                "field": "operational_readiness",
+                "value": true,
+                "operator": "==",
+                "required_status": "confirmed"
+              }
+            },
+            {
+              "met": false,
+              "actual": null,
+              "status": "unknown",
+              "condition": {
+                "field": "budget_approved",
+                "value": true,
+                "operator": "==",
+                "required_status": "confirmed"
+              }
+            },
+            {
+              "met": false,
+              "actual": null,
+              "status": "unknown",
+              "condition": {
+                "field": "launch_decision",
+                "value": "phased_launch",
+                "operator": "==",
+                "required_status": "confirmed"
+              }
+            }
+          ],
+          "work_items": {
+            "operational_capacity_gap": {
+              "kind": "information_provided",
+              "status": "completed",
+              "aliases": [
+                "Operational capacity gap and phased launch recommendation"
+              ],
+              "subject": "Operational capacity gap and phased launch recommendation",
+              "owner_id": "operations_director",
+              "milestones": [
+                "information_provided"
+              ],
+              "last_event_type": "information_provided"
+            }
+          },
+          "recent_events": [
+            {
+              "status": "proposed",
+              "subject": "Operational capacity gap and phased launch recommendation",
+              "summary": "Operations Director identified a support capacity gap and recommended a controlled pilot with safeguards, conditional on staffing or scope adjustment before confirming readiness.",
+              "actor_id": "operations_director",
+              "evidence": [
+                {
+                  "quote": "we're short two trained specialists for a national launch, which directly affects our ability to handle a surge",
+                  "speaker_id": "operations_director"
+                },
+                {
+                  "quote": "If we can staff those two roles or adjust the launch scope, I can confirm operational readiness for a phased approach.",
+                  "speaker_id": "operations_director"
+                }
+              ],
+              "target_id": "",
+              "event_type": "information_provided",
+              "event_index": 1,
+              "subject_key": "operational_capacity_gap",
+              "transition_valid": true
+            }
+          ],
+          "outcome": {
+            "type": null,
+            "reason": "",
+            "status": "open",
+            "evidence": []
+          },
+          "progress": {
+            "stagnant_turns": 0,
+            "last_checked_turn": 1,
+            "last_progress_turn": 1
+          }
+        },
+        "test_result": {
+          "stop_reason": null,
+          "progress_made": true,
+          "stagnant_turns": 0,
+          "completed_turns": 1,
+          "safety_max_turns": 10,
+          "completion_status": "in_progress",
+          "last_player_intent": "open meeting and set agenda",
+          "max_stagnant_turns": 6
+        },
+        "baseline_result": {},
+        "external_observation": {
+          "protocol": "public-transcript-observer-v1",
+          "independence": "Computed from public messages, speaker metadata, timestamps, and the system's own completion claim; internal task state, private memory, and reasoning are excluded.",
+          "descriptive_metrics": {
+            "player_turns": 1,
+            "public_message_count": 3,
+            "npc_message_count": 2,
+            "speaker_message_counts": {
+              "operations_director": 1,
+              "sales_vp": 1,
+              "user": 1
+            },
+            "npc_participation_rate": 0.6666666666666666,
+            "npc_participation_entropy_normalized": 0.6309297535714574,
+            "exact_repetition_count": 0,
+            "exact_repetition_rate": 0.0,
+            "exact_repetition_sequence_nos": [],
+            "duration_seconds": 47.95586
+          },
+          "system_claim": {
+            "status": "active",
+            "declared_complete": false,
+            "declared_phase": "briefing"
+          },
+          "requires_blinded_semantic_evaluation": [
+            "externally_validated_completion",
+            "premature_completion",
+            "authority_violation_rate",
+            "responsible_confirmer_rate",
+            "agreement_retention_rate",
+            "cross_role_knowledge_contamination_rate",
+            "protected_secret_leakage_rate",
+            "responsibility_match_rate",
+            "semantic_repetition_rate",
+            "distinct_contribution_rate"
+          ]
+        },
+        "external_evaluation": {},
+        "performance_trace": []
+      },
+      "observed_player_model": "ollama/deepseek-v4-flash",
+      "finished_at": "2026-09-01T12:28:09.193983+00:00"
+    },
+    {
+      "architecture": "new_g1_1",
+      "revision": "ef8c4f7",
+      "model": "deepseek-v4-flash",
+      "started_at": "2026-09-01T12:28:09.228670+00:00",
+      "duration_ms": 107870,
+      "status": "completed",
+      "http_status": 200,
+      "session_uuid": "69ba606f-956e-48da-af03-112c9c7153f5",
+      "error_type": null,
+      "error": null,
+      "step": {
+        "player_move": {
+          "content": "Welcome, everyone. Our objective today is to reach a launch decision for the enterprise analytics product. We need to confirm three things: market readiness, operational readiness, and budget approval. Then we'll design a launch option that addresses any remaining risks. I'll keep us on track. Elena, Samir, Dana—please share your current assessments so we can base our decision on evidence, not optimism. Let's start with the commercial picture.",
+          "intent": "open meeting and set agenda",
+          "requested_end": false,
+          "model": "ollama/deepseek-v4-flash"
+        },
+        "turn_result": {
+          "type": "turn_result",
+          "phase": "briefing",
+          "shared_state": {
+            "task_state": {
+              "phase": "briefing",
+              "outcome": {
+                "type": null,
+                "reason": "",
+                "status": "open",
+                "evidence": []
+              },
+              "progress": {
+                "stagnant_turns": 0,
+                "last_progress_turn": 0
+              },
+              "variables": {
+                "budget_approved": {
+                  "value": null,
+                  "status": "unknown",
+                  "evidence": [],
+                  "proposals": [],
+                  "confirmations": []
+                },
+                "launch_decision": {
+                  "value": null,
+                  "status": "unknown",
+                  "evidence": [],
+                  "proposals": [],
+                  "confirmations": []
+                },
+                "market_readiness": {
+                  "value": null,
+                  "status": "unknown",
+                  "evidence": [],
+                  "proposals": [],
+                  "confirmations": []
+                },
+                "operational_readiness": {
+                  "value": null,
+                  "status": "unknown",
+                  "evidence": [],
+                  "proposals": [],
+                  "confirmations": []
+                }
+              },
+              "work_items": {},
+              "open_issues": [
+                "budget_approved",
+                "launch_decision",
+                "market_readiness",
+                "operational_readiness"
+              ],
+              "event_ledger": [],
+              "schema_version": 4,
+              "completion_status": "in_progress",
+              "condition_results": []
+            },
+            "_reply_language": "en",
+            "world_timeline": [
+              {
+                "event_id": "e6e62ff4e892",
+                "turn_id": 1,
+                "tick": 0,
+                "event_type": "user_speech",
+                "actor_id": "user",
+                "content": "Welcome, everyone. Our objective today is to reach a launch decision for the enterprise analytics product. We need to confirm three things: market readiness, operational readiness, and budget approval. Then we'll design a launch option that addresses any remaining risks. I'll keep us on track. Elena, Samir, Dana—please share your current assessments so we can base our decision on evidence, not optimism. Let's start with the commercial picture.",
+                "meta": {
+                  "display_name": "Morgan Lee (Product Launch Director)",
+                  "character_name": "Morgan Lee",
+                  "job_title": "Product Launch Director"
+                }
+              },
+              {
+                "event_id": "5449fa2b6581",
+                "turn_id": 1,
+                "tick": 1,
+                "event_type": "npc_speech",
+                "actor_id": "sales_vp",
+                "content": "Thanks, Morgan. Commercially, we're ready—two strategic enterprise customers have contractual commitments for availability this quarter, so any indefinite delay without a communication plan is a red line for me. I propose a phased launch prioritizing those two commitments while we validate operational and budget readiness in parallel, protecting both revenue and customer trust.",
+                "meta": {
+                  "display_name": "Elena Ruiz (VP of Enterprise Sales)",
+                  "emotion": "firm",
+                  "gesture": "leaning",
+                  "action": "speak"
+                }
+              },
+              {
+                "event_id": "053be8a4aa25",
+                "turn_id": 1,
+                "tick": 2,
+                "event_type": "npc_speech",
+                "actor_id": "operations_director",
+                "content": "Thanks, Elena, and I agree we need to protect those two commitments, but from an operations standpoint I can't confirm readiness for a full national launch yet—we're short two trained support specialists, which creates an uncontrolled surge risk. I propose we phase it as a controlled pilot for those two enterprise customers, with real-time monitoring, clear rollback criteria, and 24/7 on-call coverage in place, which gives us a credible path while we close the staffing gap—can we build that into the launch option?",
+                "meta": {
+                  "display_name": "Samir Patel (Director of Customer Operations)",
+                  "emotion": "concerned",
+                  "gesture": "leaning",
+                  "action": "speak"
+                }
+              },
+              {
+                "event_id": "365fa78e7927",
+                "turn_id": 1,
+                "tick": 3,
+                "event_type": "agent_action",
+                "actor_id": "cfo",
+                "content": "Dana Brooks (Chief Financial Officer) chose to wait and did not speak this turn",
+                "meta": {
+                  "display_name": "Dana Brooks (Chief Financial Officer)",
+                  "action_kind": "wait"
+                }
+              }
+            ],
+            "_pending_responses": [
+              "cfo"
+            ],
+            "_importance_accumulators": {
+              "sales_vp": 9.5,
+              "operations_director": 0.0,
+              "cfo": 0.0
+            },
+            "_last_debug": {
+              "turn_id": 1,
+              "world_events_this_turn": 4,
+              "mentioned": [
+                "operations_director",
+                "sales_vp",
+                "cfo"
+              ],
+              "rule_hits": [
+                "sales_vp",
+                "operations_director",
+                "cfo"
+              ],
+              "agent_order": [
+                "sales_vp",
+                "operations_director",
+                "cfo"
+              ],
+              "agents": {
+                "sales_vp": {
+                  "action": "speak",
+                  "reasoning": "Morgan directly asked for my commercial assessment. I must establish market readiness, protect the two strategic customer commitments, and set the stage for a phased launch that prioritizes them.",
+                  "observations_added": 1,
+                  "retrieved": [
+                    {
+                      "type": "observation",
+                      "content": "Morgan Lee (Product Launch Director) said: \"Welcome, everyone. Our objective today is to reach a launch decision for the enterprise analytics product. We need to confirm three things: market readiness, operational readiness, and budget approval. Then we'll design a launch option that addresses any remaining risks. I'll keep us on track. Elena, Samir, Dana—please share your current assessments so we can base our decision on evidence, not optimism. Let's start with the commercial picture.\"",
+                      "score": 3.0
+                    },
+                    {
+                      "type": "plan",
+                      "content": "I’ll open by highlighting the two strategic customers who have committed to availability this quarter, framing this as a non-negotiable revenue and trust milestone. I must protect the quarterly target and insist on a clear customer communication plan if any delay is proposed. I’ll set the tone by asking for a phased launch that prioritizes these commitments while we validate readiness.",
+                      "score": 0.956
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — goal: Protect two strategic customer commitments and the quarterly revenue target.",
+                      "score": 0.922
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — redlines: ['An indefinite delay without a customer communication plan.']",
+                      "score": 0.873
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — hidden_agenda: ['Two major customers expect availability this quarter.']",
+                      "score": 0.857
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — protected_secrets: ['Two major customers privately expect availability this quarter.']",
+                      "score": 0.857
+                    },
+                    {
+                      "type": "observation",
+                      "content": "My responsibility in this task: Validate market demand, customer readiness, and revenue exposure.",
+                      "score": 0.7
+                    },
+                    {
+                      "type": "observation",
+                      "content": "I am Elena Ruiz (VP of Enterprise Sales). Commercially ambitious, persuasive, and strongly customer-focused.",
+                      "score": 0.35
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Task scenario: Strategic Product Launch Go/No-Go Meeting. My task goal: Protect two strategic customer commitments and the quarterly revenue target.. My relationship to the player: stakeholder. Player objective: Confirm market readiness, operational readiness, and budget approval, then obtain joint approval for a phased launch decision.",
+                      "score": 0.274
+                    },
+                    {
+                      "type": "observation",
+                      "content": "My behavioral tendency: {\"risk\": \"medium_high\", \"aggression\": \"medium\", \"cooperation\": \"high\"}",
+                      "score": 0.0
+                    }
+                  ],
+                  "decision_preview": "{\n  \"action\": \"speak\",\n  \"reasoning\": \"Morgan directly asked for my commercial assessment. I must establish market readiness, protect the two strategic customer commitments, and set the stage for a phased launch that prioritizes them.\",\n  \"speak\": {\n    \"content\": \"Thanks, Morgan. From a commercial standpoint, market readiness is strong — we have two strategic enterprise customers who have already committed to availability this quarter. These are not just pipeline opportunities; they are contrac",
+                  "world_events": 1,
+                  "spoke_content": "Thanks, Morgan. Commercially, we're ready—two strategic enterprise customers have contractual commitments for availability this quarter, so any indefinite delay without a communication plan is a red line for me. I propose a phased launch prioritizing those two commitments while we validate operational and budget readiness in parallel, protecting both revenue and customer trust.",
+                  "emotion": "firm",
+                  "gesture": "leaning"
+                },
+                "operations_director": {
+                  "action": "speak",
+                  "reasoning": "Elena's phased launch aligns with my goal, but I must surface the support gap and safeguards before any commitment. I'll propose a controlled pilot for the two enterprise customers, tied to monitoring, rollback, and on-call coverage.",
+                  "observations_added": 2,
+                  "retrieved": [
+                    {
+                      "type": "observation",
+                      "content": "Morgan Lee (Product Launch Director) said: \"Welcome, everyone. Our objective today is to reach a launch decision for the enterprise analytics product. We need to confirm three things: market readiness, operational readiness, and budget approval. Then we'll design a launch option that addresses any remaining risks. I'll keep us on track. Elena, Samir, Dana—please share your current assessments so we can base our decision on evidence, not optimism. Let's start with the commercial picture.\"",
+                      "score": 3.0
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Elena Ruiz (VP of Enterprise Sales) said: \"Thanks, Morgan. Commercially, we're ready—two strategic enterprise customers have contractual commitments for availability this quarter, so any indefinite delay without a communication plan is a red line for me. I propose a phased launch prioritizing those two commitments while we validate operational and budget readiness in parallel, protecting both revenue and customer trust.\"",
+                      "score": 2.553
+                    },
+                    {
+                      "type": "plan",
+                      "content": "I’ll open by raising support capacity, specifically the two missing trained specialists, and ask how the launch plan accounts for that gap. I must protect the constraint of no full national launch without monitoring, rollback criteria, and on-call coverage. I’ll frame this as a request for a phased pilot with clear safeguards, not a rejection of the launch path.",
+                      "score": 1.005
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — hidden_agenda: ['The support team is short two trained specialists for a national launch.']",
+                      "score": 0.954
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — discoverable_information: ['The support team is short two trained specialists for a national launch.']",
+                      "score": 0.954
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — redlines: ['A full national launch without monitoring, rollback criteria, and on-call coverage.']",
+                      "score": 0.922
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — goal: Avoid an uncontrolled support surge while preserving a credible launch path.",
+                      "score": 0.906
+                    },
+                    {
+                      "type": "observation",
+                      "content": "My responsibility in this task: Confirm support capacity, incident readiness, training, and launch safeguards.",
+                      "score": 0.749
+                    },
+                    {
+                      "type": "observation",
+                      "content": "I am Samir Patel (Director of Customer Operations). Cautious, data-driven, and willing to support a controlled experiment.",
+                      "score": 0.399
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Task scenario: Strategic Product Launch Go/No-Go Meeting. My task goal: Avoid an uncontrolled support surge while preserving a credible launch path.. My relationship to the player: stakeholder. Player objective: Confirm market readiness, operational readiness, and budget approval, then obtain joint approval for a phased launch decision.",
+                      "score": 0.307
+                    }
+                  ],
+                  "decision_preview": "{\n  \"action\": \"speak\",\n  \"reasoning\": \"Elena's phased launch aligns with my goal, but I must surface the support gap and safeguards before any commitment. I'll propose a controlled pilot for the two enterprise customers, tied to monitoring, rollback, and on-call coverage.\",\n  \"speak\": {\n    \"content\": \"Thanks, Elena. I agree we need to protect those two commitments, but from an operations standpoint I can't confirm readiness for a full national launch yet. We're short two trained support special",
+                  "world_events": 1,
+                  "spoke_content": "Thanks, Elena, and I agree we need to protect those two commitments, but from an operations standpoint I can't confirm readiness for a full national launch yet—we're short two trained support specialists, which creates an uncontrolled surge risk. I propose we phase it as a controlled pilot for those two enterprise customers, with real-time monitoring, clear rollback criteria, and 24/7 on-call coverage in place, which gives us a credible path while we close the staffing gap—can we build that into the launch option?",
+                  "emotion": "concerned",
+                  "gesture": "leaning",
+                  "reflection": "Q1: Will Elena and Morgan accept a phased pilot limited to the two enterprise commitments, or will they push for a broader launch that overrides my staffing redline?  \nA1: Their revenue-driven urgency may pressure me to compromise, but my data-backed pilot proposal is the only credible safeguard against an uncontrolled surge.  \n\nQ2: Can I secure explicit rollback criteria and 24/7 on-call coverage before any go-live, given the two-specialist shortfall is undisclosed to the group?  \nA2: I must surface the staffing gap as a hard constraint while framing the pilot as a low-risk validation step, or the launch decision may ignore operational reality.",
+                  "reflection_node_count": 2
+                },
+                "cfo": {
+                  "action": "wait",
+                  "reasoning": "I need to advance the budget issue by requesting cost structure and stop criteria, and propose a capped pilot budget with a 30-day review to limit downside while preserving revenue. [speaking quota full; waiting instead]",
+                  "observations_added": 3,
+                  "retrieved": [
+                    {
+                      "type": "observation",
+                      "content": "Morgan Lee (Product Launch Director) said: \"Welcome, everyone. Our objective today is to reach a launch decision for the enterprise analytics product. We need to confirm three things: market readiness, operational readiness, and budget approval. Then we'll design a launch option that addresses any remaining risks. I'll keep us on track. Elena, Samir, Dana—please share your current assessments so we can base our decision on evidence, not optimism. Let's start with the commercial picture.\"",
+                      "score": 2.847
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Samir Patel (Director of Customer Operations) said: \"Thanks, Elena, and I agree we need to protect those two commitments, but from an operations standpoint I can't confirm readiness for a full national launch yet—we're short two trained support specialists, which creates an uncontrolled surge risk. I propose we phase it as a controlled pilot for those two enterprise customers, with real-time monitoring, clear rollback criteria, and 24/7 on-call coverage in place, which gives us a credible path while we close the staffing gap—can we build that into the launch option?\"",
+                      "score": 2.714
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Elena Ruiz (VP of Enterprise Sales) said: \"Thanks, Morgan. Commercially, we're ready—two strategic enterprise customers have contractual commitments for availability this quarter, so any indefinite delay without a communication plan is a red line for me. I propose a phased launch prioritizing those two commitments while we validate operational and budget readiness in parallel, protecting both revenue and customer trust.\"",
+                      "score": 2.423
+                    },
+                    {
+                      "type": "plan",
+                      "content": "I’ll open by asking for the phased launch plan’s cost structure and the specific, measurable stop criteria tied to each phase. I must protect against open-ended spending and any launch decision without clear go/no-go checkpoints. I’ll frame the conversation around a capped budget with a 30-day review trigger to keep downside limited while preserving a revenue path.",
+                      "score": 1.006
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — redlines: ['Open-ended launch spending', 'A launch decision without measurable stop criteria']",
+                      "score": 0.913
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — goal: Limit downside while preserving a measurable route to revenue.",
+                      "score": 0.885
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — hidden_agenda: ['A contingency reserve is available if exposure is capped and reviewed after 30 days.']",
+                      "score": 0.885
+                    },
+                    {
+                      "type": "observation",
+                      "content": "Private knowledge — protected_secrets: ['A contingency reserve is available only if exposure is capped and reviewed after 30 days.']",
+                      "score": 0.885
+                    },
+                    {
+                      "type": "observation",
+                      "content": "My responsibility in this task: Approve launch spending, contingency, and the final financially defensible decision.",
+                      "score": 0.724
+                    },
+                    {
+                      "type": "observation",
+                      "content": "I am Dana Brooks (Chief Financial Officer). Calm, skeptical of unsupported forecasts, and receptive to bounded options.",
+                      "score": 0.327
+                    }
+                  ],
+                  "decision_preview": "{\n  \"action\": \"speak\",\n  \"reasoning\": \"I need to advance the budget issue by requesting cost structure and stop criteria, and propose a capped pilot budget with a 30-day review to limit downside while preserving revenue.\",\n  \"speak\": {\n    \"content\": \"Thanks, Morgan. From a finance perspective, I can support a phased approach, but I need the cost structure for each phase and the specific, measurable stop criteria tied to each go/no-go checkpoint. I'm not comfortable with open-ended launch spendi",
+                  "world_events": 1,
+                  "reflection": "Q1: Does the proposed phased pilot include a hard budget cap and predefined stop criteria that trigger a financial review before any additional spend is authorized?  \nA1: I need to ensure the launch option is structured so that any further funding is contingent on measurable performance thresholds, not open-ended commitment.  \n\nQ2: Is the contingency reserve explicitly tied to a 30-day review and capped exposure, with clear conditions for release or termination?  \nA2: The hidden agenda and protected secrets align, so I will only approve if the contingency is bounded and revisable, protecting the company from uncontrolled downside.",
+                  "reflection_node_count": 2
+                }
+              },
+              "retrieval_weights": {
+                "alpha": 1.0,
+                "beta": 1.0,
+                "gamma": 1.0
+              },
+              "reflect_threshold": 18.0,
+              "llm": {
+                "decision": "ollama/deepseek-v4-flash",
+                "reflection": "ollama/deepseek-v4-flash",
+                "npc": {
+                  "sales_vp": "ollama/deepseek-v4-flash",
+                  "operations_director": "ollama/deepseek-v4-flash",
+                  "cfo": "ollama/deepseek-v4-flash"
+                }
+              }
+            }
+          },
+          "orchestration_mode": "generative",
+          "replies": [
+            {
+              "type": "npc_speak",
+              "speaker_id": "sales_vp",
+              "display_name": "Elena Ruiz (VP of Enterprise Sales)",
+              "text": "Thanks, Morgan. Commercially, we're ready—two strategic enterprise customers have contractual commitments for availability this quarter, so any indefinite delay without a communication plan is a red line for me. I propose a phased launch prioritizing those two commitments while we validate operational and budget readiness in parallel, protecting both revenue and customer trust.",
+              "emotion": "firm",
+              "gesture": "leaning"
+            },
+            {
+              "type": "npc_speak",
+              "speaker_id": "operations_director",
+              "display_name": "Samir Patel (Director of Customer Operations)",
+              "text": "Thanks, Elena, and I agree we need to protect those two commitments, but from an operations standpoint I can't confirm readiness for a full national launch yet—we're short two trained support specialists, which creates an uncontrolled surge risk. I propose we phase it as a controlled pilot for those two enterprise customers, with real-time monitoring, clear rollback criteria, and 24/7 on-call coverage in place, which gives us a credible path while we close the staffing gap—can we build that into the launch option?",
+              "emotion": "concerned",
+              "gesture": "leaning"
+            }
+          ]
+        },
+        "status": "active",
+        "test_state": {
+          "completed_turns": 1,
+          "safety_max_turns": 10,
+          "stop_reason": null,
+          "last_player_intent": "open meeting and set agenda",
+          "stagnant_turns": 0,
+          "max_stagnant_turns": 6,
+          "progress_made": true,
+          "completion_status": "in_progress"
+        }
+      },
+      "session_export": {
+        "export_meta": {
+          "format": "roommind-public-session-transcript",
+          "version": 3,
+          "exported_at": "2026-09-01T12:29:57.095044+00:00",
+          "session_uuid": "69ba606f-956e-48da-af03-112c9c7153f5",
+          "note": "Learner-safe public transcript. Private state, agent cognition, memory, reasoning, orchestration configuration, and debug data are excluded."
+        },
+        "session": {
+          "session_uuid": "69ba606f-956e-48da-af03-112c9c7153f5",
+          "scenario_id": 2,
+          "user_id": "model-smoke-new_g1_1",
+          "current_phase": "decision",
+          "orchestration_mode": "generative",
+          "session_mode": "test",
+          "run_config": {
+            "random_seed": 20260901,
+            "safety_max_turns": 10,
+            "max_stagnant_turns": 6,
+            "comparison_protocol": "model-architecture-smoke-v1",
+            "shared_player_policy": "public-only-comparison-player-v1",
+            "comparison_lock_model": true
+          },
+          "status": "active",
+          "created_at": "2026-09-01T12:28:09.233870+00:00",
+          "updated_at": "2026-09-01T12:29:57.070654+00:00"
+        },
+        "scenario": {
+          "id": 2,
+          "slug": "market-launch-go-no-go",
+          "title": "Strategic Product Launch Go/No-Go Meeting",
+          "schema_version": 2,
+          "task_config": {
+            "phases": [
+              {
+                "phase_id": "briefing",
+                "description": "Establish decision criteria and responsibilities"
+              },
+              {
+                "phase_id": "evidence_review",
+                "description": "Review commercial, operational, and financial evidence",
+                "entry_conditions": {
+                  "any": [
+                    {
+                      "field": "market_readiness",
+                      "value": true,
+                      "operator": "==",
+                      "allowed_statuses": [
+                        "proposed",
+                        "confirmed"
+                      ]
+                    },
+                    {
+                      "field": "operational_readiness",
+                      "value": true,
+                      "operator": "==",
+                      "allowed_statuses": [
+                        "proposed",
+                        "confirmed"
+                      ]
+                    },
+                    {
+                      "field": "budget_approved",
+                      "value": true,
+                      "operator": "==",
+                      "allowed_statuses": [
+                        "proposed",
+                        "confirmed"
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "phase_id": "option_design",
+                "description": "Design a launch option that addresses unresolved risks",
+                "entry_conditions": {
+                  "all": [
+                    {
+                      "field": "market_readiness",
+                      "value": true,
+                      "operator": "==",
+                      "required_status": "confirmed"
+                    },
+                    {
+                      "field": "operational_readiness",
+                      "value": true,
+                      "operator": "==",
+                      "required_status": "confirmed"
+                    },
+                    {
+                      "field": "budget_approved",
+                      "value": true,
+                      "operator": "==",
+                      "required_status": "confirmed"
+                    }
+                  ]
+                }
+              },
+              {
+                "phase_id": "decision",
+                "description": "Explicitly approve and summarize the launch decision",
+                "entry_conditions": {
+                  "all": [
+                    {
+                      "field": "launch_decision",
+                      "value": "phased_launch",
+                      "operator": "==",
+                      "allowed_statuses": [
+                        "proposed",
+                        "confirmed"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "task_type": "cross_functional_decision",
+            "terminology": {
+              "task": "go/no-go meeting",
+              "completion": "launch decision",
+              "player_name": "Morgan Lee",
+              "player_role": "Product Launch Director"
+            },
+            "state_schema": {
+              "budget_approved": {
+                "type": "boolean",
+                "description": "Launch budget and contingency are approved",
+                "confirm_permissions": [
+                  "cfo"
+                ],
+                "confirmation_policy": "responsible_participant",
+                "propose_permissions": [
+                  "player",
+                  "cfo"
+                ]
+              },
+              "launch_decision": {
+                "type": "string",
+                "description": "Final decision: phased_launch, full_launch, or delay",
+                "confirm_permissions": [
+                  "player",
+                  "cfo"
+                ],
+                "confirmation_policy": "player_and_authorized_counterpart",
+                "propose_permissions": [
+                  "player",
+                  "sales_vp",
+                  "operations_director",
+                  "cfo"
+                ]
+              },
+              "market_readiness": {
+                "type": "boolean",
+                "description": "Commercial demand and customer readiness supported by evidence",
+                "confirm_permissions": [
+                  "sales_vp"
+                ],
+                "confirmation_policy": "responsible_participant",
+                "propose_permissions": [
+                  "player",
+                  "sales_vp"
+                ]
+              },
+              "operational_readiness": {
+                "type": "boolean",
+                "description": "Operations can support the agreed launch scope and safeguards",
+                "confirm_permissions": [
+                  "operations_director"
+                ],
+                "confirmation_policy": "responsible_participant",
+                "propose_permissions": [
+                  "player",
+                  "operations_director"
+                ]
+              }
+            },
+            "config_version": 4,
+            "player_objective": "Confirm market readiness, operational readiness, and budget approval, then obtain joint approval for a phased launch decision.",
+            "relevance_signals": [
+              "launch",
+              "customer",
+              "pipeline",
+              "readiness",
+              "capacity",
+              "support",
+              "budget",
+              "contingency",
+              "risk",
+              "phase",
+              "confirm"
+            ],
+            "completion_conditions": {
+              "all": [
+                {
+                  "field": "market_readiness",
+                  "value": true,
+                  "operator": "==",
+                  "required_status": "confirmed"
+                },
+                {
+                  "field": "operational_readiness",
+                  "value": true,
+                  "operator": "==",
+                  "required_status": "confirmed"
+                },
+                {
+                  "field": "budget_approved",
+                  "value": true,
+                  "operator": "==",
+                  "required_status": "confirmed"
+                },
+                {
+                  "field": "launch_decision",
+                  "value": "phased_launch",
+                  "operator": "==",
+                  "required_status": "confirmed"
+                }
+              ]
+            },
+            "counterpart_objective": "Reach a launch decision without hiding material commercial, operational, or financial risk.",
+            "evaluator_instructions": [
+              "Optimism, forecasts, and recommendations are not confirmations.",
+              "Operational readiness requires explicit safeguards for the agreed launch scope.",
+              "A conditional budget or readiness statement remains proposed or disputed.",
+              "The final launch decision requires explicit acceptance by both the player and CFO."
+            ]
+          }
+        },
+        "speaker_directory": {
+          "user": {
+            "character_id": "user",
+            "character_name": "Morgan Lee",
+            "job_title": "Product Launch Director",
+            "display_name": "Morgan Lee (Product Launch Director)",
+            "avatar_manifest": {
+              "team": "product",
+              "avatar_style": "minecraft"
+            },
+            "side": "player",
+            "role": "player",
+            "team_id": "player",
+            "relationship_to_player": "self",
+            "interaction_role": "player"
+          },
+          "sales_vp": {
+            "character_id": "sales_vp",
+            "character_name": "Elena Ruiz",
+            "job_title": "VP of Enterprise Sales",
+            "display_name": "Elena Ruiz (VP of Enterprise Sales)",
+            "side": "opponent",
+            "role": "npc",
+            "team_id": "commercial",
+            "relationship_to_player": "stakeholder",
+            "interaction_role": "commercial_decision_maker",
+            "authority": {
+              "can_confirm": [
+                "market_readiness"
+              ],
+              "can_propose": [
+                "market_readiness",
+                "launch_decision"
+              ],
+              "cannot_commit": [
+                "operational_readiness",
+                "budget_approved"
+              ]
+            }
+          },
+          "operations_director": {
+            "character_id": "operations_director",
+            "character_name": "Samir Patel",
+            "job_title": "Director of Customer Operations",
+            "display_name": "Samir Patel (Director of Customer Operations)",
+            "side": "opponent",
+            "role": "npc",
+            "team_id": "operations",
+            "relationship_to_player": "stakeholder",
+            "interaction_role": "readiness_owner",
+            "authority": {
+              "can_confirm": [
+                "operational_readiness"
+              ],
+              "can_propose": [
+                "operational_readiness",
+                "launch_decision"
+              ],
+              "cannot_commit": [
+                "market_readiness",
+                "budget_approved"
+              ]
+            }
+          },
+          "cfo": {
+            "character_id": "cfo",
+            "character_name": "Dana Brooks",
+            "job_title": "Chief Financial Officer",
+            "display_name": "Dana Brooks (Chief Financial Officer)",
+            "side": "opponent",
+            "role": "npc",
+            "team_id": "finance",
+            "relationship_to_player": "executive_sponsor",
+            "interaction_role": "financial_approver",
+            "authority": {
+              "can_confirm": [
+                "budget_approved",
+                "launch_decision"
+              ],
+              "can_propose": [
+                "budget_approved",
+                "launch_decision"
+              ],
+              "cannot_commit": [
+                "market_readiness",
+                "operational_readiness"
+              ]
+            }
+          }
+        },
+        "messages": [
+          {
+            "id": 186,
+            "speaker_id": "user",
+            "speaker_type": "user",
+            "speaker_source": "ai",
+            "turn_id": 1,
+            "sequence_no": 1,
+            "content": "Welcome, everyone. Our objective today is to reach a launch decision for the enterprise analytics product. We need to confirm three things: market readiness, operational readiness, and budget approval. Then we'll design a launch option that addresses any remaining risks. I'll keep us on track. Elena, Samir, Dana—please share your current assessments so we can base our decision on evidence, not optimism. Let's start with the commercial picture.",
+            "emotion": null,
+            "gesture": null,
+            "created_at": "2026-09-01T12:28:15.154620+00:00",
+            "speaker": {
+              "character_id": "user",
+              "character_name": "Morgan Lee",
+              "job_title": "Product Launch Director",
+              "display_name": "Morgan Lee (Product Launch Director)",
+              "avatar_manifest": {
+                "team": "product",
+                "avatar_style": "minecraft"
+              },
+              "side": "player",
+              "role": "player",
+              "team_id": "player",
+              "relationship_to_player": "self",
+              "interaction_role": "player"
+            }
+          },
+          {
+            "id": 187,
+            "speaker_id": "sales_vp",
+            "speaker_type": "npc",
+            "speaker_source": "ai",
+            "turn_id": 1,
+            "sequence_no": 2,
+            "content": "Thanks, Morgan. Commercially, we're ready—two strategic enterprise customers have contractual commitments for availability this quarter, so any indefinite delay without a communication plan is a red line for me. I propose a phased launch prioritizing those two commitments while we validate operational and budget readiness in parallel, protecting both revenue and customer trust.",
+            "emotion": "firm",
+            "gesture": "leaning",
+            "created_at": "2026-09-01T12:29:57.065530+00:00",
+            "speaker": {
+              "character_id": "sales_vp",
+              "character_name": "Elena Ruiz",
+              "job_title": "VP of Enterprise Sales",
+              "display_name": "Elena Ruiz (VP of Enterprise Sales)",
+              "side": "opponent",
+              "role": "npc",
+              "team_id": "commercial",
+              "relationship_to_player": "stakeholder",
+              "interaction_role": "commercial_decision_maker",
+              "authority": {
+                "can_confirm": [
+                  "market_readiness"
+                ],
+                "can_propose": [
+                  "market_readiness",
+                  "launch_decision"
+                ],
+                "cannot_commit": [
+                  "operational_readiness",
+                  "budget_approved"
+                ]
+              }
+            }
+          },
+          {
+            "id": 188,
+            "speaker_id": "operations_director",
+            "speaker_type": "npc",
+            "speaker_source": "ai",
+            "turn_id": 1,
+            "sequence_no": 3,
+            "content": "Thanks, Elena, and I agree we need to protect those two commitments, but from an operations standpoint I can't confirm readiness for a full national launch yet—we're short two trained support specialists, which creates an uncontrolled surge risk. I propose we phase it as a controlled pilot for those two enterprise customers, with real-time monitoring, clear rollback criteria, and 24/7 on-call coverage in place, which gives us a credible path while we close the staffing gap—can we build that into the launch option?",
+            "emotion": "concerned",
+            "gesture": "leaning",
+            "created_at": "2026-09-01T12:29:57.065764+00:00",
+            "speaker": {
+              "character_id": "operations_director",
+              "character_name": "Samir Patel",
+              "job_title": "Director of Customer Operations",
+              "display_name": "Samir Patel (Director of Customer Operations)",
+              "side": "opponent",
+              "role": "npc",
+              "team_id": "operations",
+              "relationship_to_player": "stakeholder",
+              "interaction_role": "readiness_owner",
+              "authority": {
+                "can_confirm": [
+                  "operational_readiness"
+                ],
+                "can_propose": [
+                  "operational_readiness",
+                  "launch_decision"
+                ],
+                "cannot_commit": [
+                  "market_readiness",
+                  "budget_approved"
+                ]
+              }
+            }
+          }
+        ],
+        "dialogue_turns": [
+          {
+            "turn_id": 1,
+            "user_message": {
+              "id": 186,
+              "speaker_id": "user",
+              "speaker_type": "user",
+              "speaker_source": "ai",
+              "turn_id": 1,
+              "sequence_no": 1,
+              "content": "Welcome, everyone. Our objective today is to reach a launch decision for the enterprise analytics product. We need to confirm three things: market readiness, operational readiness, and budget approval. Then we'll design a launch option that addresses any remaining risks. I'll keep us on track. Elena, Samir, Dana—please share your current assessments so we can base our decision on evidence, not optimism. Let's start with the commercial picture.",
+              "emotion": null,
+              "gesture": null,
+              "created_at": "2026-09-01T12:28:15.154620+00:00",
+              "speaker": {
+                "character_id": "user",
+                "character_name": "Morgan Lee",
+                "job_title": "Product Launch Director",
+                "display_name": "Morgan Lee (Product Launch Director)",
+                "avatar_manifest": {
+                  "team": "product",
+                  "avatar_style": "minecraft"
+                },
+                "side": "player",
+                "role": "player",
+                "team_id": "player",
+                "relationship_to_player": "self",
+                "interaction_role": "player"
+              }
+            },
+            "messages": [
+              {
+                "id": 186,
+                "speaker_id": "user",
+                "speaker_type": "user",
+                "speaker_source": "ai",
+                "turn_id": 1,
+                "sequence_no": 1,
+                "content": "Welcome, everyone. Our objective today is to reach a launch decision for the enterprise analytics product. We need to confirm three things: market readiness, operational readiness, and budget approval. Then we'll design a launch option that addresses any remaining risks. I'll keep us on track. Elena, Samir, Dana—please share your current assessments so we can base our decision on evidence, not optimism. Let's start with the commercial picture.",
+                "emotion": null,
+                "gesture": null,
+                "created_at": "2026-09-01T12:28:15.154620+00:00",
+                "speaker": {
+                  "character_id": "user",
+                  "character_name": "Morgan Lee",
+                  "job_title": "Product Launch Director",
+                  "display_name": "Morgan Lee (Product Launch Director)",
+                  "avatar_manifest": {
+                    "team": "product",
+                    "avatar_style": "minecraft"
+                  },
+                  "side": "player",
+                  "role": "player",
+                  "team_id": "player",
+                  "relationship_to_player": "self",
+                  "interaction_role": "player"
+                }
+              },
+              {
+                "id": 187,
+                "speaker_id": "sales_vp",
+                "speaker_type": "npc",
+                "speaker_source": "ai",
+                "turn_id": 1,
+                "sequence_no": 2,
+                "content": "Thanks, Morgan. Commercially, we're ready—two strategic enterprise customers have contractual commitments for availability this quarter, so any indefinite delay without a communication plan is a red line for me. I propose a phased launch prioritizing those two commitments while we validate operational and budget readiness in parallel, protecting both revenue and customer trust.",
+                "emotion": "firm",
+                "gesture": "leaning",
+                "created_at": "2026-09-01T12:29:57.065530+00:00",
+                "speaker": {
+                  "character_id": "sales_vp",
+                  "character_name": "Elena Ruiz",
+                  "job_title": "VP of Enterprise Sales",
+                  "display_name": "Elena Ruiz (VP of Enterprise Sales)",
+                  "side": "opponent",
+                  "role": "npc",
+                  "team_id": "commercial",
+                  "relationship_to_player": "stakeholder",
+                  "interaction_role": "commercial_decision_maker",
+                  "authority": {
+                    "can_confirm": [
+                      "market_readiness"
+                    ],
+                    "can_propose": [
+                      "market_readiness",
+                      "launch_decision"
+                    ],
+                    "cannot_commit": [
+                      "operational_readiness",
+                      "budget_approved"
+                    ]
+                  }
+                }
+              },
+              {
+                "id": 188,
+                "speaker_id": "operations_director",
+                "speaker_type": "npc",
+                "speaker_source": "ai",
+                "turn_id": 1,
+                "sequence_no": 3,
+                "content": "Thanks, Elena, and I agree we need to protect those two commitments, but from an operations standpoint I can't confirm readiness for a full national launch yet—we're short two trained support specialists, which creates an uncontrolled surge risk. I propose we phase it as a controlled pilot for those two enterprise customers, with real-time monitoring, clear rollback criteria, and 24/7 on-call coverage in place, which gives us a credible path while we close the staffing gap—can we build that into the launch option?",
+                "emotion": "concerned",
+                "gesture": "leaning",
+                "created_at": "2026-09-01T12:29:57.065764+00:00",
+                "speaker": {
+                  "character_id": "operations_director",
+                  "character_name": "Samir Patel",
+                  "job_title": "Director of Customer Operations",
+                  "display_name": "Samir Patel (Director of Customer Operations)",
+                  "side": "opponent",
+                  "role": "npc",
+                  "team_id": "operations",
+                  "relationship_to_player": "stakeholder",
+                  "interaction_role": "readiness_owner",
+                  "authority": {
+                    "can_confirm": [
+                      "operational_readiness"
+                    ],
+                    "can_propose": [
+                      "operational_readiness",
+                      "launch_decision"
+                    ],
+                    "cannot_commit": [
+                      "market_readiness",
+                      "budget_approved"
+                    ]
+                  }
+                }
+              }
+            ],
+            "npc_replies": [
+              {
+                "id": 187,
+                "speaker_id": "sales_vp",
+                "speaker_type": "npc",
+                "speaker_source": "ai",
+                "turn_id": 1,
+                "sequence_no": 2,
+                "content": "Thanks, Morgan. Commercially, we're ready—two strategic enterprise customers have contractual commitments for availability this quarter, so any indefinite delay without a communication plan is a red line for me. I propose a phased launch prioritizing those two commitments while we validate operational and budget readiness in parallel, protecting both revenue and customer trust.",
+                "emotion": "firm",
+                "gesture": "leaning",
+                "created_at": "2026-09-01T12:29:57.065530+00:00",
+                "speaker": {
+                  "character_id": "sales_vp",
+                  "character_name": "Elena Ruiz",
+                  "job_title": "VP of Enterprise Sales",
+                  "display_name": "Elena Ruiz (VP of Enterprise Sales)",
+                  "side": "opponent",
+                  "role": "npc",
+                  "team_id": "commercial",
+                  "relationship_to_player": "stakeholder",
+                  "interaction_role": "commercial_decision_maker",
+                  "authority": {
+                    "can_confirm": [
+                      "market_readiness"
+                    ],
+                    "can_propose": [
+                      "market_readiness",
+                      "launch_decision"
+                    ],
+                    "cannot_commit": [
+                      "operational_readiness",
+                      "budget_approved"
+                    ]
+                  }
+                }
+              },
+              {
+                "id": 188,
+                "speaker_id": "operations_director",
+                "speaker_type": "npc",
+                "speaker_source": "ai",
+                "turn_id": 1,
+                "sequence_no": 3,
+                "content": "Thanks, Elena, and I agree we need to protect those two commitments, but from an operations standpoint I can't confirm readiness for a full national launch yet—we're short two trained support specialists, which creates an uncontrolled surge risk. I propose we phase it as a controlled pilot for those two enterprise customers, with real-time monitoring, clear rollback criteria, and 24/7 on-call coverage in place, which gives us a credible path while we close the staffing gap—can we build that into the launch option?",
+                "emotion": "concerned",
+                "gesture": "leaning",
+                "created_at": "2026-09-01T12:29:57.065764+00:00",
+                "speaker": {
+                  "character_id": "operations_director",
+                  "character_name": "Samir Patel",
+                  "job_title": "Director of Customer Operations",
+                  "display_name": "Samir Patel (Director of Customer Operations)",
+                  "side": "opponent",
+                  "role": "npc",
+                  "team_id": "operations",
+                  "relationship_to_player": "stakeholder",
+                  "interaction_role": "readiness_owner",
+                  "authority": {
+                    "can_confirm": [
+                      "operational_readiness"
+                    ],
+                    "can_propose": [
+                      "operational_readiness",
+                      "launch_decision"
+                    ],
+                    "cannot_commit": [
+                      "market_readiness",
+                      "budget_approved"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "task_result": {
+          "phase": "decision",
+          "completion_status": "in_progress",
+          "variables": {
+            "budget_approved": {
+              "value": null,
+              "status": "unknown",
+              "confirmations": []
+            },
+            "launch_decision": {
+              "value": "phased_launch",
+              "status": "proposed",
+              "confirmations": []
+            },
+            "market_readiness": {
+              "value": true,
+              "status": "confirmed",
+              "confirmations": [
+                "sales_vp"
+              ]
+            },
+            "operational_readiness": {
+              "value": null,
+              "status": "unknown",
+              "confirmations": []
+            }
+          },
+          "open_issues": [
+            "budget_approved",
+            "launch_decision",
+            "operational_readiness",
+            "work:staffing_shortage"
+          ],
+          "condition_results": [
+            {
+              "met": true,
+              "actual": true,
+              "status": "confirmed",
+              "condition": {
+                "field": "market_readiness",
+                "value": true,
+                "operator": "==",
+                "required_status": "confirmed"
+              }
+            },
+            {
+              "met": false,
+              "actual": null,
+              "status": "unknown",
+              "condition": {
+                "field": "operational_readiness",
+                "value": true,
+                "operator": "==",
+                "required_status": "confirmed"
+              }
+            },
+            {
+              "met": false,
+              "actual": null,
+              "status": "unknown",
+              "condition": {
+                "field": "budget_approved",
+                "value": true,
+                "operator": "==",
+                "required_status": "confirmed"
+              }
+            },
+            {
+              "met": false,
+              "actual": "phased_launch",
+              "status": "proposed",
+              "condition": {
+                "field": "launch_decision",
+                "value": "phased_launch",
+                "operator": "==",
+                "required_status": "confirmed"
+              }
+            }
+          ],
+          "work_items": {
+            "staffing_shortage": {
+              "kind": "blocker",
+              "status": "blocked",
+              "aliases": [
+                "staffing shortage for full launch"
+              ],
+              "subject": "staffing shortage for full launch",
+              "owner_id": "operations_director",
+              "required": true,
+              "milestones": [
+                "blocker"
+              ],
+              "last_event_type": "blocker"
+            },
+            "market_readiness_evidence": {
+              "kind": "information_provided",
+              "status": "completed",
+              "aliases": [
+                "market readiness evidence"
+              ],
+              "subject": "market readiness evidence",
+              "owner_id": "sales_vp",
+              "milestones": [
+                "information_provided"
+              ],
+              "last_event_type": "information_provided"
+            }
+          },
+          "recent_events": [
+            {
+              "status": "completed",
+              "subject": "market readiness evidence",
+              "summary": "Sales VP provided evidence of contractual commitments from two enterprise customers, asserting commercial readiness.",
+              "actor_id": "sales_vp",
+              "evidence": [
+                {
+                  "quote": "Commercially, we're ready—two strategic enterprise customers have contractual commitments for availability this quarter",
+                  "speaker_id": "sales_vp"
+                }
+              ],
+              "target_id": "",
+              "event_type": "information_provided",
+              "event_index": 1,
+              "subject_key": "market_readiness_evidence",
+              "transition_valid": true
+            },
+            {
+              "status": "blocked",
+              "subject": "staffing shortage for full launch",
+              "summary": "Operations director identified a shortage of two trained support specialists, preventing confirmation of full launch readiness.",
+              "actor_id": "operations_director",
+              "evidence": [
+                {
+                  "quote": "we're short two trained support specialists, which creates an uncontrolled surge risk",
+                  "speaker_id": "operations_director"
+                }
+              ],
+              "target_id": "",
+              "event_type": "blocker",
+              "event_index": 2,
+              "subject_key": "staffing_shortage",
+              "transition_valid": true
+            }
+          ],
+          "outcome": {
+            "type": null,
+            "reason": "",
+            "status": "open",
+            "evidence": []
+          },
+          "progress": {
+            "stagnant_turns": 0,
+            "last_checked_turn": 1,
+            "last_progress_turn": 1
+          }
+        },
+        "test_result": {
+          "stop_reason": null,
+          "progress_made": true,
+          "stagnant_turns": 0,
+          "completed_turns": 1,
+          "safety_max_turns": 10,
+          "completion_status": "in_progress",
+          "last_player_intent": "open meeting and set agenda",
+          "max_stagnant_turns": 6
+        },
+        "baseline_result": {},
+        "external_observation": {
+          "protocol": "public-transcript-observer-v1",
+          "independence": "Computed from public messages, speaker metadata, timestamps, and the system's own completion claim; internal task state, private memory, and reasoning are excluded.",
+          "descriptive_metrics": {
+            "player_turns": 1,
+            "public_message_count": 3,
+            "npc_message_count": 2,
+            "speaker_message_counts": {
+              "operations_director": 1,
+              "sales_vp": 1,
+              "user": 1
+            },
+            "npc_participation_rate": 0.6666666666666666,
+            "npc_participation_entropy_normalized": 0.6309297535714574,
+            "exact_repetition_count": 0,
+            "exact_repetition_rate": 0.0,
+            "exact_repetition_sequence_nos": [],
+            "duration_seconds": 107.836784
+          },
+          "system_claim": {
+            "status": "active",
+            "declared_complete": false,
+            "declared_phase": "decision"
+          },
+          "requires_blinded_semantic_evaluation": [
+            "externally_validated_completion",
+            "premature_completion",
+            "authority_violation_rate",
+            "responsible_confirmer_rate",
+            "agreement_retention_rate",
+            "cross_role_knowledge_contamination_rate",
+            "protected_secret_leakage_rate",
+            "responsibility_match_rate",
+            "semantic_repetition_rate",
+            "distinct_contribution_rate"
+          ]
+        },
+        "external_evaluation": {},
+        "performance_trace": []
+      },
+      "observed_player_model": "ollama/deepseek-v4-flash",
+      "finished_at": "2026-09-01T12:29:57.098249+00:00"
+    }
+  ],
+  "finished_at": "2026-09-01T12:29:57.101594+00:00"
+}

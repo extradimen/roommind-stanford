@@ -5,8 +5,12 @@ function pickAvatarManifest(
   primary?: PlayerCharacter["avatar_manifest"],
   fallback?: unknown,
 ): PlayerCharacter["avatar_manifest"] {
-  const a = primary && typeof primary === "object" ? primary : {};
-  const b = fallback && typeof fallback === "object" ? (fallback as PlayerCharacter["avatar_manifest"]) : {};
+  const a: NonNullable<PlayerCharacter["avatar_manifest"]> =
+    primary && typeof primary === "object" ? primary : {};
+  const b: NonNullable<PlayerCharacter["avatar_manifest"]> =
+    fallback && typeof fallback === "object"
+      ? (fallback as NonNullable<PlayerCharacter["avatar_manifest"]>)
+      : {};
   const aUrl = typeof a.model_url === "string" ? a.model_url.trim() : "";
   const bUrl = typeof b.model_url === "string" ? b.model_url.trim() : "";
   if (aUrl) return a;

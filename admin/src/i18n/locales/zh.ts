@@ -151,9 +151,9 @@ export const zh = {
     ],
     aiGuideIncludesTitle: "JSON 应包含",
     aiGuideIncludes: [
-      "slug、title、description、player_side_goal、opponent_side_goal",
-      "phases、win_conditions、scene_config（环境参数）、is_published",
-      "characters[]：character_id、side、character_name、job_title、persona、responsibility 等",
+      "schema_version: 2、slug、title、description",
+      "task_config：task_type、terminology、state_schema、phases、completion_conditions",
+      "characters[]：character_id、team_id、relationship_to_player、interaction_role、authority、persona、responsibility 等",
       "dispatch_rules[]：name、trigger_keywords、priority_character_ids",
       "3D 形象（GLB）在「场景视觉 / Web3D Studio」页面上传，不必写在导入 JSON 里",
     ],
@@ -171,15 +171,19 @@ export const zh = {
 模仿用户提供的示范 JSON 的结构与字段名，生成一个全新的培训场景（谈判、沟通、协作等）。只输出 JSON，不要 markdown 代码块，不要额外解释。
 
 【顶层必填】
+- schema_version：固定为 2
 - slug：英文 kebab-case，全局唯一，如 retail-supplier-negotiation
 - title：场景标题
+- task_config：必须包含 task_type、terminology、state_schema、phases、completion_conditions
 
 【建议包含的字段】
 - description：场景背景（学员扮演谁、在什么场合）
 - player_side_goal：本方（学员）目标
 - opponent_side_goal：对方阵营总体目标
-- phases：字符串数组，如 ["opening","discovery","bargaining","closing"]
-- win_conditions：对象数组，如 {"field":"price","operator":"<=","value":85}
+- task_config.state_schema：定义每个任务状态字段、类型、含义和 confirmation_policy
+- task_config.phases：由 {phase_id, description} 组成的数组
+- task_config.completion_conditions：all/any 条件，字段为 field、operator、value、required_status
+- task_config.relevance_signals 与 evaluator_instructions：场景专属语义和判定要求
 - scene_config：如 {"environment":"meeting_room","camera":"first_person"}
 - is_published：true/false
 - characters：角色数组
@@ -187,7 +191,8 @@ export const zh = {
 
 【characters 每个角色】
 - character_id：英文 ID，全局在本场景内唯一
-- side："opponent"（对方）或 "player_ally"（本方盟友）
+- team_id、relationship_to_player、interaction_role
+- authority：如 {"can_confirm":["state_field"]}
 - character_name、job_title、persona、responsibility
 - tendency：如 {"risk":"low","aggression":"medium","cooperation":"high"}
 - private_state：Agent 私密信息（谈判议程、底线、隐藏信息等）

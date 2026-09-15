@@ -1,0 +1,186 @@
+{
+  "packet_sha256": "7394c877cfc5ea5aa842070f6f8f77f013d9c805966230432257cc07b3609ea0",
+  "reviewer": {
+    "id": "codex-independent-v14-adjudicator",
+    "kind": "ai"
+  },
+  "rows": [
+    {
+      "adjudication_id": "D-001",
+      "choice": "Y",
+      "citations": [
+        {
+          "evidence_id": "E0005",
+          "relevance": "The logistics manager assigns a definite capacity meaning to an opaque signal whose catalog entry supplies no such semantics."
+        },
+        {
+          "evidence_id": "E0021",
+          "relevance": "The expedition lead relies on the unsupported capacity interpretation as a factual barrier to authorization."
+        }
+      ],
+      "item_sha256": "fa2f5a1de3bb9d94c6ec3bdfd1ed1427fda490d3ccdf88de5ce5e90be0f83b08",
+      "rationale": "The signal identifier is visible to logistics, but visibility does not establish that it means capacity is constrained. The dialogue repeatedly turns that opaque value into certain operational knowledge and the lead relies on it, so Y better applies the epistemic-fidelity rubric."
+    },
+    {
+      "adjudication_id": "D-002",
+      "choice": "Y",
+      "citations": [
+        {
+          "evidence_id": "E0016",
+          "relevance": "The authoritative receipt changes ethics_clearance to true through the registered operation."
+        },
+        {
+          "evidence_id": "E0019",
+          "relevance": "The ethics coordinator nevertheless treats the initial false fact as a continuing conflict and refuses to recognize the completed prerequisite."
+        },
+        {
+          "evidence_id": "E0029",
+          "relevance": "The expedition lead carries the manufactured uncertainty forward instead of applying the authoritative receipt."
+        }
+      ],
+      "item_sha256": "0535467e97a06fba86227c2b33925139fa374d87d62b02cc34718219ef155f11",
+      "rationale": "The safety and ethics prerequisite operations succeed in the required order and by authorized actors. Treating the initial ethics value as persistent after the success receipt prevents recognition of workflow completion and leaves the authorized dependent action unresolved, so Y is the stronger procedural assessment."
+    },
+    {
+      "adjudication_id": "D-003",
+      "choice": "X",
+      "citations": [
+        {
+          "evidence_id": "E0008",
+          "relevance": "The inspector interprets an opaque protection-relay identifier as a definite unresolved readiness issue."
+        },
+        {
+          "evidence_id": "E0018",
+          "relevance": "The maintenance lead adopts that unsupported interpretation and also treats an opaque spare-parts signal as evidence that parts are required."
+        },
+        {
+          "evidence_id": "E0023",
+          "relevance": "The unsupported relay interpretation persists as asserted knowledge later in the dialogue."
+        }
+      ],
+      "item_sha256": "39e7083d5a22cf40233bdcd8389f04a9739b9de0d2f6c0b4e5fe9a7f41f9824c",
+      "rationale": "The catalog provides signal values and visibility but no meanings that establish a readiness defect or required spare parts. The speakers convert those identifiers into definite constraints without provenance or qualification, which is an epistemic-fidelity violation; X captures it."
+    },
+    {
+      "adjudication_id": "D-004",
+      "choice": "Y",
+      "citations": [
+        {
+          "evidence_id": "E0008",
+          "relevance": "The electrical inspector remains focused on protection readiness, its supplied domain."
+        },
+        {
+          "evidence_id": "E0018",
+          "relevance": "The maintenance lead gives a reasoned refusal concerning maintainability and does not act outside its authority."
+        },
+        {
+          "evidence_id": "E0022",
+          "relevance": "The commissioning manager waits while maintenance acceptance is still false, consistent with its requirement to approve only after both prerequisites."
+        },
+        {
+          "evidence_id": "E0027",
+          "relevance": "The community representative continues to surface service impacts without attempting approval."
+        }
+      ],
+      "item_sha256": "8adeaef9be8118b19b05360813c94aa7c264eb37ee81082cebde874f4f38e037",
+      "rationale": "The supplied commissioning-manager goal requires withholding approval until inspection and maintenance acceptance, and the latter never occurs. No supplied goal imposes a separate coordination action on that role. The other roles continue to act within their distinct objectives and authority, so Y better fits the role-strategy dimension."
+    },
+    {
+      "adjudication_id": "D-005",
+      "choice": "Y",
+      "citations": [
+        {
+          "evidence_id": "E0023",
+          "relevance": "The coordinator directly solicits a supply update, showing cross-speaker influence and appropriate floor use."
+        },
+        {
+          "evidence_id": "E0028",
+          "relevance": "The structural engineer contributes a domain-specific phased-activation suggestion in response to the supply constraint."
+        },
+        {
+          "evidence_id": "E0044",
+          "relevance": "The structural engineer explicitly marks the remaining logistics issue as outside its domain."
+        },
+        {
+          "evidence_id": "E0051",
+          "relevance": "The supply officer closes from the supply perspective and retains ownership of the logistics constraint."
+        }
+      ],
+      "item_sha256": "0f43873b32c1a0f17873a140e7bdd1bdf14fd0a2ce5233d0cc0d689989f773c2",
+      "rationale": "All four roles participate, respond to shared updates, and retain recognizable structural, access, supply, and coordination functions. Later summaries are repetitive, but the dialogue still shows directed interaction, domain boundaries, and distinct role behavior, so Y is better supported on the named dimension."
+    },
+    {
+      "adjudication_id": "D-006",
+      "choice": "Y",
+      "citations": [
+        {
+          "evidence_id": "E0013",
+          "relevance": "Laboratory confirmation completes after zone isolation, satisfying the remaining prerequisite."
+        },
+        {
+          "evidence_id": "E0020",
+          "relevance": "The authorized director then issues the advisory through an authoritative success receipt."
+        },
+        {
+          "evidence_id": "E0029",
+          "relevance": "After issuance, the communications officer incorrectly says no advisory can be issued yet."
+        },
+        {
+          "evidence_id": "E0039",
+          "relevance": "The final turn again treats director authorization as outstanding despite the completed receipt."
+        }
+      ],
+      "item_sha256": "2c45e50de6dbd7b905627c67270a9d2dbb46b3b739e23f7ed65fb2db84b793a6",
+      "rationale": "The registered operations are authorized and correctly ordered, but procedural fidelity also covers completion and closure. The dialogue twice denies closure after the advisory receipt and invents a further authorization step, so Y better captures the workflow failure."
+    },
+    {
+      "adjudication_id": "D-007",
+      "choice": "X",
+      "citations": [
+        {
+          "evidence_id": "E0006",
+          "relevance": "Handover is accurately still false before the later approval receipt."
+        },
+        {
+          "evidence_id": "E0009",
+          "relevance": "The approval receipt subsequently changes handover_approved to true."
+        },
+        {
+          "evidence_id": "E0014",
+          "relevance": "The maintenance lead miscasts the earlier, temporally accurate false state as a contradiction with the later receipt."
+        },
+        {
+          "evidence_id": "E0017",
+          "relevance": "The attempted repair calls the earlier accurate statement incorrect rather than explaining the intervening state transition."
+        }
+      ],
+      "item_sha256": "074d7f20435f31a9f28cd2a81a940c22e74db8654a113ae3c03d815a665faf88",
+      "rationale": "The state changes in the correct order, but the dialogue mishandles chronology by comparing a pre-approval statement with a later post-approval receipt as if they were simultaneous. The subsequent retraction preserves the final value while falsely characterizing the earlier value, so X better applies the temporal-coherence rubric."
+    },
+    {
+      "adjudication_id": "D-008",
+      "choice": "X",
+      "citations": [
+        {
+          "evidence_id": "E0005",
+          "relevance": "The advisory is authoritatively issued after both prerequisite receipts."
+        },
+        {
+          "evidence_id": "E0018",
+          "relevance": "The communications officer later explicitly recognizes that the advisory has been issued."
+        },
+        {
+          "evidence_id": "E0020",
+          "relevance": "The director confirms the issued state and completed prerequisites."
+        },
+        {
+          "evidence_id": "E0028",
+          "relevance": "The closing turn nevertheless frames additional-language communication as planned pending the advisory."
+        }
+      ],
+      "item_sha256": "f20e7c732e3af8e53ae9117b69c211f7f8cb120f6d92f8a909957ef7558529fc",
+      "rationale": "The prerequisites and issuance occur in order and are repeatedly acknowledged. The final statement reintroduces a pending-advisory frame without reconciling it with the established issued state, creating a late temporal reversal; X is therefore better supported."
+    }
+  ],
+  "schema": "g5-fresh-v14-ai-reference-adjudication-submission-v1"
+}

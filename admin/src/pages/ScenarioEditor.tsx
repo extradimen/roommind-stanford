@@ -18,6 +18,12 @@ const emptyPlayerCharacter = (): PlayerCharacterForm => ({
 const emptyCharacter = (): Character => ({
   character_id: "",
   side: "opponent",
+  team_id: "independent",
+  relationship_to_player: "counterpart",
+  interaction_role: "participant",
+  authority: { can_confirm: ["task_outcome"] },
+  aliases: [],
+  fallback_actions: {},
   character_name: "",
   job_title: "",
   persona: "",
@@ -42,6 +48,16 @@ const emptyDispatchRule = (): ScenarioDispatchRule => ({
 const defaultScenario = (): ScenarioInput => ({
   slug: "",
   title: "",
+  schema_version: 2,
+  task_config: {
+    task_type: "interactive_task",
+    terminology: { task: "simulation", player_role: "Participant", completion: "task complete" },
+    state_schema: { task_outcome: { type: "boolean", description: "The configured outcome is achieved", confirmation_policy: "player_and_responsible_participant" } },
+    phases: [{ phase_id: "active", description: "Work on the task" }],
+    completion_conditions: { all: [{ field: "task_outcome", operator: "==", value: true, required_status: "confirmed" }] },
+    relevance_signals: [],
+    evaluator_instructions: [],
+  },
   description: "",
   player_side_goal: "",
   opponent_side_goal: "",
@@ -64,6 +80,7 @@ export default function ScenarioEditor() {
   const [jsonPhases, setJsonPhases] = useState("");
   const [jsonWin, setJsonWin] = useState("[]");
   const [jsonScene, setJsonScene] = useState("{}");
+  const [jsonTaskConfig, setJsonTaskConfig] = useState("{}");
   const [ruleKeywords, setRuleKeywords] = useState<string[]>([""]);
   const [ruleChars, setRuleChars] = useState<string[]>([""]);
   const [saving, setSaving] = useState(false);
@@ -92,6 +109,8 @@ export default function ScenarioEditor() {
     setForm({
       slug: s.slug,
       title: s.title,
+      schema_version: 2,
+      task_config: s.task_config,
       description: s.description || "",
       player_side_goal: s.player_side_goal || s.business_goal || "",
       opponent_side_goal: s.opponent_side_goal || "",
@@ -106,6 +125,7 @@ export default function ScenarioEditor() {
     setJsonPhases(JSON.stringify(s.phases, null, 2));
     setJsonWin(JSON.stringify(s.win_conditions, null, 2));
     setJsonScene(JSON.stringify(s.scene_config, null, 2));
+    setJsonTaskConfig(JSON.stringify(s.task_config, null, 2));
     loadPlayerCharacter(s.scene_config || {});
     setRuleKeywords(rules.map((r) => r.trigger_keywords.join(", ")));
     setRuleChars(rules.map((r) => r.priority_character_ids.join(", ")));
@@ -118,6 +138,7 @@ export default function ScenarioEditor() {
       setJsonPhases(JSON.stringify(d.phases, null, 2));
       setJsonWin(JSON.stringify(d.win_conditions, null, 2));
       setJsonScene(JSON.stringify(d.scene_config, null, 2));
+      setJsonTaskConfig(JSON.stringify(d.task_config, null, 2));
       loadPlayerCharacter(d.scene_config || {});
       setRuleKeywords(d.dispatch_rules.map((r) => r.trigger_keywords.join(", ")));
       setRuleChars(d.dispatch_rules.map((r) => r.priority_character_ids.join(", ")));
@@ -231,6 +252,8 @@ export default function ScenarioEditor() {
       setJsonScene(JSON.stringify(sceneConfig, null, 2));
       const payload: ScenarioInput = {
         ...form,
+        schema_version: 2,
+        task_config: JSON.parse(jsonTaskConfig),
         phases: JSON.parse(jsonPhases),
         win_conditions: JSON.parse(jsonWin),
         scene_config: sceneConfig,
@@ -308,8 +331,11 @@ export default function ScenarioEditor() {
 
         <section>
           <h2>{t.scenarioEditor.phasesSection}</h2>
-          <label>{t.scenarioEditor.phasesJson}<textarea value={jsonPhases} onChange={(e) => setJsonPhases(e.target.value)} rows={4} className="mono" /></label>
-          <label>{t.scenarioEditor.winConditionsJson}<textarea value={jsonWin} onChange={(e) => setJsonWin(e.target.value)} rows={5} className="mono" /></label>
+          <label>Task configuration (Schema v2)<textarea required value={jsonTaskConfig} onChange={(e) => setJsonTaskConfig(e.target.value)} rows={18} className="mono" /></label>
+          <details><summary>Legacy storage fields (not used by the v2 engine)</summary>
+            <label>{t.scenarioEditor.phasesJson}<textarea value={jsonPhases} onChange={(e) => setJsonPhases(e.target.value)} rows={4} className="mono" /></label>
+            <label>{t.scenarioEditor.winConditionsJson}<textarea value={jsonWin} onChange={(e) => setJsonWin(e.target.value)} rows={5} className="mono" /></label>
+          </details>
         </section>
 
         <section>
@@ -352,6 +378,20 @@ export default function ScenarioEditor() {
               <div className="row">
                 <label>{t.scenarioEditor.tendencyJson}<textarea value={JSON.stringify(c.tendency)} onChange={(e) => updateChar(idx, { tendency: JSON.parse(e.target.value) })} rows={2} className="mono" /></label>
                 <label>{t.scenarioEditor.privateStateJson}<textarea value={JSON.stringify(c.private_state)} onChange={(e) => updateChar(idx, { private_state: JSON.parse(e.target.value) })} rows={2} className="mono" /></label>
+                <div className="grid-3">
+                  <label>Team ID<input value={c.team_id} onChange={(e) => updateChar(idx, { team_id: e.target.value })} /></label>
+                  <label>Relationship to player<input value={c.relationship_to_player} onChange={(e) => updateChar(idx, { relationship_to_player: e.target.value })} /></label>
+                  <label>Interaction role<input value={c.interaction_role} onChange={(e) => updateChar(idx, { interaction_role: e.target.value })} /></label>
+                </div>
+                <label>Authority JSON<textarea value={JSON.stringify(c.authority)} onChange={(e) => updateChar(idx, { authority: JSON.parse(e.target.value) })} rows={2} className="mono" /></label>
+                <label>Aliases (comma separated)<input value={(c.aliases || []).join(", ")} onChange={(e) => updateChar(idx, { aliases: e.target.value.split(",").map((v) => v.trim()).filter(Boolean) })} /></label>
+                <label>Fallback actions JSON<textarea value={JSON.stringify(c.fallback_actions || {})} onChange={(e) => {
+                  try {
+                    updateChar(idx, { fallback_actions: JSON.parse(e.target.value || "{}") });
+                  } catch {
+                    /* keep the last valid object while the user is typing */
+                  }
+                }} rows={2} className="mono" /></label>
               </div>
               <label>{t.scenarioEditor.systemPrompt}<textarea value={c.system_prompt || ""} onChange={(e) => updateChar(idx, { system_prompt: e.target.value })} rows={2} /></label>
               <label>

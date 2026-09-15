@@ -36,10 +36,10 @@ check_one Admin "${ADMIN_PORT:-5180}"
 check_one Client "${CLIENT_PORT:-5181}"
 
 if port_listening "${API_PORT:-8800}"; then
-  if curl -sf "http://127.0.0.1:${API_PORT:-8800}/health" >/dev/null; then
-    echo "  health  ✓"
+  if curl -sf "http://127.0.0.1:${API_PORT:-8800}/ready" | grep -q '"status":"ready"'; then
+    echo "  ready   ✓"
   else
-    echo "  health  ✗ API 端口在监听但 /health 失败"
+    echo "  ready   ✗ API 存活但数据库未就绪（检查 /ready）"
   fi
 fi
 

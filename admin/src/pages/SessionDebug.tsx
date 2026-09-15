@@ -127,11 +127,11 @@ export default function SessionDebugPage() {
             <option value="">{t.common.none}</option>
             {sessions.map((s) => (
               <option key={s.session_uuid} value={s.session_uuid}>
-                {t.sessionDebug.sessionOption
+                {(t.sessionDebug.sessionOption
                   .replace("{uuid}", s.session_uuid.slice(0, 8))
                   .replace("{scenarioId}", String(s.scenario_id))
                   .replace("{mode}", s.orchestration_mode)
-                  .replace("{phase}", s.current_phase)}
+                  .replace("{phase}", s.current_phase)) + ` · ${s.session_mode}`}
               </option>
             ))}
           </select>
@@ -154,6 +154,7 @@ export default function SessionDebugPage() {
               <li>{t.sessionDebug.uuid}: <code>{debug.session_uuid}</code></li>
               <li>{t.sessionDebug.scenarioId}: {debug.scenario_id}</li>
               <li>{t.sessionDebug.orchestration}: {t.sessionDebug.orchestrationValue}</li>
+              <li>Session mode: <strong>{debug.session_mode}</strong></li>
               <li>{t.sessionDebug.currentPhase}: {debug.current_phase}</li>
             </ul>
           </div>
@@ -191,6 +192,7 @@ export default function SessionDebugPage() {
                 <tr>
                   <th>{t.sessionDebug.speaker}</th>
                   <th>{t.sessionDebug.speakerType}</th>
+                  <th>Source / turn / order</th>
                   <th>{t.sessionDebug.content}</th>
                   <th>{t.sessionDebug.emotionGesture}</th>
                 </tr>
@@ -200,6 +202,7 @@ export default function SessionDebugPage() {
                   <tr key={i}>
                     <td><code>{m.speaker_id}</code></td>
                     <td>{m.speaker_type}</td>
+                    <td>{m.speaker_source || "—"} · {m.turn_id ?? "—"} · {m.sequence_no ?? "—"}</td>
                     <td>{m.content}</td>
                     <td>{m.emotion || t.common.none} · {m.gesture || t.common.none}</td>
                   </tr>

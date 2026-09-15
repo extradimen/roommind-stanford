@@ -263,6 +263,7 @@ async def create_scenario(body: ScenarioTemplateIn, db: DbDep, _: AdminDep) -> S
     scenario = ScenarioTemplate(
         slug=body.slug,
         title=body.title,
+        task_config=body.task_config,
         description=body.description,
         business_goal=player_goal,
         player_side_goal=player_goal,
@@ -313,6 +314,7 @@ async def update_scenario(scenario_id: int, body: ScenarioTemplateIn, db: DbDep,
     for field in (
         "slug",
         "title",
+        "task_config",
         "description",
         "phases",
         "win_conditions",
@@ -420,6 +422,7 @@ async def import_scenario_new(body: dict[str, Any], db: DbDep, _: AdminDep) -> S
     scenario = ScenarioTemplate(
         slug=slug,
         title=data["title"],
+        task_config=data["task_config"],
         description=data.get("description"),
         business_goal=player_goal,
         player_side_goal=player_goal,
@@ -582,7 +585,7 @@ async def get_session_debug(session_uuid: str, db: DbDep, _: AdminDep) -> Sessio
     msg_result = await db.execute(
         select(SessionMessage)
         .where(SessionMessage.session_id == session.id)
-        .order_by(SessionMessage.created_at)
+        .order_by(SessionMessage.sequence_no, SessionMessage.id)
     )
     messages = list(msg_result.scalars().all())
 
@@ -598,6 +601,8 @@ async def get_session_debug(session_uuid: str, db: DbDep, _: AdminDep) -> Sessio
         session_uuid=session.session_uuid,
         scenario_id=session.scenario_id,
         orchestration_mode=session.orchestration_mode,
+        session_mode=session.session_mode,
+        run_config=session.run_config or {},
         current_phase=session.current_phase,
         shared_state=shared,
         orchestration_config=orch_cfg,

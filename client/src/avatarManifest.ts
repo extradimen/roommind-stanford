@@ -18,6 +18,8 @@ export type AvatarManifest = {
   bottom?: string;
   hair_style?: "short" | "gray" | "bob" | "ponytail";
   gender?: "male" | "female";
+  glasses?: boolean;
+  necklace?: boolean;
 };
 
 const DEFAULT_PROFILE: CulturalProfile = {

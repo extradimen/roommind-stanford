@@ -1,183 +1,47 @@
 {
-  "template_meta": {
-    "id": "supply-chain-negotiation",
-    "version": 2,
-    "label": "Supply Chain Price Negotiation (default template)",
-    "description": "2 opponent NPCs + 1 player ally. Edit all fields in the admin scenario editor."
-  },
+  "schema_version": 2,
+  "template_meta": {"preferred_id": 1},
   "slug": "supply-chain-negotiation",
-  "title": "Supply Chain Price Negotiation",
-  "description": "You represent the buyer in a meeting room, negotiating price and delivery terms with the supplier CEO and legal counsel.",
-  "player_side_goal": "Push unit price below 85 RMB, delivery within 30 days, and maintain a good working relationship",
-  "opponent_side_goal": "Keep unit price at 88 RMB or above, secure favorable payment terms, and lock in an annual purchase framework agreement",
-  "phases": ["opening", "discovery", "bargaining", "closing"],
-  "win_conditions": [
-    { "field": "price", "operator": "<=", "value": 85 },
-    { "field": "delivery_days", "operator": "<=", "value": 30 },
-    { "field": "relationship_score", "operator": ">=", "value": 60 }
-  ],
-  "scene_config": {
-    "environment": "meeting_room",
-    "lighting": "office_day",
-    "camera": "first_person",
-    "spawn": "seat_user",
-    "player_character": {
-      "character_name": "Alex Chen",
-      "job_title": "Chief Procurement Officer",
-      "avatar_manifest": {
-        "avatar_style": "minecraft",
-        "team": "buyer",
-        "suit": "#1e3a5f",
-        "top": "#1e3a5f",
-        "bottom": "#2a2a2a",
-        "hair": "#5c4033",
-        "hair_style": "short",
-        "gender": "male",
-        "accent": "#c8d4e8",
-        "skin": "#e8c4a8",
-        "pattern": "global",
-        "accessory": "none",
-        "height": 1.72,
-        "label": "Strategic procurement"
-      }
-    }
+  "title": "Supply Chain Contract Meeting",
+  "description": "A multi-party procurement meeting covering commercial, operational, and legal commitments.",
+  "player_side_goal": "Reach a balanced, explicitly confirmed supply agreement.",
+  "opponent_side_goal": "Protect supplier viability while securing a dependable order commitment.",
+  "task_config": {
+    "config_version": 4,
+    "task_type": "negotiation",
+    "evidence_mode": "live_operation",
+    "player_objective": "Secure an agreed unit price at or below 85 RMB, delivery within 30 days, and an accepted quality protocol.",
+    "counterpart_objective": "Protect margin, capacity, and liability limits while obtaining reliable volume.",
+    "terminology": {"task": "contract meeting", "player_role": "Chief Procurement Officer", "player_name": "Alex Chen", "completion": "agreement"},
+    "state_schema": {
+      "unit_price": {"type": "number", "unit": "RMB", "description": "Agreed unit price", "confirmation_policy": "player_and_authorized_counterpart", "propose_permissions":["player","supplier_ceo"], "confirm_permissions":["player","supplier_ceo"]},
+      "delivery_days": {"type": "integer", "unit": "days", "description": "Agreed standard delivery lead time", "confirmation_policy": "player_and_authorized_counterpart", "propose_permissions":["player","supplier_ceo","quality_director"], "confirm_permissions":["player","supplier_ceo","quality_director"]},
+      "quality_protocol": {"type": "boolean", "description": "Joint inspection and quality protocol accepted", "confirmation_policy": "player_and_responsible_participant", "propose_permissions":["player","quality_director"], "confirm_permissions":["player","quality_director"]}
+    },
+    "phases": [
+      {"phase_id": "opening", "description": "Establish roles and agenda"},
+      {"phase_id": "discovery", "description": "Surface needs, constraints, and risks", "entry_conditions":{"any":[{"field":"unit_price","operator":"!=","value":null,"allowed_statuses":["proposed","disputed","confirmed"]},{"field":"delivery_days","operator":"!=","value":null,"allowed_statuses":["proposed","disputed","confirmed"]}]}},
+      {"phase_id": "option_building", "description": "Develop and compare packages", "entry_conditions":{"all":[{"field":"unit_price","operator":"!=","value":null,"allowed_statuses":["proposed","disputed","confirmed"]},{"field":"delivery_days","operator":"!=","value":null,"allowed_statuses":["proposed","disputed","confirmed"]}]}},
+      {"phase_id": "confirmation", "description": "Explicitly confirm final commitments", "entry_conditions":{"all":[{"field":"unit_price","operator":"<=","value":85,"allowed_statuses":["proposed","confirmed"]},{"field":"delivery_days","operator":"<=","value":30,"allowed_statuses":["proposed","confirmed"]},{"field":"quality_protocol","operator":"==","value":true,"allowed_statuses":["proposed","confirmed"]}]}}
+    ],
+    "completion_conditions": {"all": [
+      {"field": "unit_price", "operator": "<=", "value": 85, "required_status": "confirmed"},
+      {"field": "delivery_days", "operator": "<=", "value": 30, "required_status": "confirmed"},
+      {"field": "quality_protocol", "operator": "==", "value": true, "required_status": "confirmed"}
+    ]},
+    "relevance_signals": ["price", "RMB", "delivery", "quality", "inspection", "volume", "payment", "confirm", "accept"],
+    "evaluator_instructions": ["A conditional counteroffer is proposed or disputed, never confirmed.", "A package is confirmed only when the necessary parties explicitly accept the same terms."]
   },
+  "scene_config": {"environment": "meeting_room", "camera": "first_person", "player_character": {"character_name": "Alex Chen", "job_title": "Chief Procurement Officer", "avatar_manifest": {"avatar_style": "minecraft", "team": "buyer"}}},
   "orchestration_config": {},
   "is_published": true,
   "characters": [
-    {
-      "character_id": "supplier_ceo",
-      "side": "opponent",
-      "character_name": "Mr. Wang",
-      "job_title": "Supplier CEO",
-      "persona": "Assertive but relationship-oriented; speaks directly and occasionally backs points with data",
-      "responsibility": "Defend the price floor and secure favorable payment terms",
-      "tendency": { "risk": "low", "aggression": "high", "cooperation": "medium" },
-      "private_state": {
-        "real_floor_price": 82,
-        "cost_pressure": "Raw material costs up 5%",
-        "negotiation_agenda": [
-          { "item": "Confirm order volume", "target": "Lock annual framework agreement for at least 100k units", "priority": 1 },
-          { "item": "Defend unit price floor", "target": "Unit price >= 88 RMB, ideally >= 95 RMB", "priority": 2 },
-          { "item": "Secure payment terms", "target": "30% upfront, balance within 30 days", "priority": 3 }
-        ],
-        "opening_move": "Open by confirming purchase volume before discussing price",
-        "redlines": ["Will not accept unit price below 82 RMB", "Will not accept uncapped penalty clauses"]
-      },
-      "spawn_point": "seat_opposite",
-      "avatar_manifest": {
-        "avatar_style": "minecraft",
-        "team": "supplier",
-        "suit": "#2f2f2f",
-        "top": "#2f2f2f",
-        "bottom": "#1a1a1a",
-        "hair": "#9e9e9e",
-        "hair_style": "gray",
-        "gender": "male",
-        "accent": "#8b2635",
-        "skin": "#f0d0b0",
-        "pattern": "east",
-        "accessory": "none",
-        "height": 1.75,
-        "label": "Supplier CEO"
-      },
-      "sort_order": 0
-    },
-    {
-      "character_id": "legal_counsel",
-      "side": "opponent",
-      "character_name": "Attorney Li",
-      "job_title": "Supplier Legal Counsel",
-      "persona": "Precise and detail-oriented; cautious when speaking",
-      "responsibility": "Review contract clauses and flag legal risks",
-      "tendency": { "risk": "very_low", "aggression": "low", "cooperation": "high" },
-      "private_state": {
-        "hidden_clause_risk": "Force majeure clause favors the supplier",
-        "negotiation_agenda": [
-          { "item": "Review breach clauses", "target": "Cap liquidated damages at 5% of contract value", "priority": 1 },
-          { "item": "Clarify delivery penalties", "target": "Late delivery penalty not to exceed 0.05% per day", "priority": 2 }
-        ],
-        "opening_move": "Wait until pricing is discussed, then raise contract terms",
-        "redlines": ["No joint and several liability", "No unlimited warranty period"]
-      },
-      "spawn_point": "seat_side",
-      "avatar_manifest": {
-        "avatar_style": "minecraft",
-        "team": "supplier",
-        "suit": "#1c1c1c",
-        "top": "#1c1c1c",
-        "bottom": "#3d3d3d",
-        "hair": "#e6c547",
-        "hair_style": "bob",
-        "gender": "female",
-        "accent": "#f5f5f5",
-        "skin": "#fdd5b8",
-        "pattern": "west",
-        "accessory": "none",
-        "height": 1.68,
-        "label": "Legal counsel"
-      },
-      "sort_order": 1
-    },
-    {
-      "character_id": "procurement_ally",
-      "side": "player_ally",
-      "character_name": "Manager Zhang",
-      "job_title": "Procurement Ally",
-      "persona": "Data-driven, skilled at price pressure; your internal ally",
-      "responsibility": "Provide market benchmarks and support pricing strategy",
-      "tendency": { "risk": "medium", "aggression": "medium", "cooperation": "high" },
-      "private_state": { "market_benchmark": 83 },
-      "spawn_point": "seat_adjacent",
-      "avatar_manifest": {
-        "avatar_style": "minecraft",
-        "team": "buyer",
-        "suit": "#2d6a6a",
-        "top": "#2d6a6a",
-        "bottom": "#4a5568",
-        "hair": "#8b4513",
-        "hair_style": "ponytail",
-        "gender": "female",
-        "accent": "#48cae4",
-        "skin": "#eecfb0",
-        "pattern": "global",
-        "accessory": "none",
-        "height": 1.7,
-        "label": "Procurement ally"
-      },
-      "sort_order": 2
-    }
+    {"character_id":"supplier_ceo","side":"opponent","team_id":"supplier","relationship_to_player":"counterpart","interaction_role":"commercial_decision_maker","authority":{"can_propose":["unit_price","delivery_days"],"can_confirm":["unit_price","delivery_days"],"cannot_commit":["quality_protocol"]},"aliases":["David","David Chen","Mr. Wang","CEO"],"fallback_actions":{"default":"Ask for the commercial conditions needed to make the proposal workable without inventing a commitment."},"character_name":"Mr. Wang","job_title":"Supplier CEO","persona":"Assertive, commercially pragmatic, and relationship-aware.","responsibility":"Lead commercial decisions and protect supplier viability.","tendency":{"risk":"low","cooperation":"medium"},"private_state":{"goal":"Secure sustainable margin and reliable annual volume.","protected_secrets":["The supplier's exact reservation unit price is 82 RMB."],"role_disclosable_information":["The supplier requires sustainable margin and reliable annual volume.","The supplier will not accept uncapped liability."],"redlines":["Unit price below 82 RMB","Uncapped liability"]},"spawn_point":"seat_opposite","avatar_manifest":{"avatar_style":"minecraft","team":"supplier"},"sort_order":0},
+    {"character_id":"quality_director","side":"opponent","team_id":"supplier","relationship_to_player":"counterpart","interaction_role":"subject_matter_expert","authority":{"can_propose":["quality_protocol","delivery_days"],"can_confirm":["quality_protocol","delivery_days"],"cannot_commit":["unit_price"]},"aliases":["Emma","Emma Liu","Quality Director"],"fallback_actions":{"default":"State the operational evidence still needed and propose a safe verification step."},"character_name":"Emma Liu","job_title":"Quality and Operations Director","persona":"Precise, cautious, and evidence-driven.","responsibility":"Assess delivery feasibility and define quality controls.","tendency":{"risk":"very_low","cooperation":"medium"},"private_state":{"goal":"Prevent unsafe capacity promises and protect product quality.","role_disclosable_information":["Capacity promises require evidence that product quality can be maintained."]},"spawn_point":"seat_side","avatar_manifest":{"avatar_style":"minecraft","team":"supplier"},"sort_order":1},
+    {"character_id":"procurement_ally","side":"player_ally","team_id":"buyer","relationship_to_player":"advisor","interaction_role":"advisor","authority":{"can_propose":[],"can_confirm":[],"cannot_commit":["unit_price","delivery_days","quality_protocol"]},"aliases":["Michael","Michael Zhang","Manager Zhang"],"fallback_actions":{"default":"Summarize the unresolved trade-off and advise the player without making a decision."},"character_name":"Manager Zhang","job_title":"Procurement Analyst","persona":"Analytical and concise.","responsibility":"Provide benchmarks and flag weak packages without deciding for the player.","tendency":{"cooperation":"high"},"private_state":{"goal":"Help the player reach a balanced outcome.","market_benchmark":83,"role_disclosable_information":["The procurement market benchmark is 83 RMB."]},"spawn_point":"seat_adjacent","avatar_manifest":{"avatar_style":"minecraft","team":"buyer"},"sort_order":2}
   ],
   "dispatch_rules": [
-    {
-      "name": "Pricing topics",
-      "description": "When the user mentions price, quotes, or cost, supplier CEO and procurement ally speak first",
-      "trigger_keywords": ["price", "quote", "unit price", "cost", "how much", "discount"],
-      "priority_character_ids": ["supplier_ceo", "procurement_ally"],
-      "min_speakers": 1,
-      "max_speakers": 2,
-      "weights": { "relevance": 0.5, "responsibility": 0.4 },
-      "is_active": true
-    },
-    {
-      "name": "Contract terms",
-      "description": "When the user mentions contracts or legal terms, legal counsel speaks first",
-      "trigger_keywords": ["contract", "clause", "legal", "attorney", "breach", "damages", "agreement"],
-      "priority_character_ids": ["legal_counsel"],
-      "min_speakers": 1,
-      "max_speakers": 1,
-      "weights": {},
-      "is_active": true
-    },
-    {
-      "name": "Delivery and logistics",
-      "description": "Delivery schedule and logistics topics",
-      "trigger_keywords": ["delivery", "lead time", "logistics", "schedule", "delay", "shipment"],
-      "priority_character_ids": ["supplier_ceo", "procurement_ally"],
-      "min_speakers": 1,
-      "max_speakers": 2,
-      "weights": {},
-      "is_active": true
-    }
+    {"name":"Commercial","trigger_keywords":["price","RMB","payment","volume"],"priority_character_ids":["supplier_ceo","procurement_ally"],"min_speakers":1,"max_speakers":2,"weights":{},"is_active":true},
+    {"name":"Operations","trigger_keywords":["delivery","capacity","quality","inspection"],"priority_character_ids":["quality_director","supplier_ceo"],"min_speakers":1,"max_speakers":2,"weights":{},"is_active":true}
   ]
 }

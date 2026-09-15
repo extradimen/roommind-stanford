@@ -26,6 +26,10 @@ from app.agent.act import (
 from app.agent.loop import run_agent_tick
 from app.agent.memory_stream import AgentMemoryStore
 from app.agent.reflect import ensure_initial_plan, ensure_seed_memories, maybe_reflect
+from app.agent.speech_safety import (
+    resolve_direct_question_target,
+    resolve_direct_question_targets,
+)
 from app.models.db import CharacterTemplate, DispatchRule, ScenarioTemplate
 from app.orchestrator.common import NPCReply, OrchestratorResult, npc_replies_payload, orch_support
 from app.orchestrator.defaults import ORCHESTRATION_MODE, agent_config
@@ -33,6 +37,48 @@ from app.orchestrator.llm_binding import resolve_llm
 from app.world.timeline import WorldTimeline
 from app.i18n.reply_language import processing_message
 from app.player_character import resolve_player_character
+from app.public_ledger import ensure_public_ledger
+from app.telemetry import emit
+from app.task_state import refresh_task_state_from_public_ledger
+from app.world.response_queue import ResponseQueue
+
+
+def schedule_direct_response(
+    agent_queue: list[CharacterTemplate], *, queue_index: int,
+    target_id: str, character_by_id: dict[str, CharacterTemplate],
+    speak_quota: int, response_budget: int,
+) -> tuple[int, int, bool]:
+    """Reserve the next bounded tick for a visibly addressed NPC."""
+    if response_budget <= 0 or target_id not in character_by_id:
+        return speak_quota, response_budget, False
+    target = character_by_id[target_id]
+    agent_queue[queue_index:] = [
+        queued for queued in agent_queue[queue_index:]
+        if queued.character_id != target_id
+    ]
+    agent_queue.insert(queue_index, target)
+    return max(1, speak_quota), response_budget - 1, True
+
+
+def lock_player_response_order(
+    agent_order: list[CharacterTemplate], target_ids: list[str],
+) -> list[CharacterTemplate]:
+    """Restrict a player-addressed turn to the visible addressees.
+
+    A direct player question creates a public response obligation.  Courtesy
+    mentions, dispatch rules, and coordinator focus must not let an unrelated
+    role consume the floor before that obligation is answered.  Targets stay
+    in the order in which the player addressed them; unanswered targets are
+    carried into ``_pending_responses`` by the caller.
+    """
+    if not target_ids:
+        return list(agent_order)
+    by_id = {character.character_id: character for character in agent_order}
+    return [
+        by_id[target_id]
+        for target_id in dict.fromkeys(target_ids)
+        if target_id in by_id
+    ]
 
 
 class GenerativeOrchestrator:
@@ -58,6 +104,32 @@ class GenerativeOrchestrator:
         reply_language: str = "en",
     ) -> AsyncIterator[dict[str, Any]]:
 
+        # Imported/legacy scenarios and partially recovered sessions may carry
+        # null JSON collections. Normalize at the orchestration boundary so a
+        # missing optional list cannot become ``NoneType is not iterable`` in
+        # the first autonomous turn.
+        characters = list(characters or [])
+        dispatch_rules = list(dispatch_rules or [])
+        messages = list(messages or [])
+        if not characters:
+            raise RuntimeError("Scenario has no characters; add at least one role before play")
+
+        if ((shared_state or {}).get("task_state") or {}).get("completion_status") == "completed":
+            # A persisted terminal session cannot be reopened by a new input,
+            # fallback, planning call, or resumed worker.
+            closed_state = dict(shared_state)
+            closed_queue = ResponseQueue(closed_state)
+            closed_queue.close()
+            closed_queue.save(closed_state)
+            closed_state["_pending_player_response"] = False
+            yield {
+                "type": "turn_result", "phase": current_phase,
+                "shared_state": closed_state, "orchestration_mode": ORCHESTRATION_MODE,
+                "replies": [], "_result": OrchestratorResult(
+                    replies=[], phase=current_phase, shared_state=closed_state),
+            }
+            return
+
         llm_cfg = await orch_support.get_llm_config(db)
         orch_cfg = orchestration_config
         cfg = agent_config(orchestration_config)
@@ -69,8 +141,21 @@ class GenerativeOrchestrator:
         beta               = float(cfg.get("retrieval_beta", 1.0))
         gamma              = float(cfg.get("retrieval_gamma", 1.0))
         msg_limit          = int(cfg.get("working_message_limit", 30))
+        comparison_lock_model = bool((orch_cfg or {}).get("_comparison_lock_model"))
+
+        def npc_llm_for(character: CharacterTemplate):
+            # In controlled comparisons all visible NPC speech uses the same
+            # global NPC binding; character-level model overrides are disabled.
+            return resolve_llm(
+                llm_cfg,
+                orch_cfg,
+                "npc_default" if comparison_lock_model else "npc",
+                None if comparison_lock_model else character,
+            )
 
         updated_state = dict(shared_state or {})
+        task_state = updated_state.setdefault("task_state", {})
+        ensure_public_ledger(task_state)
         timeline = WorldTimeline.from_shared_state(updated_state)
         timeline.sync_messages(
             messages[:-1] if messages else [],
@@ -95,9 +180,73 @@ class GenerativeOrchestrator:
         )
         tick += 1
 
-        mentioned  = set(orch_support.match_mentioned_characters(user_input, characters))
+        mentioned_list = orch_support.match_mentioned_characters(user_input, characters)
+        participant_aliases = {
+            "user": [
+                str(label) for label in (
+                    player.get("display_name"), player.get("character_name"),
+                    player.get("job_title"),
+                ) if label
+            ],
+            **{
+                char.character_id: [
+                    str(label) for label in (
+                        char.display_name, char.character_name, char.job_title,
+                        *(char.aliases or []),
+                    ) if label
+                ]
+                for char in characters
+            },
+        }
+        directed_mentions = [
+            target for target in resolve_direct_question_targets(
+                user_input,
+                public_intent=(
+                    ((messages[-1].get("meta") or {}).get("public_intent") or {})
+                    if messages else {}
+                ),
+                participant_aliases=participant_aliases,
+            )
+            if target != "user"
+        ]
+        response_queue = ResponseQueue(updated_state)
+        if "response_queue" not in updated_state:
+            response_queue.request("legacy", "unknown", [
+                cid for cid in updated_state.get("_pending_responses", [])
+                if cid in {char.character_id for char in characters}
+            ])
+        response_queue.request(f"player:{turn_id}", "user", directed_mentions, first=True)
+        pending = [
+            cid for cid in response_queue.pending()
+            if cid not in directed_mentions
+        ]
+        # Interrogative/request addressees outrank courtesy mentions and older
+        # queued responses. Preserve every addressee in public order.
+        priority_mentions = list(dict.fromkeys([
+            *directed_mentions, *mentioned_list, *pending,
+        ]))
+        mentioned = set(priority_mentions)
         rule_hits  = orch_support.match_dispatch_rules(user_input, dispatch_rules)
-        agent_order = self._agent_order(characters, mentioned, rule_hits)
+        focus = (((updated_state.get("task_state") or {}).get("progress") or {}).get("focus") or {})
+        focus_owner_ids = [
+            str(cid) for cid in (focus.get("owner_ids") or []) if str(cid)
+        ]
+        agent_order = self._agent_order(
+            characters, priority_mentions, rule_hits, focus_owner_ids
+        )
+        player_response_targets = list(dict.fromkeys([
+            *directed_mentions, *pending,
+        ]))
+        agent_order = lock_player_response_order(
+            agent_order, player_response_targets,
+        )
+        if player_response_targets:
+            emit(
+                "dialogue.player_response.locked",
+                component="generative_orchestrator",
+                turn_id=turn_id,
+                target_ids=player_response_targets,
+            )
 
         yield {
             "type": "processing",
@@ -147,13 +296,57 @@ class GenerativeOrchestrator:
 
         context     = timeline.speech_context(limit=msg_limit)
         replies: list[NPCReply] = []
-        speak_quota = max_speakers
+        # Every participant explicitly addressed by the player owns one
+        # response slot.  The ordinary ambient-speaker cap must not silently
+        # drop the tail of an ordered multi-addressee question.
+        speak_quota = max(max_speakers, len(player_response_targets))
+        floor_handed_to_player = False
+        terminal_floor_locked = False
+        directed_pending: list[str] = []
+        npc_labels = [
+            label
+            for c in characters
+            for label in (c.display_name, c.character_name, c.job_title, *(c.aliases or []))
+            if label
+        ]
+        player_labels = [
+            player.get("display_name"), player.get("character_name"), player.get("job_title")
+        ]
+        participant_aliases = {
+            "user": [str(label) for label in player_labels if label],
+            **{
+                char.character_id: [
+                    str(label) for label in (
+                        char.display_name,
+                        char.character_name,
+                        char.job_title,
+                        *(char.aliases or []),
+                    ) if label
+                ]
+                for char in characters
+            },
+        }
 
         # ----------------------------------------------------------------
         # PERCEIVE → RETRIEVE → REACT → ACT  (per agent, sequential)
         # ----------------------------------------------------------------
-        for char in agent_order:
+        agent_queue = list(agent_order)
+        character_by_id = {char.character_id: char for char in characters}
+        # A bounded chain may legitimately require more than one direct
+        # response (A asks B, then B asks C). Each registered target may be
+        # scheduled at most once, preventing cycles without dropping C.
+        direct_response_budget = len(characters)
+        scheduled_response_ids: set[str] = set()
+        direct_response_routes: list[dict[str, str]] = []
+        required_response_ids = set(player_response_targets)
+        queue_index = 0
+        while queue_index < len(agent_queue):
+            char = agent_queue[queue_index]
+            queue_index += 1
             cid   = char.character_id
+            if not response_queue.can_respond(cid):
+                # An unanswered owner cannot be replaced by ambient speech.
+                break
             store = AgentMemoryStore(session_id, cid)
             nodes = await store.load_all(db)
 
@@ -180,7 +373,7 @@ class GenerativeOrchestrator:
                 conversation_context=context,
                 current_phase=current_phase,
                 decision_llm=decision_llm,
-                npc_llm=resolve_llm(llm_cfg, orch_cfg, "npc", char),
+                npc_llm=npc_llm_for(char),
                 retrieval_k=retrieval_k,
                 retrieval_alpha=alpha,
                 retrieval_beta=beta,
@@ -189,10 +382,40 @@ class GenerativeOrchestrator:
                 mentioned=cid in mentioned,
                 timeline=timeline,
                 reply_language=reply_language,
+                task_state=task_state,
+                required_response=cid in required_response_ids,
             )
-            npc_llm_labels[cid] = resolve_llm(llm_cfg, orch_cfg, "npc", char).label()
+            npc_llm_labels[cid] = npc_llm_for(char).label()
 
             action_result = loop_result.action_result
+            required_response_fallback = False
+            if cid in required_response_ids and (
+                not action_result or not action_result.spoke
+            ):
+                forced = await execute_plan_fallback_speak(
+                    db,
+                    character=char,
+                    scenario=scenario,
+                    store=store,
+                    nodes=nodes,
+                    user_input=user_input,
+                    turn_id=turn_id,
+                    tick=tick,
+                    conversation_context=context,
+                    current_phase=current_phase,
+                    npc_llm=npc_llm_for(char),
+                    timeline=timeline,
+                    reply_language=reply_language,
+                    task_state=task_state,
+                    allow_retrospective=(
+                        str((scenario.task_config or {}).get("evidence_mode") or "")
+                        == "retrospective_claim"
+                    ),
+                    required_response=True,
+                )
+                if forced and forced.spoke:
+                    action_result = forced
+                    required_response_fallback = True
             agent_debug[cid] = {
                 "action":            loop_result.action,
                 "reasoning":         loop_result.reasoning,
@@ -200,24 +423,127 @@ class GenerativeOrchestrator:
                 "retrieved":         loop_result.retrieved,
                 "decision_preview":  loop_result.decision_raw,
                 "world_events":      len(action_result.world_events) if action_result else 0,
+                "required_response_fallback": required_response_fallback,
             }
             if action_result and action_result.spoke:
                 agent_debug[cid]["spoke_content"] = action_result.content
                 agent_debug[cid]["emotion"]        = action_result.emotion
                 agent_debug[cid]["gesture"]        = action_result.gesture
+                agent_debug[cid]["public_ledger_event"] = action_result.public_ledger_event
 
             # Accumulate importance for reflection trigger
             acc = accumulators.get(cid, 0.0)
             acc += sum(o.importance for o in loop_result.new_observations)
             accumulators[cid] = acc
 
-            if loop_result.spoke and speak_quota > 0 and action_result:
+            if action_result and action_result.spoke and speak_quota > 0:
+                response_queue.answered(cid, {"turn_id": turn_id, "tick": tick, "speaker_id": cid})
+                # A role answering an earlier NPC-to-NPC question clears that
+                # obligation before any new question in its reply is recorded.
+                directed_pending = [target for target in directed_pending if target != cid]
                 speak_quota -= 1
+                question_target_id = resolve_direct_question_target(
+                    action_result.content,
+                    public_intent=action_result.public_intent,
+                    npc_labels=npc_labels,
+                    player_labels=[str(label) for label in player_labels if label],
+                    participant_aliases=participant_aliases,
+                )
+                floor_handed_to_player = question_target_id == "user"
+                if (
+                    question_target_id
+                    and question_target_id != "user"
+                    and question_target_id != cid
+                    and question_target_id not in directed_pending
+                ):
+                    directed_pending.append(question_target_id)
+                    response_queue.request(
+                        f"npc:{turn_id}:{tick}:{cid}", cid, [question_target_id], first=True,
+                    )
+                if (
+                    question_target_id
+                    and question_target_id != "user"
+                    and question_target_id != cid
+                    and question_target_id in character_by_id
+                    and direct_response_budget > 0
+                    and question_target_id not in scheduled_response_ids
+                ):
+                    # A visible NPC-to-NPC question owns one bounded response
+                    # slot in the same autonomous turn.  The ordinary speaker
+                    # quota and the turn-start ordering must not force the
+                    # player to relay a question between two present roles.
+                    # Put the answerer next, even when it appeared later in
+                    # the original order.  If it already spoke, append one
+                    # bounded response tick.
+                    speak_quota, direct_response_budget, scheduled = schedule_direct_response(
+                        agent_queue, queue_index=queue_index,
+                        target_id=question_target_id,
+                        character_by_id=character_by_id,
+                        speak_quota=speak_quota,
+                        response_budget=direct_response_budget,
+                    )
+                    if scheduled:
+                        scheduled_response_ids.add(question_target_id)
+                        mentioned.add(question_target_id)
+                        required_response_ids.add(question_target_id)
+                        direct_response_routes.append({
+                            "source_id": cid,
+                            "target_id": question_target_id,
+                        })
+                        emit(
+                            "dialogue.direct_response.scheduled",
+                            component="generative_orchestrator",
+                            character_id=cid,
+                            target_id=question_target_id,
+                            turn_id=turn_id,
+                        )
+                if action_result.public_intent is not None:
+                    structured_target = str(action_result.public_intent.get("target_id") or "")
+                    if question_target_id and structured_target != question_target_id:
+                        action_result.public_intent["target_id"] = question_target_id
+                        emit(
+                            "dialogue.addressee.reconciled",
+                            component="generative_orchestrator",
+                            character_id=cid,
+                            turn_id=turn_id,
+                            structured_target_id=structured_target,
+                            resolved_target_id=question_target_id,
+                        )
+                # Freeze the reconciled intent into the reply persisted by the
+                # API/export layer.  Previously the reply was constructed
+                # first, which made this depend on incidental dict aliasing.
                 replies.append(action_to_npc_reply(char, action_result))
-                context += f"\n[{char.display_name}]: {loop_result.content}"
+                context += f"\n[{char.display_name}]: {action_result.content}"
 
                 async for evt in yield_speech_stream(char, action_result):
                     yield evt
+
+                if action_result.public_ledger_event:
+                    refresh_task_state_from_public_ledger(
+                        scenario.task_config or {}, task_state, characters,
+                    )
+                    terminal_floor_locked = (
+                        str(task_state.get("completion_status") or "") == "completed"
+                    )
+                    if terminal_floor_locked:
+                        emit(
+                            "dialogue.terminal_floor.locked",
+                            component="generative_orchestrator",
+                            character_id=cid,
+                            turn_id=turn_id,
+                            reason="intra_turn_completion_confirmation",
+                        )
+                        agent_debug[cid]["terminal_floor_locked"] = True
+
+                if floor_handed_to_player:
+                    emit(
+                        "dialogue.floor_handoff.to_player",
+                        component="generative_orchestrator",
+                        character_id=cid,
+                        turn_id=turn_id,
+                    )
+                    agent_debug[cid]["floor_handoff_to_player"] = True
+                    agent_debug[cid]["question_target_id"] = question_target_id
 
             if loop_result.plan_update:
                 agent_debug[cid]["plan_update"] = loop_result.plan_update
@@ -246,10 +572,17 @@ class GenerativeOrchestrator:
                 agent_debug[cid]["reflection"]            = reflect_text
                 agent_debug[cid]["reflection_node_count"] = len(new_reflections)
 
+            if not action_result or not action_result.spoke:
+                if cid in response_queue.pending():
+                    response_queue.blocked(cid)
+                    break
+            if floor_handed_to_player or terminal_floor_locked:
+                break
+
         # ----------------------------------------------------------------
         # FALLBACK  (guarantee at least one reply per turn)
         # ----------------------------------------------------------------
-        if not replies:
+        if not replies and not response_queue.pending() and not terminal_floor_locked:
             for char in agent_order:
                 if speak_quota <= 0:
                     break
@@ -267,9 +600,14 @@ class GenerativeOrchestrator:
                     tick=tick,
                     conversation_context=context,
                     current_phase=current_phase,
-                    npc_llm=resolve_llm(llm_cfg, orch_cfg, "npc", char),
+                    npc_llm=npc_llm_for(char),
                     timeline=timeline,
                     reply_language=reply_language,
+                    task_state=task_state,
+                    allow_retrospective=(
+                        str((scenario.task_config or {}).get("evidence_mode") or "")
+                        == "retrospective_claim"
+                    ),
                 )
                 if not fallback or not fallback.spoke:
                     continue
@@ -298,13 +636,25 @@ class GenerativeOrchestrator:
         # PERSIST STATE
         # ----------------------------------------------------------------
         updated_state[WorldTimeline.KEY] = timeline.to_list()
+        if terminal_floor_locked:
+            response_queue.close()
+        response_queue.save(updated_state)
+        # The test runner must not interpret a fresh, directed player question
+        # as task stagnation. The flag is public interaction state, not shared
+        # private memory, and is cleared as soon as the next player turn is
+        # processed.
+        updated_state["_pending_player_response"] = floor_handed_to_player
         updated_state["_importance_accumulators"] = accumulators
         updated_state["_last_debug"] = {
             "turn_id":                  turn_id,
             "world_events_this_turn":   len([e for e in timeline.events if e.turn_id == turn_id]),
             "mentioned":                list(mentioned),
             "rule_hits":                rule_hits,
-            "agent_order":              [c.character_id for c in agent_order],
+            "agent_order":              [c.character_id for c in agent_queue],
+            "direct_response_routes":   direct_response_routes,
+            "coordinator_focus":         focus,
+            "floor_handed_to_player":   floor_handed_to_player,
+            "terminal_floor_locked":    terminal_floor_locked,
             "agents":                   agent_debug,
             "retrieval_weights":        {"alpha": alpha, "beta": beta, "gamma": gamma},
             "reflect_threshold":        reflect_threshold,
@@ -331,14 +681,15 @@ class GenerativeOrchestrator:
     def _agent_order(
         self,
         characters: list[CharacterTemplate],
-        mentioned: set[str],
+        mentioned: list[str],
         rule_hits: list[str],
+        focus_owner_ids: list[str] | None = None,
     ) -> list[CharacterTemplate]:
         char_map = {c.character_id: c for c in characters}
         ordered: list[CharacterTemplate] = []
         seen: set[str] = set()
 
-        for cid in list(mentioned) + rule_hits:
+        for cid in [*mentioned, *(focus_owner_ids or []), *rule_hits]:
             if cid in char_map and cid not in seen:
                 ordered.append(char_map[cid])
                 seen.add(cid)

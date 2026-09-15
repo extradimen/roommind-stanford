@@ -193,7 +193,6 @@ function Face({ spec }: { spec: MinecraftAvatarSpec }) {
 }
 
 function BusinessAttire({ spec, sitting }: { spec: MinecraftAvatarSpec; sitting: boolean }) {
-  const bodyW = spec.gender === "female" ? 0.44 : 0.5;
   const bodyY = sitting ? 0.68 : 0.82;
   const z = sitting ? 0.04 : 0;
 

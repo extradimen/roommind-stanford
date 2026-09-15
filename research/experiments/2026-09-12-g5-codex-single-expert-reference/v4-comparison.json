@@ -1,0 +1,561 @@
+{
+  "accuracy_estimable": false,
+  "based_on": {
+    "expert_review_sha256": "c9e677efc8ccbebb177b01af3fbc87d6c6ab4a4d32d8a708b841126725345624",
+    "packet_sha256": "6f4f85aa5fc463102ccc91996ec0f98da990b76b9ca8f7f90c0e062b9e33e664",
+    "panel_sha256": "7891f06e95b625f115d8116babf3c453f783a5fad8ab3ef0bd01d7170ff472bf",
+    "v4_audit_sha256": "de61866a82e743bb10649d30e8afa4cfc7638a6042578b94676abf7b384a8ac7"
+  },
+  "classification": "internal-development-evidence",
+  "g5_effect_estimable": false,
+  "human_reference": false,
+  "limitations": [
+    "Agreement with one Codex pass is not human-grounded accuracy.",
+    "Source conditions were joined only after the blinded expert labels were frozen.",
+    "These eight legacy dialogues are development material and cannot confirm G5 effects."
+  ],
+  "rows": [
+    {
+      "agreement": true,
+      "dimension": "epistemic_fidelity",
+      "expert_label": "violation",
+      "source_case_id": "legacy-457-epistemic_fidelity",
+      "source_condition": "baseline",
+      "source_family": "supply-chain-negotiation",
+      "v4_label": "violation",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "interaction_structure_fidelity",
+      "expert_label": "violation",
+      "source_case_id": "legacy-457-interaction_structure_fidelity",
+      "source_condition": "baseline",
+      "source_family": "supply-chain-negotiation",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "multi_party_dynamics",
+      "expert_label": "violation",
+      "source_case_id": "legacy-457-multi_party_dynamics",
+      "source_condition": "baseline",
+      "source_family": "supply-chain-negotiation",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "procedural_fidelity",
+      "expert_label": "clear",
+      "source_case_id": "legacy-457-procedural_fidelity",
+      "source_condition": "baseline",
+      "source_family": "supply-chain-negotiation",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "role_strategy",
+      "expert_label": "clear",
+      "source_case_id": "legacy-457-role_strategy",
+      "source_condition": "baseline",
+      "source_family": "supply-chain-negotiation",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "temporal_coherence",
+      "expert_label": "clear",
+      "source_case_id": "legacy-457-temporal_coherence",
+      "source_condition": "baseline",
+      "source_family": "supply-chain-negotiation",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "epistemic_fidelity",
+      "expert_label": "violation",
+      "source_case_id": "legacy-458-epistemic_fidelity",
+      "source_condition": "roommind",
+      "source_family": "supply-chain-negotiation",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "interaction_structure_fidelity",
+      "expert_label": "clear",
+      "source_case_id": "legacy-458-interaction_structure_fidelity",
+      "source_condition": "roommind",
+      "source_family": "supply-chain-negotiation",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "multi_party_dynamics",
+      "expert_label": "clear",
+      "source_case_id": "legacy-458-multi_party_dynamics",
+      "source_condition": "roommind",
+      "source_family": "supply-chain-negotiation",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "procedural_fidelity",
+      "expert_label": "violation",
+      "source_case_id": "legacy-458-procedural_fidelity",
+      "source_condition": "roommind",
+      "source_family": "supply-chain-negotiation",
+      "v4_label": "violation",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "role_strategy",
+      "expert_label": "violation",
+      "source_case_id": "legacy-458-role_strategy",
+      "source_condition": "roommind",
+      "source_family": "supply-chain-negotiation",
+      "v4_label": "violation",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "temporal_coherence",
+      "expert_label": "violation",
+      "source_case_id": "legacy-458-temporal_coherence",
+      "source_condition": "roommind",
+      "source_family": "supply-chain-negotiation",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "epistemic_fidelity",
+      "expert_label": "violation",
+      "source_case_id": "legacy-459-epistemic_fidelity",
+      "source_condition": "baseline",
+      "source_family": "market-launch-go-no-go",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "interaction_structure_fidelity",
+      "expert_label": "clear",
+      "source_case_id": "legacy-459-interaction_structure_fidelity",
+      "source_condition": "baseline",
+      "source_family": "market-launch-go-no-go",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "multi_party_dynamics",
+      "expert_label": "clear",
+      "source_case_id": "legacy-459-multi_party_dynamics",
+      "source_condition": "baseline",
+      "source_family": "market-launch-go-no-go",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "procedural_fidelity",
+      "expert_label": "clear",
+      "source_case_id": "legacy-459-procedural_fidelity",
+      "source_condition": "baseline",
+      "source_family": "market-launch-go-no-go",
+      "v4_label": "violation",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "role_strategy",
+      "expert_label": "violation",
+      "source_case_id": "legacy-459-role_strategy",
+      "source_condition": "baseline",
+      "source_family": "market-launch-go-no-go",
+      "v4_label": "violation",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "temporal_coherence",
+      "expert_label": "violation",
+      "source_case_id": "legacy-459-temporal_coherence",
+      "source_condition": "baseline",
+      "source_family": "market-launch-go-no-go",
+      "v4_label": "violation",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "epistemic_fidelity",
+      "expert_label": "violation",
+      "source_case_id": "legacy-460-epistemic_fidelity",
+      "source_condition": "roommind",
+      "source_family": "market-launch-go-no-go",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "interaction_structure_fidelity",
+      "expert_label": "violation",
+      "source_case_id": "legacy-460-interaction_structure_fidelity",
+      "source_condition": "roommind",
+      "source_family": "market-launch-go-no-go",
+      "v4_label": null,
+      "v4_status": "technical_failure"
+    },
+    {
+      "agreement": true,
+      "dimension": "multi_party_dynamics",
+      "expert_label": "clear",
+      "source_case_id": "legacy-460-multi_party_dynamics",
+      "source_condition": "roommind",
+      "source_family": "market-launch-go-no-go",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "procedural_fidelity",
+      "expert_label": "violation",
+      "source_case_id": "legacy-460-procedural_fidelity",
+      "source_condition": "roommind",
+      "source_family": "market-launch-go-no-go",
+      "v4_label": "violation",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "role_strategy",
+      "expert_label": "violation",
+      "source_case_id": "legacy-460-role_strategy",
+      "source_condition": "roommind",
+      "source_family": "market-launch-go-no-go",
+      "v4_label": "violation",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "temporal_coherence",
+      "expert_label": "violation",
+      "source_case_id": "legacy-460-temporal_coherence",
+      "source_condition": "roommind",
+      "source_family": "market-launch-go-no-go",
+      "v4_label": "violation",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "epistemic_fidelity",
+      "expert_label": "uncertain",
+      "source_case_id": "legacy-461-epistemic_fidelity",
+      "source_condition": "baseline",
+      "source_family": "candidate-panel-interview",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "interaction_structure_fidelity",
+      "expert_label": "violation",
+      "source_case_id": "legacy-461-interaction_structure_fidelity",
+      "source_condition": "baseline",
+      "source_family": "candidate-panel-interview",
+      "v4_label": "violation",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "multi_party_dynamics",
+      "expert_label": "violation",
+      "source_case_id": "legacy-461-multi_party_dynamics",
+      "source_condition": "baseline",
+      "source_family": "candidate-panel-interview",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "procedural_fidelity",
+      "expert_label": "clear",
+      "source_case_id": "legacy-461-procedural_fidelity",
+      "source_condition": "baseline",
+      "source_family": "candidate-panel-interview",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "role_strategy",
+      "expert_label": "clear",
+      "source_case_id": "legacy-461-role_strategy",
+      "source_condition": "baseline",
+      "source_family": "candidate-panel-interview",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "temporal_coherence",
+      "expert_label": "clear",
+      "source_case_id": "legacy-461-temporal_coherence",
+      "source_condition": "baseline",
+      "source_family": "candidate-panel-interview",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "epistemic_fidelity",
+      "expert_label": "uncertain",
+      "source_case_id": "legacy-462-epistemic_fidelity",
+      "source_condition": "roommind",
+      "source_family": "candidate-panel-interview",
+      "v4_label": "violation",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "interaction_structure_fidelity",
+      "expert_label": "violation",
+      "source_case_id": "legacy-462-interaction_structure_fidelity",
+      "source_condition": "roommind",
+      "source_family": "candidate-panel-interview",
+      "v4_label": null,
+      "v4_status": "technical_failure"
+    },
+    {
+      "agreement": true,
+      "dimension": "multi_party_dynamics",
+      "expert_label": "clear",
+      "source_case_id": "legacy-462-multi_party_dynamics",
+      "source_condition": "roommind",
+      "source_family": "candidate-panel-interview",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "procedural_fidelity",
+      "expert_label": "clear",
+      "source_case_id": "legacy-462-procedural_fidelity",
+      "source_condition": "roommind",
+      "source_family": "candidate-panel-interview",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "role_strategy",
+      "expert_label": "clear",
+      "source_case_id": "legacy-462-role_strategy",
+      "source_condition": "roommind",
+      "source_family": "candidate-panel-interview",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "temporal_coherence",
+      "expert_label": "clear",
+      "source_case_id": "legacy-462-temporal_coherence",
+      "source_condition": "roommind",
+      "source_family": "candidate-panel-interview",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "epistemic_fidelity",
+      "expert_label": "violation",
+      "source_case_id": "legacy-463-epistemic_fidelity",
+      "source_condition": "baseline",
+      "source_family": "incident-response-command",
+      "v4_label": "violation",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "interaction_structure_fidelity",
+      "expert_label": "violation",
+      "source_case_id": "legacy-463-interaction_structure_fidelity",
+      "source_condition": "baseline",
+      "source_family": "incident-response-command",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "multi_party_dynamics",
+      "expert_label": "violation",
+      "source_case_id": "legacy-463-multi_party_dynamics",
+      "source_condition": "baseline",
+      "source_family": "incident-response-command",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "procedural_fidelity",
+      "expert_label": "violation",
+      "source_case_id": "legacy-463-procedural_fidelity",
+      "source_condition": "baseline",
+      "source_family": "incident-response-command",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "role_strategy",
+      "expert_label": "violation",
+      "source_case_id": "legacy-463-role_strategy",
+      "source_condition": "baseline",
+      "source_family": "incident-response-command",
+      "v4_label": "violation",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "temporal_coherence",
+      "expert_label": "violation",
+      "source_case_id": "legacy-463-temporal_coherence",
+      "source_condition": "baseline",
+      "source_family": "incident-response-command",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": false,
+      "dimension": "epistemic_fidelity",
+      "expert_label": "uncertain",
+      "source_case_id": "legacy-464-epistemic_fidelity",
+      "source_condition": "roommind",
+      "source_family": "incident-response-command",
+      "v4_label": "violation",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "interaction_structure_fidelity",
+      "expert_label": "violation",
+      "source_case_id": "legacy-464-interaction_structure_fidelity",
+      "source_condition": "roommind",
+      "source_family": "incident-response-command",
+      "v4_label": "violation",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "multi_party_dynamics",
+      "expert_label": "clear",
+      "source_case_id": "legacy-464-multi_party_dynamics",
+      "source_condition": "roommind",
+      "source_family": "incident-response-command",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "procedural_fidelity",
+      "expert_label": "clear",
+      "source_case_id": "legacy-464-procedural_fidelity",
+      "source_condition": "roommind",
+      "source_family": "incident-response-command",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "role_strategy",
+      "expert_label": "violation",
+      "source_case_id": "legacy-464-role_strategy",
+      "source_condition": "roommind",
+      "source_family": "incident-response-command",
+      "v4_label": "violation",
+      "v4_status": "completed"
+    },
+    {
+      "agreement": true,
+      "dimension": "temporal_coherence",
+      "expert_label": "clear",
+      "source_case_id": "legacy-464-temporal_coherence",
+      "source_condition": "roommind",
+      "source_family": "incident-response-command",
+      "v4_label": "clear",
+      "v4_status": "completed"
+    }
+  ],
+  "schema": "g5-codex-expert-v4-comparison-v1",
+  "sha256": "bd70605e720e83f7a15682c7fd06be4b1e328388f1dfd8947c83ffbfcf629385",
+  "summary": {
+    "agreement_rate": 0.6739130434782609,
+    "agreements": 31,
+    "cases": 48,
+    "expert_labels": {
+      "clear": 19,
+      "uncertain": 3,
+      "violation": 26
+    },
+    "expert_labels_by_source_condition": {
+      "baseline": {
+        "clear": 9,
+        "uncertain": 1,
+        "violation": 14
+      },
+      "roommind": {
+        "clear": 10,
+        "uncertain": 2,
+        "violation": 12
+      }
+    },
+    "per_dimension": {
+      "epistemic_fidelity": {
+        "agreement_rate": 0.25,
+        "agreements": 2,
+        "comparable": 8
+      },
+      "interaction_structure_fidelity": {
+        "agreement_rate": 0.6666666666666666,
+        "agreements": 4,
+        "comparable": 6
+      },
+      "multi_party_dynamics": {
+        "agreement_rate": 0.625,
+        "agreements": 5,
+        "comparable": 8
+      },
+      "procedural_fidelity": {
+        "agreement_rate": 0.75,
+        "agreements": 6,
+        "comparable": 8
+      },
+      "role_strategy": {
+        "agreement_rate": 1.0,
+        "agreements": 8,
+        "comparable": 8
+      },
+      "temporal_coherence": {
+        "agreement_rate": 0.75,
+        "agreements": 6,
+        "comparable": 8
+      }
+    },
+    "v4_completed": 46,
+    "v4_labels_completed": {
+      "clear": 30,
+      "violation": 16
+    },
+    "v4_technical_failures": 2
+  }
+}

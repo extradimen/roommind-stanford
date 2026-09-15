@@ -300,7 +300,7 @@ export function ensureNegotiationChairs(graph: SceneGraph): SceneGraph {
     return {
       ...inst,
       transform: {
-        position: [...pose.position],
+        position: [...pose.position] as [number, number, number],
         rotationY: pose.rotationY,
         scale: pose.scale,
       },
@@ -317,7 +317,7 @@ export function ensureNegotiationChairs(graph: SceneGraph): SceneGraph {
       role: "prop",
       editor_label: pose.label,
       transform: {
-        position: [...pose.position],
+        position: [...pose.position] as [number, number, number],
         rotationY: pose.rotationY,
         scale: pose.scale,
       },

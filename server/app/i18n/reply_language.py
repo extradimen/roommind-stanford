@@ -22,7 +22,7 @@ def decision_language_rule(lang: str = REPLY_LANGUAGE) -> str:
 
 
 def plan_fallback_text(responsibility: str, lang: str = REPLY_LANGUAGE) -> str:
-    resp = (responsibility or "the negotiation").strip()
+    resp = (responsibility or "the task").strip()
     return f"Focus on {resp}. Advance proactively while holding firm on core limits."
 
 
@@ -40,19 +40,12 @@ def processing_message(stage: str, lang: str = REPLY_LANGUAGE, **kwargs: str) ->
     return messages.get(stage, stage)
 
 
-CHARACTER_EN_NAMES: dict[str, str] = {
-    "supplier_ceo": "Mr. Wang (Supplier CEO)",
-    "legal_counsel": "Attorney Li (Legal)",
-    "procurement_ally": "Manager Zhang (Procurement Ally)",
-}
-
-
 def character_display_name(character_id: str, fallback: str, lang: str = REPLY_LANGUAGE) -> str:
-    return CHARACTER_EN_NAMES.get(character_id, fallback)
+    return fallback
 
 
 def observation_user_speech(content: str, lang: str = REPLY_LANGUAGE, speaker_name: str = "") -> str:
-    label = (speaker_name or "Buyer lead").strip()
+    label = (speaker_name or "Player").strip()
     return f'{label} said: "{content}"'
 
 

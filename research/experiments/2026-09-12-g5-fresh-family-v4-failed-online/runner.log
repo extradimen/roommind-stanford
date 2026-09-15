@@ -1,0 +1,40 @@
+{"milestone": "dialogue_sealed", "scenario": "library-space-allocation-v1", "arm": "A", "turns": 16, "source_sha256": "17105e2c1abf2761269913daf0cce375de7d8c4d3896e395058eea258247ef70"}
+{"milestone": "dialogue_sealed", "scenario": "museum-loan-conservation-v1", "arm": "B", "turns": 16, "source_sha256": "f52d0debb3f4480580aa2e1f6c38d0b1873ce9b6653f3062cd27ca7c1dfaf9ca"}
+{"milestone": "dialogue_sealed", "scenario": "research-data-release-v1", "arm": "C", "turns": 16, "source_sha256": "2928f7e064401228298c4324aa555e8b325665097501446de57e7d229d5a48aa"}
+Traceback (most recent call last):
+  File "/home/ubuntu/roommind-stanford-staging/scripts/g5_run_fresh_validation_v4.py", line 46, in <module>
+    main()
+  File "/home/ubuntu/roommind-stanford-staging/scripts/g5_run_fresh_validation_v4.py", line 38, in main
+    result = asyncio.run(run_execution(execution, output, api_key=key,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/fresh_execution_v2.py", line 274, in run_execution
+    result = await runtime.step()
+             ^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/runtime.py", line 254, in step
+    return await self._step(reopen=reopen)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/runtime.py", line 399, in _step
+    event = await self._invoke("commit", version, actor, self.session_journal.commit,
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/runtime.py", line 74, in _invoke
+    result = await result
+             ^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/session_journal.py", line 74, in commit
+    replay_questions(scope, spec["roles"], [*events, preview])
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/question_journal.py", line 30, in replay
+    return project_questions(scope, participants, observations, annotations)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/questions.py", line 49, in project_questions
+    require(isinstance(targets, list) and bool(targets) and all(isinstance(t, str) for t in targets)
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/questions.py", line 13, in require
+    raise ValueError(message)
+ValueError: Invalid question targets

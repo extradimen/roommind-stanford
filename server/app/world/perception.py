@@ -20,31 +20,11 @@ from app.world.timeline import WorldEvent
 # ---------------------------------------------------------------------------
 # Stanford paper: importance is rated 1-10 by LLM at write time.
 # Here we use a two-tier heuristic that avoids an extra LLM call:
-#   - keyword boost for negotiation-critical signals
+#   - scenario-configured relevance-signal boost
 #   - length / event-type adjustments
 # This score is stored permanently on the node and never recomputed.
 
-_NEGOTIATION_KEYWORDS: list[tuple[str, float]] = [
-    # price / cost
-    ("价格", 2.0), ("单价", 2.0), ("报价", 2.0), ("成本", 1.5), ("费用", 1.5),
-    ("price", 2.0), ("cost", 1.5), ("offer", 2.0), ("quote", 2.0),
-    # contract / terms
-    ("合同", 2.0), ("条款", 1.5), ("违约", 2.0), ("赔偿", 2.0),
-    ("contract", 2.0), ("clause", 1.5), ("penalty", 2.0),
-    # delivery / quantity
-    ("交货", 1.5), ("交期", 1.5), ("数量", 1.0), ("批次", 1.0),
-    ("delivery", 1.5), ("quantity", 1.0),
-    # commitment words
-    ("同意", 2.0), ("接受", 2.0), ("拒绝", 2.0), ("底线", 2.5), ("让步", 2.5),
-    ("红线", 2.5), ("妥协", 2.0), ("坚持", 1.5),
-    ("agree", 2.0), ("accept", 2.0), ("reject", 2.0), ("concede", 2.5),
-    # payment
-    ("付款", 1.5), ("账期", 1.5), ("预付", 1.5), ("定金", 1.5),
-    ("payment", 1.5), ("deposit", 1.5),
-]
-
-
-def score_importance(content: str, event_type: str) -> float:
+def score_importance(content: str, event_type: str, relevance_signals: list[Any] | None = None) -> float:
     """
     Permanent importance score stored at write time (Stanford: LLM rates 1-10).
     We use a deterministic heuristic to avoid the extra LLM call.
@@ -63,7 +43,13 @@ def score_importance(content: str, event_type: str) -> float:
 
     # Keyword boosts (capped so single word can't explode score)
     keyword_boost = 0.0
-    for kw, weight in _NEGOTIATION_KEYWORDS:
+    configured: list[tuple[str, float]] = []
+    for item in relevance_signals or []:
+        if isinstance(item, str):
+            configured.append((item, 1.5))
+        elif isinstance(item, dict) and item.get("keyword"):
+            configured.append((str(item["keyword"]), float(item.get("weight", 1.5))))
+    for kw, weight in configured:
         if kw in text:
             keyword_boost += weight
     score += min(keyword_boost, 4.0)   # cap keyword contribution at 4 pts
@@ -86,19 +72,7 @@ def score_importance(content: str, event_type: str) -> float:
 #   2. Score = |overlap| / |query_tokens| (Jaccard-style, query-normalised)
 # This is still a proxy, but it handles synonym drift ("价格" ↔ "单价").
 
-_SYNONYM_MAP: dict[str, list[str]] = {
-    "价格": ["单价", "报价", "费用", "成本", "价钱"],
-    "单价": ["价格", "报价", "费用"],
-    "合同": ["条款", "协议", "文件"],
-    "底线": ["红线", "最低", "不能接受"],
-    "让步": ["妥协", "退步", "折中"],
-    "同意": ["接受", "认可", "ok", "好"],
-    "拒绝": ["不同意", "不接受", "不行"],
-    "交货": ["交期", "到货", "发货", "delivery"],
-    "price": ["cost", "fee", "rate", "quote"],
-    "agree": ["accept", "ok", "yes", "sure"],
-    "reject": ["refuse", "no", "deny"],
-}
+_SYNONYM_MAP: dict[str, list[str]] = {}
 
 
 def _expand_tokens(tokens: set[str]) -> set[str]:
@@ -143,7 +117,7 @@ def format_observation(
 ) -> str:
     """Natural-language observation from this agent's POV (no redundant name prefix)."""
     if event.event_type == "user_speech":
-        speaker = str(event.meta.get("display_name") or event.meta.get("character_name") or "Buyer lead")
+        speaker = str(event.meta.get("display_name") or event.meta.get("character_name") or "Player")
         return observation_user_speech(event.content, lang, speaker_name=speaker)
     if event.event_type == "npc_speech":
         if event.actor_id == agent.character_id:
@@ -168,6 +142,7 @@ def perceive_events(
     *,
     private_only_self: bool = True,
     reply_language: str = "en",
+    relevance_signals: list[Any] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Filter world events → per-agent observations.
@@ -181,7 +156,7 @@ def perceive_events(
         if event.event_type not in ("user_speech", "npc_speech", "state_change", "agent_action"):
             continue
         content = format_observation(agent, event, lang=reply_language)
-        importance = score_importance(event.content, event.event_type)
+        importance = score_importance(event.content, event.event_type, relevance_signals)
         observations.append(
             {
                 "content": content,

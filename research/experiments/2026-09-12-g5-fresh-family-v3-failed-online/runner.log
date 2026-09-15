@@ -1,0 +1,35 @@
+{"milestone": "dialogue_sealed", "scenario": "library-space-allocation-v1", "arm": "A", "turns": 16, "source_sha256": "2286163150c7c6fd786cddfa00b3401e109d4ec221e17b113cc2dc9a60472c3e"}
+Traceback (most recent call last):
+  File "/home/ubuntu/roommind-stanford-staging/scripts/g5_run_fresh_validation_v3.py", line 46, in <module>
+    main()
+  File "/home/ubuntu/roommind-stanford-staging/scripts/g5_run_fresh_validation_v3.py", line 38, in main
+    result = asyncio.run(run_execution(execution, output, api_key=key,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/fresh_execution_v2.py", line 271, in run_execution
+    result = await runtime.step()
+             ^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/runtime.py", line 254, in step
+    return await self._step(reopen=reopen)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/runtime.py", line 330, in _step
+    state = await self._invoke("cognition", version, actor, self.cognition, detached(view))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/runtime.py", line 74, in _invoke
+    result = await result
+             ^^^^^^^^^^^^
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/reflection.py", line 142, in __call__
+    validate(proposal, active_plan, view["actor"], view["operations"], validation_sources)
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/planning.py", line 95, in validate
+    require(bool(row["source_ids"]) or (not available and row["intent"] in {"goal", "ask", "wait", "defer", "decline"}),
+  File "/home/ubuntu/roommind-stanford-staging/server/app/g5/planning.py", line 15, in require
+    raise ValueError(message)
+ValueError: Plan source required

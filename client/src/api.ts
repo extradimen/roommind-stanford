@@ -7,6 +7,8 @@ export interface Scenario {
   description: string | null;
   business_goal?: string;
   player_side_goal?: string;
+  schema_version?: 2;
+  task_config?: Record<string, unknown>;
   player_character?: PlayerCharacter;
   phases?: string[];
   scene_config?: Record<string, unknown>;
@@ -33,6 +35,8 @@ export interface AvatarManifestFields {
   label?: string;
   team?: string;
   color?: string;
+  glasses?: boolean;
+  necklace?: boolean;
 }
 
 export interface Character {
@@ -41,6 +45,9 @@ export interface Character {
   job_title?: string;
   display_name: string;
   side?: "opponent" | "player_ally";
+  team_id?: string;
+  relationship_to_player?: string;
+  interaction_role?: string;
   spawn_point?: string;
   avatar_manifest?: AvatarManifestFields;
 }
@@ -48,12 +55,69 @@ export interface Character {
 export interface ChatMessage {
   speaker_id: string;
   speaker_type: string;
+  speaker_source?: "human" | "ai" | "system";
+  turn_id?: number;
+  sequence_no?: number;
   content: string;
   display_name?: string;
   emotion?: string;
   gesture?: string;
   streaming?: boolean;
   streamKey?: string;
+}
+
+export interface BatchExperimentRun {
+  id: number;
+  scenario_id: number;
+  condition: "roommind" | "baseline";
+  session_mode: "test" | "baseline";
+  repetition: number;
+  status: string;
+  session_uuid: string | null;
+  result: Record<string, unknown>;
+  error: string | null;
+}
+
+export interface BatchExperiment {
+  batch_uuid: string;
+  name: string;
+  status: string;
+  config: Record<string, unknown>;
+  total_runs: number;
+  completed_runs: number;
+  failed_runs: number;
+  cancelled_runs: number;
+  created_at?: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  runs?: BatchExperimentRun[];
+}
+
+export interface BlindReviewPacket {
+  run_label: string;
+  condition_hidden?: boolean;
+  source_provenance: {
+    source?: string;
+    content_policy?: string;
+    session_uuid?: string;
+    message_count?: number;
+    transcript_sha256: string;
+  };
+  language_policy?: Record<string, unknown>;
+  gold_specification: Record<string, unknown>;
+  public_transcript: Array<{ sequence_no?: number; turn_id?: number; speaker_id?: string; speaker_label?: string; content?: string }>;
+  fixed_window_transcript?: Array<{ sequence_no?: number; turn_id?: number; speaker_id?: string; speaker_label?: string; content?: string }>;
+  system_claim: Record<string, unknown>;
+  rubric: Record<string, {
+    label_en: string; label_zh: string; description_en: string; description_zh: string;
+    indicators: Array<[string, string, string]>;
+  }>;
+}
+
+export interface BlindReviewQueue {
+  protocol: string;
+  packets: BlindReviewPacket[];
+  saved_reviews: Record<string, Array<{ reviewer_id: string; ratings: Record<string, number> }>>;
 }
 
 export interface NPCReply {
@@ -71,7 +135,35 @@ export interface PlatformPorts {
   urls?: { api?: string; client?: string };
 }
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly status?: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 let cachedWsBase: string | null = null;
+
+const READ_RETRY_DELAYS_MS = [0, 250, 750];
+
+async function fetchReadWithRetry(input: RequestInfo | URL): Promise<Response> {
+  let lastError: unknown;
+  for (const delay of READ_RETRY_DELAYS_MS) {
+    if (delay) await new Promise((resolve) => window.setTimeout(resolve, delay));
+    try {
+      const response = await fetch(input, { cache: "no-store" });
+      // Retry only transient gateway failures. Other HTTP responses are real
+      // application results and must be handled by the caller.
+      if (![500, 502, 503, 504].includes(response.status)) return response;
+      lastError = new Error(`Transient gateway response (HTTP ${response.status})`);
+    } catch (error) {
+      // Vite's development proxy can occasionally close an idle/reused
+      // connection and surface ERR_EMPTY_RESPONSE as a fetch TypeError.
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Failed to fetch");
+}
 
 /** Resolve WebSocket base URL (without path). */
 export async function resolveWsBase(): Promise<string> {
@@ -141,24 +233,27 @@ export async function resolveServiceUrls(): Promise<{
 }
 
 export async function listScenarios(): Promise<Scenario[]> {
-  const res = await fetch("/api/game/scenarios");
+  const res = await fetchReadWithRetry("/api/game/scenarios");
   if (!res.ok) throw new Error("Failed to load scenarios");
   return res.json();
 }
 
 export async function getScenario(id: number): Promise<Scenario> {
-  const res = await fetch(`/api/game/scenarios/${id}?_=${Date.now()}`);
+  const res = await fetchReadWithRetry(`/api/game/scenarios/${id}?_=${Date.now()}`);
   if (!res.ok) throw new Error("Scenario not found");
   return res.json();
 }
 
 export async function getSessionMessages(sessionUuid: string): Promise<ChatMessage[]> {
-  const res = await fetch(`/api/game/sessions/${sessionUuid}/messages`);
-  if (!res.ok) throw new Error("Failed to load messages");
+  const res = await fetchReadWithRetry(`/api/game/sessions/${sessionUuid}/messages`);
+  if (!res.ok) throw new ApiError("Failed to load messages", res.status);
   const rows = await res.json();
-  return rows.map((m: { speaker_id: string; speaker_type: string; content: string; emotion?: string; gesture?: string }) => ({
+  return rows.map((m: ChatMessage) => ({
     speaker_id: m.speaker_id,
     speaker_type: m.speaker_type,
+    speaker_source: m.speaker_source,
+    turn_id: m.turn_id,
+    sequence_no: m.sequence_no,
     content: m.content,
     emotion: m.emotion,
     gesture: m.gesture,
@@ -189,7 +284,7 @@ export interface SessionAgentMemories {
 }
 
 export async function getSessionAgentMemories(sessionUuid: string): Promise<SessionAgentMemories> {
-  const res = await fetch(`/api/game/sessions/${sessionUuid}/agent-memories`);
+  const res = await fetchReadWithRetry(`/api/game/sessions/${sessionUuid}/agent-memories`);
   if (!res.ok) throw new Error("Failed to load agent memories");
   return res.json();
 }
@@ -232,14 +327,145 @@ export async function updateAgentMemoryNode(
 
 export async function createSession(
   scenarioId: number,
-): Promise<{ session_uuid: string; current_phase: string; orchestration_mode?: string }> {
+  sessionMode: "participation" | "test" | "baseline" = "participation",
+): Promise<{ session_uuid: string; current_phase: string; orchestration_mode?: string; session_mode: string }> {
   const res = await fetch("/api/game/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ scenario_id: scenarioId }),
+    body: JSON.stringify({
+      scenario_id: scenarioId,
+      session_mode: sessionMode,
+      run_config: sessionMode !== "participation"
+        ? { safety_max_turns: 50, max_stagnant_turns: 8, player_strategy: "balanced" }
+        : {},
+    }),
   });
   if (!res.ok) throw new Error("Failed to create session");
   return res.json();
+}
+
+export async function runTestStep(sessionUuid: string, maxSteps = 1, locale?: string, untilComplete = false) {
+  const path = maxSteps === 1 && !untilComplete ? "step" : "run";
+  const res = await fetch(`/api/game/sessions/${sessionUuid}/test/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ max_steps: maxSteps, until_complete: untilComplete, locale }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to run AI test turn");
+  }
+  return res.json();
+}
+
+export async function controlTestSession(sessionUuid: string, action: "pause" | "resume" | "stop") {
+  const res = await fetch(`/api/game/sessions/${sessionUuid}/test/${action}`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to ${action} test session`);
+  }
+  return res.json();
+}
+
+export async function runExternalEvaluation(sessionUuid: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`/api/game/sessions/${sessionUuid}/external-evaluation`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to run external evaluation");
+  }
+  return res.json();
+}
+
+export async function listBatchExperiments(): Promise<BatchExperiment[]> {
+  const res = await fetchReadWithRetry("/api/game/batch-experiments");
+  if (!res.ok) throw new Error("Failed to load batch experiments");
+  return res.json();
+}
+
+export async function getBatchExperiment(batchUuid: string): Promise<BatchExperiment> {
+  const res = await fetchReadWithRetry(`/api/game/batch-experiments/${batchUuid}`);
+  if (!res.ok) throw new Error("Failed to load batch experiment");
+  return res.json();
+}
+
+export async function createBatchExperiment(input: {
+  name: string;
+  scenario_ids: number[];
+  conditions: ("test" | "baseline")[];
+  repetitions: number;
+  concurrency: number;
+  safety_max_turns: number;
+  max_stagnant_turns: number;
+  locale?: string;
+  random_seed: number;
+  human_validation_enabled: boolean;
+  study_phase?: "exploration" | "screening" | "confirmation";
+}): Promise<BatchExperiment> {
+  const res = await fetch("/api/game/batch-experiments", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || "Failed to create batch experiment");
+  }
+  return res.json();
+}
+
+export async function cancelBatchExperiment(batchUuid: string): Promise<BatchExperiment> {
+  const res = await fetch(`/api/game/batch-experiments/${batchUuid}/cancel`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to cancel batch experiment");
+  return res.json();
+}
+
+export async function retryBatchDialogue(batchUuid: string, runId: number): Promise<BatchExperiment> {
+  const res = await fetch(`/api/game/batch-experiments/${batchUuid}/runs/${runId}/retry-dialogue`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || "Failed to retry dialogue");
+  }
+  return res.json();
+}
+
+export async function startBatchEvaluation(
+  batchUuid: string,
+  input: { run_ids?: number[]; retry_all?: boolean; concurrency?: number } = {},
+): Promise<BatchExperiment> {
+  const res = await fetch(`/api/game/batch-experiments/${batchUuid}/evaluate`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ concurrency: 1, ...input }),
+  });
+  if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.detail || "Failed to start evaluation"); }
+  return res.json();
+}
+
+export async function getBlindReviewQueue(batchUuid: string): Promise<BlindReviewQueue> {
+  const res = await fetchReadWithRetry(`/api/game/batch-experiments/${batchUuid}/review-queue`);
+  if (!res.ok) throw new Error("Failed to load blinded review queue");
+  return res.json();
+}
+
+export async function submitBlindReview(
+  batchUuid: string, runLabel: string,
+  input: {
+    reviewer_id: string;
+    ratings: Record<string, number>;
+    evidence: Record<string, unknown>;
+    notes: string;
+    transcript_sha256: string;
+    indicator_ratings: Record<string, number>;
+    reviewer_profile?: Record<string, unknown>;
+    interface_locale?: string;
+    finalize?: boolean;
+  },
+): Promise<void> {
+  const res = await fetch(`/api/game/batch-experiments/${batchUuid}/reviews/${runLabel}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+  });
+  if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.detail || "Failed to save review"); }
 }
 
 export function connectGameWS(sessionUuid: string, wsBase: string): WebSocket {
@@ -285,8 +511,8 @@ export function connectGameWSWithRetry(
   let active = true;
   let ws: WebSocket | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
-  let attempts = 0;
-  const maxAttempts = 3;
+  let consecutiveFailures = 0;
+  const maxConsecutiveFailures = 8;
 
   const cleanup = () => {
     active = false;
@@ -302,9 +528,9 @@ export function connectGameWSWithRetry(
 
   const tryConnect = async () => {
     if (!active) return;
-    attempts += 1;
+    consecutiveFailures += 1;
     onState("connecting");
-    onDebug?.(`尝试连接 #${attempts}`, "ws");
+    onDebug?.(`尝试连接 #${consecutiveFailures}`, "ws");
 
     try {
       const base = await resolveWsBase();
@@ -318,6 +544,7 @@ export function connectGameWSWithRetry(
       ws.onopen = () => {
         if (!active) return;
         opened = true;
+        consecutiveFailures = 0;
         onDebug?.("WebSocket 已连接", "ws");
         onState("connected", ws!);
       };
@@ -338,20 +565,26 @@ export function connectGameWSWithRetry(
       ws.onclose = (ev) => {
         if (!active) return;
         onDebug?.(`WebSocket 关闭 code=${ev.code} reason=${ev.reason || "—"}`, "ws");
-        if (opened) return;
-        // Ignore normal close from React StrictMode remount
-        if (ev.code === 1000 && attempts < maxAttempts) return;
-
-        if (attempts < maxAttempts) {
-          retryTimer = setTimeout(tryConnect, 400 * attempts);
+        ws = null;
+        // A server-initiated normal close is terminal. Component cleanup has
+        // already set active=false, so React StrictMode does not reconnect.
+        if (ev.code === 1000) {
+          onState("failed");
+          return;
+        }
+        if (opened) consecutiveFailures = 1;
+        if (consecutiveFailures < maxConsecutiveFailures) {
+          const delay = Math.min(10000, 500 * 2 ** Math.max(0, consecutiveFailures - 1));
+          retryTimer = setTimeout(tryConnect, delay);
         } else {
           onState("failed");
         }
       };
     } catch (err) {
       onDebug?.(`连接异常: ${String(err)}`, "ws");
-      if (active && attempts < maxAttempts) {
-        retryTimer = setTimeout(tryConnect, 400 * attempts);
+      if (active && consecutiveFailures < maxConsecutiveFailures) {
+        const delay = Math.min(10000, 500 * 2 ** Math.max(0, consecutiveFailures - 1));
+        retryTimer = setTimeout(tryConnect, delay);
       } else if (active) {
         onState("failed");
       }

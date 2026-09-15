@@ -1,0 +1,417 @@
+{
+  "protocol": "roommind-model-provider-qualification-v1",
+  "generated_at": "2026-09-01T10:29:10.149950+00:00",
+  "sequential": true,
+  "provider_failover": false,
+  "repetitions": 1,
+  "candidates": [
+    "ollama/deepseek-v4-flash",
+    "ollama/kimi-k2.5:cloud",
+    "ollama/gpt-oss:120b:cloud",
+    "ollama/deepseek-v3.2:cloud",
+    "siliconflow/Qwen/Qwen2.5-7B-Instruct",
+    "siliconflow/Qwen/Qwen3-8B",
+    "siliconflow/deepseek-ai/DeepSeek-V4-Flash",
+    "siliconflow/moonshotai/Kimi-K2.5"
+  ],
+  "summary": {
+    "ollama/deepseek-v4-flash": {
+      "attempts": 3,
+      "usable": 3,
+      "failures": {},
+      "usable_rate": 1.0
+    },
+    "ollama/kimi-k2.5:cloud": {
+      "attempts": 3,
+      "usable": 0,
+      "failures": {
+        "http_error": 3
+      },
+      "usable_rate": 0.0
+    },
+    "ollama/gpt-oss:120b:cloud": {
+      "attempts": 3,
+      "usable": 3,
+      "failures": {},
+      "usable_rate": 1.0
+    },
+    "ollama/deepseek-v3.2:cloud": {
+      "attempts": 3,
+      "usable": 0,
+      "failures": {
+        "http_error": 3
+      },
+      "usable_rate": 0.0
+    },
+    "siliconflow/Qwen/Qwen2.5-7B-Instruct": {
+      "attempts": 3,
+      "usable": 0,
+      "failures": {
+        "http_error": 3
+      },
+      "usable_rate": 0.0
+    },
+    "siliconflow/Qwen/Qwen3-8B": {
+      "attempts": 3,
+      "usable": 0,
+      "failures": {
+        "http_error": 3
+      },
+      "usable_rate": 0.0
+    },
+    "siliconflow/deepseek-ai/DeepSeek-V4-Flash": {
+      "attempts": 3,
+      "usable": 0,
+      "failures": {
+        "http_error": 3
+      },
+      "usable_rate": 0.0
+    },
+    "siliconflow/moonshotai/Kimi-K2.5": {
+      "attempts": 3,
+      "usable": 0,
+      "failures": {
+        "http_error": 3
+      },
+      "usable_rate": 0.0
+    }
+  },
+  "rows": [
+    {
+      "provider": "ollama",
+      "model": "deepseek-v4-flash",
+      "probe": "short_visible_text",
+      "repetition": 1,
+      "http_status": 200,
+      "latency_ms": 536,
+      "finish_reason": "stop",
+      "visible_characters": 5,
+      "json_valid": null,
+      "usable": true,
+      "error_type": null,
+      "error": null
+    },
+    {
+      "provider": "ollama",
+      "model": "deepseek-v4-flash",
+      "probe": "structured_role_decision",
+      "repetition": 1,
+      "http_status": 200,
+      "latency_ms": 1671,
+      "finish_reason": "stop",
+      "visible_characters": 221,
+      "json_valid": true,
+      "usable": true,
+      "error_type": null,
+      "error": null
+    },
+    {
+      "provider": "ollama",
+      "model": "deepseek-v4-flash",
+      "probe": "bounded_long_context_json",
+      "repetition": 1,
+      "http_status": 200,
+      "latency_ms": 4368,
+      "finish_reason": "stop",
+      "visible_characters": 158,
+      "json_valid": true,
+      "usable": true,
+      "error_type": null,
+      "error": null
+    },
+    {
+      "provider": "ollama",
+      "model": "kimi-k2.5:cloud",
+      "probe": "short_visible_text",
+      "repetition": 1,
+      "http_status": 410,
+      "latency_ms": 154,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"error\":{\"message\":\"kimi-k2.5 was retired at 2026-07-31 00:00:00 -0700 PDT (ref: e150355e-dabc-4902-9f8e-84c3c2881efd)\",\"type\":\"api_error\",\"param\":null,\"code\":null}}\n"
+    },
+    {
+      "provider": "ollama",
+      "model": "kimi-k2.5:cloud",
+      "probe": "structured_role_decision",
+      "repetition": 1,
+      "http_status": 410,
+      "latency_ms": 160,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"error\":{\"message\":\"kimi-k2.5 was retired at 2026-07-31 00:00:00 -0700 PDT (ref: 977f49a1-f058-426d-963c-cea2503afe8e)\",\"type\":\"api_error\",\"param\":null,\"code\":null}}\n"
+    },
+    {
+      "provider": "ollama",
+      "model": "kimi-k2.5:cloud",
+      "probe": "bounded_long_context_json",
+      "repetition": 1,
+      "http_status": 410,
+      "latency_ms": 156,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"error\":{\"message\":\"kimi-k2.5 was retired at 2026-07-31 00:00:00 -0700 PDT (ref: 9d5d6e25-d1bf-4fa3-a018-51a6929620ea)\",\"type\":\"api_error\",\"param\":null,\"code\":null}}\n"
+    },
+    {
+      "provider": "ollama",
+      "model": "gpt-oss:120b:cloud",
+      "probe": "short_visible_text",
+      "repetition": 1,
+      "http_status": 200,
+      "latency_ms": 513,
+      "finish_reason": "stop",
+      "visible_characters": 5,
+      "json_valid": null,
+      "usable": true,
+      "error_type": null,
+      "error": null
+    },
+    {
+      "provider": "ollama",
+      "model": "gpt-oss:120b:cloud",
+      "probe": "structured_role_decision",
+      "repetition": 1,
+      "http_status": 200,
+      "latency_ms": 1037,
+      "finish_reason": "stop",
+      "visible_characters": 341,
+      "json_valid": true,
+      "usable": true,
+      "error_type": null,
+      "error": null
+    },
+    {
+      "provider": "ollama",
+      "model": "gpt-oss:120b:cloud",
+      "probe": "bounded_long_context_json",
+      "repetition": 1,
+      "http_status": 200,
+      "latency_ms": 1164,
+      "finish_reason": "stop",
+      "visible_characters": 371,
+      "json_valid": true,
+      "usable": true,
+      "error_type": null,
+      "error": null
+    },
+    {
+      "provider": "ollama",
+      "model": "deepseek-v3.2:cloud",
+      "probe": "short_visible_text",
+      "repetition": 1,
+      "http_status": 410,
+      "latency_ms": 205,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"error\":{\"message\":\"deepseek-v3.2 was retired at 2026-07-15 00:00:00 -0700 PDT (ref: 5be7efda-fa70-45a4-9c36-ee78b7b7d4f7)\",\"type\":\"api_error\",\"param\":null,\"code\":null}}\n"
+    },
+    {
+      "provider": "ollama",
+      "model": "deepseek-v3.2:cloud",
+      "probe": "structured_role_decision",
+      "repetition": 1,
+      "http_status": 410,
+      "latency_ms": 162,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"error\":{\"message\":\"deepseek-v3.2 was retired at 2026-07-15 00:00:00 -0700 PDT (ref: 67f5474f-73d5-4124-92cb-05b452e4d04d)\",\"type\":\"api_error\",\"param\":null,\"code\":null}}\n"
+    },
+    {
+      "provider": "ollama",
+      "model": "deepseek-v3.2:cloud",
+      "probe": "bounded_long_context_json",
+      "repetition": 1,
+      "http_status": 410,
+      "latency_ms": 147,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"error\":{\"message\":\"deepseek-v3.2 was retired at 2026-07-15 00:00:00 -0700 PDT (ref: e5d78ddd-67a1-4b41-831a-4ebc8c027179)\",\"type\":\"api_error\",\"param\":null,\"code\":null}}\n"
+    },
+    {
+      "provider": "siliconflow",
+      "model": "Qwen/Qwen2.5-7B-Instruct",
+      "probe": "short_visible_text",
+      "repetition": 1,
+      "http_status": 402,
+      "latency_ms": 204,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"code\":30001,\"message\":\"Sorry, your account balance is insufficient\",\"data\":null}"
+    },
+    {
+      "provider": "siliconflow",
+      "model": "Qwen/Qwen2.5-7B-Instruct",
+      "probe": "structured_role_decision",
+      "repetition": 1,
+      "http_status": 402,
+      "latency_ms": 70,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"code\":30001,\"message\":\"Sorry, your account balance is insufficient\",\"data\":null}"
+    },
+    {
+      "provider": "siliconflow",
+      "model": "Qwen/Qwen2.5-7B-Instruct",
+      "probe": "bounded_long_context_json",
+      "repetition": 1,
+      "http_status": 402,
+      "latency_ms": 70,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"code\":30001,\"message\":\"Sorry, your account balance is insufficient\",\"data\":null}"
+    },
+    {
+      "provider": "siliconflow",
+      "model": "Qwen/Qwen3-8B",
+      "probe": "short_visible_text",
+      "repetition": 1,
+      "http_status": 402,
+      "latency_ms": 71,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"code\":30001,\"message\":\"Sorry, your account balance is insufficient\",\"data\":null}"
+    },
+    {
+      "provider": "siliconflow",
+      "model": "Qwen/Qwen3-8B",
+      "probe": "structured_role_decision",
+      "repetition": 1,
+      "http_status": 402,
+      "latency_ms": 71,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"code\":30001,\"message\":\"Sorry, your account balance is insufficient\",\"data\":null}"
+    },
+    {
+      "provider": "siliconflow",
+      "model": "Qwen/Qwen3-8B",
+      "probe": "bounded_long_context_json",
+      "repetition": 1,
+      "http_status": 402,
+      "latency_ms": 70,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"code\":30001,\"message\":\"Sorry, your account balance is insufficient\",\"data\":null}"
+    },
+    {
+      "provider": "siliconflow",
+      "model": "deepseek-ai/DeepSeek-V4-Flash",
+      "probe": "short_visible_text",
+      "repetition": 1,
+      "http_status": 402,
+      "latency_ms": 70,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"code\":30001,\"message\":\"Sorry, your account balance is insufficient\",\"data\":null}"
+    },
+    {
+      "provider": "siliconflow",
+      "model": "deepseek-ai/DeepSeek-V4-Flash",
+      "probe": "structured_role_decision",
+      "repetition": 1,
+      "http_status": 402,
+      "latency_ms": 71,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"code\":30001,\"message\":\"Sorry, your account balance is insufficient\",\"data\":null}"
+    },
+    {
+      "provider": "siliconflow",
+      "model": "deepseek-ai/DeepSeek-V4-Flash",
+      "probe": "bounded_long_context_json",
+      "repetition": 1,
+      "http_status": 402,
+      "latency_ms": 71,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"code\":30001,\"message\":\"Sorry, your account balance is insufficient\",\"data\":null}"
+    },
+    {
+      "provider": "siliconflow",
+      "model": "moonshotai/Kimi-K2.5",
+      "probe": "short_visible_text",
+      "repetition": 1,
+      "http_status": 402,
+      "latency_ms": 71,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"code\":30001,\"message\":\"Sorry, your account balance is insufficient\",\"data\":null}"
+    },
+    {
+      "provider": "siliconflow",
+      "model": "moonshotai/Kimi-K2.5",
+      "probe": "structured_role_decision",
+      "repetition": 1,
+      "http_status": 402,
+      "latency_ms": 70,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"code\":30001,\"message\":\"Sorry, your account balance is insufficient\",\"data\":null}"
+    },
+    {
+      "provider": "siliconflow",
+      "model": "moonshotai/Kimi-K2.5",
+      "probe": "bounded_long_context_json",
+      "repetition": 1,
+      "http_status": 402,
+      "latency_ms": 75,
+      "finish_reason": null,
+      "visible_characters": 0,
+      "json_valid": null,
+      "usable": false,
+      "error_type": "http_error",
+      "error": "{\"code\":30001,\"message\":\"Sorry, your account balance is insufficient\",\"data\":null}"
+    }
+  ]
+}

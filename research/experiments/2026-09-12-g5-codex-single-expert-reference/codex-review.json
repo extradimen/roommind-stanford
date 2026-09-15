@@ -1,0 +1,1404 @@
+{
+  "classification": "internal-development-evidence",
+  "human_annotations_collected": 0,
+  "independent_human_reference": false,
+  "packet_sha256": "6f4f85aa5fc463102ccc91996ec0f98da990b76b9ca8f7f90c0e062b9e33e664",
+  "reviewer": {
+    "id": "codex-primary-agent-2026-09-12",
+    "kind": "ai"
+  },
+  "rows": [
+    {
+      "citations": [
+        {
+          "evidence_id": "E0002",
+          "quote": "Our priority is to contain the payment outage, approve a safe recovery plan, assign a customer communications owner, and set a next review.",
+          "sequence_no": 1,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0009",
+          "quote": "Based on the verified impact – full payment API outage across all regions with 100 % transaction failure and no data loss – I’ll take ownership of the customer communications.",
+          "sequence_no": 3,
+          "speaker_id": "communications_lead"
+        },
+        {
+          "evidence_id": "E0028",
+          "quote": "Before we run the recovery I’ll take a full memory dump of the affected hosts, archive system and application logs with SHA‑256 hashes, create forensic images of critical storage, and place all artifacts in a tamper‑evident, access‑controlled repository with a documented chain of custody.",
+          "sequence_no": 11,
+          "speaker_id": "security_lead"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "multi_party_dynamics",
+      "label": "clear",
+      "rationale": "The participants contribute distinct incident-command, customer-communication, and evidence-preservation perspectives rather than merely echoing one another.",
+      "task_id": "A-001",
+      "task_sha256": "34c59dc23240e727d97c97619d59986fe7753d8286a1429ba75833d62eac1d29"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0134",
+          "quote": "I’ll work with Samir to align our outreach cadence with the operational risk register and will lock in a Day‑30 review for October 9th (Wednesday).",
+          "sequence_no": 44,
+          "speaker_id": "sales_vp"
+        },
+        {
+          "evidence_id": "E0137",
+          "quote": "I’ll circulate the concise operational risk‑mitigation register by EOD Tuesday as promised, and I’ll schedule the day‑30 spend and readiness review for the week of Oct 30.",
+          "sequence_no": 45,
+          "speaker_id": "operations_director"
+        },
+        {
+          "evidence_id": "E0140",
+          "quote": "The financial risk register will be circulated Tuesday as promised, and we will continue to track spend against the $5.",
+          "sequence_no": 46,
+          "speaker_id": "cfo"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "temporal_coherence",
+      "label": "violation",
+      "rationale": "The same day-30 review is proposed for October 9, the week of October 30, and October 4 in adjacent responses without acknowledging or reconciling the conflict before selection.",
+      "task_id": "A-002",
+      "task_sha256": "4cfc3b6700a8027c7f649451f1eda47446bcb2d1230d83b8e4ad422fb454601f"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0161",
+          "quote": "I configured alerts: latency >200 ms for >5 min, hit‑rate drop below 92 %, and any cache‑invalidation error from our TTL job.",
+          "sequence_no": 45,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0170",
+          "quote": "Our latency dashboard showed average checkout API latency at 420 ms (target ≤300 ms) and a 12 % increase in checkout time over two weeks.",
+          "sequence_no": 47,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0237",
+          "quote": "Before the test we ran a data‑quality validation—baseline comparison, outlier filtering, and a canary release behind a feature flag—to ensure no regression in error rates.",
+          "sequence_no": 69,
+          "speaker_id": "engineering_director"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "epistemic_fidelity",
+      "label": "uncertain",
+      "rationale": "Many operational and outcome figures are narrated without the underlying dashboard, test, or artifact; public text alone cannot verify the historical facts.",
+      "task_id": "A-003",
+      "task_sha256": "e3509797f02a79f159e2fe2303a04b855889b4ce3dfe98c8e0cf45491bf2bb73"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0053",
+          "quote": "I documented the hypothesis in Doc #HYP‑2022‑Q2, the experiment design in Experiment‑Plan‑2022‑04, and the rollout checklist in Rollout‑Checklist‑2022‑04‑01.",
+          "sequence_no": 11,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0086",
+          "quote": "To verify product ownership we need the concrete artifacts you mentioned—hypothesis document, experiment design, latency data spreadsheet, and rollout checklist.",
+          "sequence_no": 21,
+          "speaker_id": "product_vp"
+        },
+        {
+          "evidence_id": "E0138",
+          "quote": "Based on the priority‑board, risk‑register, and Sprint‑Plan excerpts you just shared, we have sufficient concrete evidence of your end‑to‑end product ownership.",
+          "sequence_no": 35,
+          "speaker_id": "product_vp"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "epistemic_fidelity",
+      "label": "uncertain",
+      "rationale": "The candidate supplies detailed artifact names and excerpts, but the artifacts are not actually present; the public transcript alone cannot establish whether the historical claims are true.",
+      "task_id": "A-004",
+      "task_sha256": "ef5d9fb50d175e2296b1f1cc7e39b68ce08c35f2bf54e4e7e066236f6bc25ed0"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0145",
+          "quote": "Please send the brief outline of the inspection steps and the estimated cost impact as promised, and confirm that the joint inspection can be executed within the 28‑day lead time at the 83 RMB price by Thursday.",
+          "sequence_no": 40,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0161",
+          "quote": "I confirm the 83 RMB unit price and the 28‑day lead time tied to the 150 k‑unit annual volume.",
+          "sequence_no": 44,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0214",
+          "quote": "9 RMB/unit inspection cost remains within our 1‑2 % target before Thursday’s final feasibility confirmation?",
+          "sequence_no": 56,
+          "speaker_id": "user"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "interaction_structure_fidelity",
+      "label": "violation",
+      "rationale": "Substantially identical requests for the same Thursday feasibility confirmation and supporting figures recur across many turns after responsive provisional answers.",
+      "task_id": "A-005",
+      "task_sha256": "9a9e2390eec588ce7dbe8598d21bce731da18fc27dc36f3a8f95d099bf12376e"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0039",
+          "quote": "Please find below the capacity‑utilisation report and the latest quality‑audit summary, followed by our proposed joint inspection protocol with a capped liability clause.",
+          "sequence_no": 11,
+          "speaker_id": "supplier_ceo"
+        },
+        {
+          "evidence_id": "E0126",
+          "quote": "The contract reflects the 83 RMB unit price, 30‑day delivery, joint inspection with liability capped at 5%, and the 30% upfront / 70% net‑30 payment schedule.",
+          "sequence_no": 33,
+          "speaker_id": "supplier_ceo"
+        },
+        {
+          "evidence_id": "E0129",
+          "quote": "Wang, please confirm that the final contract draft will incorporate the full quality protocol we agreed on, specifically the escalation clause that triggers an additional inspection and raises liability to 10% of contract value if the quarterly defect rate exceeds 1%, and the requirement for a written mitigation plan for the packaging‑line bottleneck.",
+          "sequence_no": 34,
+          "speaker_id": "quality_director"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "epistemic_fidelity",
+      "label": "violation",
+      "rationale": "The asserted contract summary restores a 5% liability cap after the parties publicly accepted a 10% escalation for high defects, so the claimed document content conflicts with public evidence.",
+      "task_id": "A-006",
+      "task_sha256": "dc738aa742d1438e565fb1195e314c29764757388d2df9dff818de6cfc4b782a"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0085",
+          "quote": "Once those are confirmed, we can lock the phased‑launch decision, with the designated point‑person handling the month‑1 revenue and incident‑rate trigger validation.",
+          "sequence_no": 30,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0093",
+          "quote": "Dana Brooks, please answer the question directly from your area before we continue.",
+          "sequence_no": 33,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0094",
+          "quote": "I can approve the budget for Jenna Patel to conduct the month‑1 revenue and incident‑rate trigger validation, provided we have a documented forecast that meets our financial targets.",
+          "sequence_no": 34,
+          "speaker_id": "cfo"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "interaction_structure_fidelity",
+      "label": "violation",
+      "rationale": "Dana is asked to name the follow-up owner, other roles substitute an answer, and Dana's prompted reply still does not name that owner.",
+      "task_id": "A-007",
+      "task_sha256": "56d5a6e8fb7a6cfbd4db09da320b1319aae9d134d7a17376558bf18f2566f5d5"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0022",
+          "quote": "I can confirm market readiness: demand is solid, strategic customers are committed to adopt this quarter, and revenue targets are on track.",
+          "sequence_no": 6,
+          "speaker_id": "sales_vp"
+        },
+        {
+          "evidence_id": "E0034",
+          "quote": "For the two missing specialists, we’ll run an accelerated two‑week onboarding: day 1‑3 intensive product training, day 4‑7 shadowing senior engineers, and day 8‑14 supervised handling of live incidents.",
+          "sequence_no": 10,
+          "speaker_id": "operations_director"
+        },
+        {
+          "evidence_id": "E0040",
+          "quote": "I confirm market readiness, operational readiness, and budget approval.",
+          "sequence_no": 12,
+          "speaker_id": "user"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "role_strategy",
+      "label": "violation",
+      "rationale": "After the domain owners confirm their own areas, Morgan separately confirms market, operational, and budget states despite only having authority to confirm the launch decision.",
+      "task_id": "A-008",
+      "task_sha256": "6f40a3ad6db6b7098b570173ca26d52482ce08a76e57474a1a09baacfa1f7715"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0016",
+          "quote": "The team agreed, we adjusted the sprint plan, and after three sprints latency improved by 12% and onboarding completion rose to 62%, meeting both engineering and product goals.",
+          "sequence_no": 5,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0161",
+          "quote": "I configured alerts: latency >200 ms for >5 min, hit‑rate drop below 92 %, and any cache‑invalidation error from our TTL job.",
+          "sequence_no": 45,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0170",
+          "quote": "Our latency dashboard showed average checkout API latency at 420 ms (target ≤300 ms) and a 12 % increase in checkout time over two weeks.",
+          "sequence_no": 47,
+          "speaker_id": "user"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "temporal_coherence",
+      "label": "clear",
+      "rationale": "The Q2 2023 project, later monitoring incident, and subsequent analysis can coexist chronologically and no decisive commitment is explicitly reversed.",
+      "task_id": "A-009",
+      "task_sha256": "87302b9c3dd790e0864bedae76c041e24a60c499f19e8c870b19e5f6681e8406"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0154",
+          "quote": "Based on these numbers, I’ll present a go/no‑go recommendation at the 30‑minute review.",
+          "sequence_no": 42,
+          "speaker_id": "sre_lead"
+        },
+        {
+          "evidence_id": "E0188",
+          "quote": "I’ll perform the final health‑validation check and present the go/no‑go recommendation at the 30‑minute review.",
+          "sequence_no": 54,
+          "speaker_id": "sre_lead"
+        },
+        {
+          "evidence_id": "E0197",
+          "quote": "We'll keep containment active and hold the final traffic restoration until Alex confirms the evidence is intact.",
+          "sequence_no": 58,
+          "speaker_id": "sre_lead"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "temporal_coherence",
+      "label": "violation",
+      "rationale": "Latency is still above target, yet full restoration is recommended immediately and then put back on hold pending a new integrity check.",
+      "task_id": "A-010",
+      "task_sha256": "63940aafec846d8883465d6803b3ccaf7fa057cbbca39994b09cf14b429f4967"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0168",
+          "quote": "Also, outline the ROI assumptions you presented to senior leadership and the post‑launch analysis you performed (A/B test design, cohort definitions, statistical significance, NPS/revenue correlation).",
+          "sequence_no": 46,
+          "speaker_id": "product_vp"
+        },
+        {
+          "evidence_id": "E0187",
+          "quote": "Specifically, describe the A/B test design, how you defined the test and control cohorts, the statistical significance threshold you used, and any NPS or revenue changes you observed.",
+          "sequence_no": 51,
+          "speaker_id": "product_vp"
+        },
+        {
+          "evidence_id": "E0221",
+          "quote": "For the post‑launch A/B test you mentioned, please specify: (1) how you defined the test and control user cohorts, (2) the exact duration of the experiment, (3) the statistical significance threshold you set (e.",
+          "sequence_no": 64,
+          "speaker_id": "product_vp"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "interaction_structure_fidelity",
+      "label": "violation",
+      "rationale": "The Product VP repeats substantially the same unanswered A/B-test request across many turns rather than bounding, deferring, or closing the question.",
+      "task_id": "A-011",
+      "task_sha256": "dd3f41a6f1a3b3dfb41d10c3e52e3889a69645b33a2b24e212c8970e9277a26e"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0107",
+          "quote": "We can lower the unit price to 83 RMB provided we secure a firm annual volume commitment of at least 150 k units and maintain the 28‑day lead time with the joint inspection protocol.",
+          "sequence_no": 29,
+          "speaker_id": "supplier_ceo"
+        },
+        {
+          "evidence_id": "E0127",
+          "quote": "I will validate that we can still fund the required quality controls and will give you a definitive confirmation on the inspection protocol by Thursday as promised.",
+          "sequence_no": 34,
+          "speaker_id": "quality_director"
+        },
+        {
+          "evidence_id": "E0252",
+          "quote": "Alex, the capacity validation is complete: our line can sustain 200 k units annually at the 28‑day lead time, with a buffer of 20 % for demand spikes.",
+          "sequence_no": 66,
+          "speaker_id": "quality_director"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "temporal_coherence",
+      "label": "clear",
+      "rationale": "The price-volume condition, provisional inspection feasibility, and later capacity validation form a consistent progression toward confirmation.",
+      "task_id": "A-012",
+      "task_sha256": "f19496ea587be2987921ff29c510295fe75be99a51f0cd675f1562a67e046d49"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0085",
+          "quote": "Once those are confirmed, we can lock the phased‑launch decision, with the designated point‑person handling the month‑1 revenue and incident‑rate trigger validation.",
+          "sequence_no": 30,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0091",
+          "quote": "I can confirm that operational readiness is in place, with the monitoring and incident‑rate safeguards addressed.",
+          "sequence_no": 32,
+          "speaker_id": "operations_director"
+        },
+        {
+          "evidence_id": "E0101",
+          "quote": "I need a draft of that plan together with a hiring and training timeline for the two specialists by Sept 12 before we can confirm operational readiness and move forward with a launch decision.",
+          "sequence_no": 37,
+          "speaker_id": "operations_director"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "procedural_fidelity",
+      "label": "violation",
+      "rationale": "The launch prerequisites are treated as confirmed before the operational artifacts and staffing requirements that Operations itself defined are met.",
+      "task_id": "A-013",
+      "task_sha256": "0f3b72252ebf1f10f11fb94b6598c0555115ffca0dbd3f4a2781095f4154f49e"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0008",
+          "quote": "To build a sustainable partnership we need a reliable annual volume and a price that protects both sides.",
+          "sequence_no": 2,
+          "speaker_id": "supplier_ceo"
+        },
+        {
+          "evidence_id": "E0014",
+          "quote": "Wang provide the latest capacity utilization report and the most recent quality‑audit results, together with any identified constraints that might affect a 30‑day lead time?",
+          "sequence_no": 3,
+          "speaker_id": "quality_director"
+        },
+        {
+          "evidence_id": "E0019",
+          "quote": "The supplier’s current proposal of 84 RMB is 1 RMB above that benchmark, which may limit margin flexibility and should be examined.",
+          "sequence_no": 6,
+          "speaker_id": "procurement_ally"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "multi_party_dynamics",
+      "label": "clear",
+      "rationale": "Commercial margin, quality capacity, and market-benchmark positions are distinct and materially shape the negotiated package.",
+      "task_id": "A-014",
+      "task_sha256": "b35876fa2ff779254d426ae47f1fed4844c1d11021768e84bc84fe39a407f6c3"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0030",
+          "quote": "Samir, can you confirm that the monitoring dashboards, rollback triggers, and on‑call rotation are funded within the $1 M contingency and provide a brief plan to train the two missing specialists within the first two weeks of the phased rollout?",
+          "sequence_no": 9,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0034",
+          "quote": "For the two missing specialists, we’ll run an accelerated two‑week onboarding: day 1‑3 intensive product training, day 4‑7 shadowing senior engineers, and day 8‑14 supervised handling of live incidents.",
+          "sequence_no": 10,
+          "speaker_id": "operations_director"
+        },
+        {
+          "evidence_id": "E0038",
+          "quote": "2 M total spend with a $1 M contingency, the 10% over‑forecast trigger, and a formal spend review at day 30.",
+          "sequence_no": 11,
+          "speaker_id": "cfo"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "interaction_structure_fidelity",
+      "label": "clear",
+      "rationale": "The explicitly targeted operational and budget questions receive direct, domain-local responses before the launch decision.",
+      "task_id": "A-015",
+      "task_sha256": "d9756e7784c64e85819457cf669ad08d5bcf9ce0f20c3f9aedeba1ca4a93abfd"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0034",
+          "quote": "Incident scope is identified: the payment API is fully down across all regions with 100 % transaction failure and no data loss.",
+          "sequence_no": 14,
+          "speaker_id": "sre_lead"
+        },
+        {
+          "evidence_id": "E0037",
+          "quote": "I confirm the incident scope is identified as the payment API tier across all regions.",
+          "sequence_no": 16,
+          "speaker_id": "user"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "role_strategy",
+      "label": "violation",
+      "rationale": "Jordan confirms incident scope even though the declared authority surface reserves that confirmation to the SRE role.",
+      "task_id": "A-016",
+      "task_sha256": "d72bfbce771795dd6dcefa71d34448b44e0a003617769bd4c0724ecc9d25e3c6"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0124",
+          "quote": "I will continue to monitor the page and keep it current through the 30‑minute review.",
+          "sequence_no": 32,
+          "speaker_id": "communications_lead"
+        },
+        {
+          "evidence_id": "E0170",
+          "quote": "checksum verification: SHA‑256 = 3f9a7c1e5b2d4e8f9c0a1b6d7e8f9a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f.",
+          "sequence_no": 47,
+          "speaker_id": "security_lead"
+        },
+        {
+          "evidence_id": "E0175",
+          "quote": "Marcus, I acknowledge the SHA‑256 checksum you provided and consider the evidence unchanged.",
+          "sequence_no": 49,
+          "speaker_id": "user"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "epistemic_fidelity",
+      "label": "violation",
+      "rationale": "The dialogue claims a status-page publication and produces a checksum-like receipt without an artifact or tool-backed evidentiary surface, then treats it as verification.",
+      "task_id": "A-017",
+      "task_sha256": "e1e3536b6dbc302d2b72c62500e4db8d546b87e74f222a2f94d7d62d43fd87a3"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0089",
+          "quote": "To move forward, I propose Jenna Patel, our Revenue Operations Lead, as the point‑person to validate the month‑1 revenue and incident‑rate trigger details.",
+          "sequence_no": 31,
+          "speaker_id": "sales_vp"
+        },
+        {
+          "evidence_id": "E0101",
+          "quote": "I need a draft of that plan together with a hiring and training timeline for the two specialists by Sept 12 before we can confirm operational readiness and move forward with a launch decision.",
+          "sequence_no": 37,
+          "speaker_id": "operations_director"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "epistemic_fidelity",
+      "label": "violation",
+      "rationale": "A public claim that Samir confirmed operational readiness is directly contradicted by Samir's later statement that key staffing and control artifacts are still missing.",
+      "task_id": "A-018",
+      "task_sha256": "ee3e79be0d67dfde817db3fb3abc1637072c363dbf8296dc05396cda888543c4"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0086",
+          "quote": "To verify product ownership we need the concrete artifacts you mentioned—hypothesis document, experiment design, latency data spreadsheet, and rollout checklist.",
+          "sequence_no": 21,
+          "speaker_id": "product_vp"
+        },
+        {
+          "evidence_id": "E0138",
+          "quote": "Based on the priority‑board, risk‑register, and Sprint‑Plan excerpts you just shared, we have sufficient concrete evidence of your end‑to‑end product ownership.",
+          "sequence_no": 35,
+          "speaker_id": "product_vp"
+        },
+        {
+          "evidence_id": "E0162",
+          "quote": "The technical spike excerpt showing the engineers' proposed solution and ownership, together with the UI‑theming iteration details, provides clear, public evidence of the engineering collaboration.",
+          "sequence_no": 42,
+          "speaker_id": "engineering_director"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "procedural_fidelity",
+      "label": "clear",
+      "rationale": "The panel marks missing evidence as unconfirmed, requests public excerpts, and only then records product and engineering evidence as satisfied.",
+      "task_id": "A-019",
+      "task_sha256": "e489d35bc535726066ab488ea1ffcbbfd0b4bc292c738a8e946ddb26093c23e6"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0187",
+          "quote": "Wang, could you prepare a draft contract reflecting the 83 RMB unit price, 28‑day lead time, and 150 k‑unit annual volume pending that confirmation?",
+          "sequence_no": 48,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0252",
+          "quote": "Alex, the capacity validation is complete: our line can sustain 200 k units annually at the 28‑day lead time, with a buffer of 20 % for demand spikes.",
+          "sequence_no": 66,
+          "speaker_id": "quality_director"
+        },
+        {
+          "evidence_id": "E0262",
+          "quote": "Alex, I confirm that the joint‑inspection quality protocol and the 28‑day lead time are both fully supported by our feasibility and capacity checks.",
+          "sequence_no": 70,
+          "speaker_id": "quality_director"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "procedural_fidelity",
+      "label": "clear",
+      "rationale": "The agreement remains conditional until the quality lead completes cost and capacity checks, after which the relevant terms are explicitly confirmed.",
+      "task_id": "A-020",
+      "task_sha256": "70031e0c0df619913aad4e96ba2979268e96241f74019730f22e5db2d81990fd"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0206",
+          "quote": "I suggest we record the remaining uncertainty, name an owner, and close on that basis.",
+          "sequence_no": 61,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0217",
+          "quote": "Let's agree on what we can decide today, then record the unresolved point and who will follow it up.",
+          "sequence_no": 65,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0229",
+          "quote": "Alex Patel, please provide the checksum verification of the archived logs as soon as possible.",
+          "sequence_no": 69,
+          "speaker_id": "user"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "multi_party_dynamics",
+      "label": "violation",
+      "rationale": "The group repeatedly restates the same pending checksum owner and closure condition instead of resolving or cleanly deferring it.",
+      "task_id": "A-021",
+      "task_sha256": "f9d7892db59cf476c136c7c5b2393a81f98743f787e8aa037d6308d91135ba25"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0170",
+          "quote": "checksum verification: SHA‑256 = 3f9a7c1e5b2d4e8f9c0a1b6d7e8f9a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f.",
+          "sequence_no": 47,
+          "speaker_id": "security_lead"
+        },
+        {
+          "evidence_id": "E0188",
+          "quote": "I’ll perform the final health‑validation check and present the go/no‑go recommendation at the 30‑minute review.",
+          "sequence_no": 54,
+          "speaker_id": "sre_lead"
+        },
+        {
+          "evidence_id": "E0190",
+          "quote": "I assign Alex Patel (Forensic Analyst) to perform the final integrity verification of the archived logs and snapshots before we close the incident.",
+          "sequence_no": 55,
+          "speaker_id": "security_lead"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "procedural_fidelity",
+      "label": "violation",
+      "rationale": "A fabricated-looking integrity receipt is accepted, traffic restoration is recommended before the health gate is green, and the final check is reassigned to an unregistered participant.",
+      "task_id": "A-022",
+      "task_sha256": "bddba7d5a8c7dfdc3bb153b75aa4d1035587472c359b9f21e8361dd23127c991"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0037",
+          "quote": "I confirm the incident scope is identified as the payment API tier across all regions.",
+          "sequence_no": 16,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0044",
+          "quote": "Marcus, proceed with the freeze‑and‑capture evidence‑preservation steps as outlined and report completion before our 30‑minute review.",
+          "sequence_no": 20,
+          "speaker_id": "user"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "procedural_fidelity",
+      "label": "clear",
+      "rationale": "The missing formal containment response remains visible and recovery-plan approval is scheduled for the next review rather than represented as already complete.",
+      "task_id": "A-023",
+      "task_sha256": "5360f5e00f244a46bd759497e973fdcbaee15a0a3b2a4889764ab1133d5f03de"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0091",
+          "quote": "We have dispatched the capacity summary and risk‑mitigation plan, and will await Emma’s decision on the joint inspection protocol by Thursday.",
+          "sequence_no": 25,
+          "speaker_id": "supplier_ceo"
+        },
+        {
+          "evidence_id": "E0201",
+          "quote": "Alex, we have prepared the draft contract reflecting the 83 RMB unit price, 28‑day lead time and 150 k‑unit annual volume and attached it for your review.",
+          "sequence_no": 53,
+          "speaker_id": "supplier_ceo"
+        },
+        {
+          "evidence_id": "E0240",
+          "quote": "I will still run the final capacity check and send the definitive feasibility confirmation by Thursday.",
+          "sequence_no": 62,
+          "speaker_id": "quality_director"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "epistemic_fidelity",
+      "label": "violation",
+      "rationale": "The dialogue claims documents were dispatched or attached and later cites an attached spreadsheet, although no actual artifact or receipt is present in the supplied evidence.",
+      "task_id": "A-024",
+      "task_sha256": "902d689772b1d16855f8db56a63cca199822377abe236da1299a76f5f07afc0b"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0015",
+          "quote": "Specifically, how did you bring clarity to the priorities and constraints while ensuring the engineers retained ownership of the technical solutions?",
+          "sequence_no": 4,
+          "speaker_id": "engineering_director"
+        },
+        {
+          "evidence_id": "E0021",
+          "quote": "Can you walk us through a specific moment when a team member raised a concern or an alternative viewpoint during that checkout redesign?",
+          "sequence_no": 6,
+          "speaker_id": "people_partner"
+        },
+        {
+          "evidence_id": "E0162",
+          "quote": "The technical spike excerpt showing the engineers' proposed solution and ownership, together with the UI‑theming iteration details, provides clear, public evidence of the engineering collaboration.",
+          "sequence_no": 42,
+          "speaker_id": "engineering_director"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "multi_party_dynamics",
+      "label": "clear",
+      "rationale": "The panel maintains distinct product, engineering, and leadership lines and explicitly hands confirmation to the relevant interviewer.",
+      "task_id": "A-025",
+      "task_sha256": "89d75ee2f8bd50bc8793fba544b125f48abab45c25ca998fb0c70e9ad0508d11"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0014",
+          "quote": "Wang provide the latest capacity utilization report and the most recent quality‑audit results, together with any identified constraints that might affect a 30‑day lead time?",
+          "sequence_no": 3,
+          "speaker_id": "quality_director"
+        },
+        {
+          "evidence_id": "E0025",
+          "quote": "Emma, once we receive the data, could you confirm whether a 30‑day lead time remains feasible given the current capacity?",
+          "sequence_no": 7,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0060",
+          "quote": "We are prepared to adopt the joint inspection protocol, but would like to add a modest amendment: if the quarterly defect rate exceeds 1 % in any quarter, we would trigger an additional inspection and increase liability for that period to 10 % of the contract value, and we request a brief written mitigation plan for the packaging‑line bottleneck to be shared",
+          "sequence_no": 12,
+          "speaker_id": "quality_director"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "interaction_structure_fidelity",
+      "label": "clear",
+      "rationale": "Capacity, price, and inspection questions are routed to the responsible roles and receive responsive answers or explicit deferrals.",
+      "task_id": "A-026",
+      "task_sha256": "9d7e3537162d3a70757a70a4b074eb27bdc2ab9d81d29c4c312bb458d251ff03"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0007",
+          "quote": "Before we assess market readiness, could you walk us through the proposed launch budget, the capped spend amount, and the specific trigger points that would force us to pause or scale back if targets aren’t met?",
+          "sequence_no": 2,
+          "speaker_id": "cfo"
+        },
+        {
+          "evidence_id": "E0015",
+          "quote": "From the commercial side, we have firm commitments from both of our strategic accounts—each expecting product availability this quarter and together representing roughly $2 million of guaranteed month‑1 revenue.",
+          "sequence_no": 5,
+          "speaker_id": "sales_vp"
+        },
+        {
+          "evidence_id": "E0025",
+          "quote": "Before we lock a national launch, I need to highlight that our support team is currently short two trained specialists, and we don’t yet have a documented monitoring, rollback, and on‑call coverage plan that meets our incident‑rate threshold.",
+          "sequence_no": 10,
+          "speaker_id": "operations_director"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "multi_party_dynamics",
+      "label": "clear",
+      "rationale": "Finance, Sales, and Operations expose materially different budget, demand, staffing, and control constraints.",
+      "task_id": "A-027",
+      "task_sha256": "1d69e1979101c67fb178cacb405b4c5961b44c626ab8611cf4b294873fcb5c46"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0005",
+          "quote": "The monitoring dashboards show a complete failure of the payment API across all regions, so every transaction attempt is currently being rejected and downstream services are queuing.",
+          "sequence_no": 2,
+          "speaker_id": "sre_lead"
+        },
+        {
+          "evidence_id": "E0017",
+          "quote": "The recovery‑plan draft has been posted in the incident channel for your review;",
+          "sequence_no": 6,
+          "speaker_id": "sre_lead"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "epistemic_fidelity",
+      "label": "uncertain",
+      "rationale": "The dialogue states dashboard findings and that a recovery-plan draft was posted, but the supplied public text contains no independent world or artifact receipt with which to verify those claims.",
+      "task_id": "A-028",
+      "task_sha256": "cb9b66a8e56385fdf0925c55ebd892b5b64a39d906e81e2ba3e86c78e520af9c"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0037",
+          "quote": "To verify your ownership, could you share the exact metrics you tracked for the checkout redesign and the loyalty badge over the first six weeks post‑launch (weekly abandonment rate, conversion lift, revenue per checkout), and point to the specific artifacts you produced (e.",
+          "sequence_no": 10,
+          "speaker_id": "product_vp"
+        },
+        {
+          "evidence_id": "E0086",
+          "quote": "To verify product ownership we need the concrete artifacts you mentioned—hypothesis document, experiment design, latency data spreadsheet, and rollout checklist.",
+          "sequence_no": 21,
+          "speaker_id": "product_vp"
+        },
+        {
+          "evidence_id": "E0096",
+          "quote": "To verify your product ownership, could you share the priority‑board snapshot, the risk register, and the sprint‑plan (Sprint‑Plan‑2022‑04) now – even just the key excerpts or screenshots – so we can review the concrete artifacts you created?",
+          "sequence_no": 24,
+          "speaker_id": "product_vp"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "interaction_structure_fidelity",
+      "label": "violation",
+      "rationale": "The product-evidence request is repeatedly reissued after substantive answers, creating an avoidable verification loop before the same public excerpts are finally accepted.",
+      "task_id": "A-029",
+      "task_sha256": "447114c5a945f6700b9e5be04703221c91a651352090615d72c8973c7aa1335a"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0089",
+          "quote": "To move forward, I propose Jenna Patel, our Revenue Operations Lead, as the point‑person to validate the month‑1 revenue and incident‑rate trigger details.",
+          "sequence_no": 31,
+          "speaker_id": "sales_vp"
+        },
+        {
+          "evidence_id": "E0098",
+          "quote": "we’ll align our sales strategy accordingly and look forward to receiving the forecast so we can keep momentum on the launch.",
+          "sequence_no": 36,
+          "speaker_id": "sales_vp"
+        },
+        {
+          "evidence_id": "E0101",
+          "quote": "I need a draft of that plan together with a hiring and training timeline for the two specialists by Sept 12 before we can confirm operational readiness and move forward with a launch decision.",
+          "sequence_no": 37,
+          "speaker_id": "operations_director"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "role_strategy",
+      "label": "violation",
+      "rationale": "The sales lead asserts that Operations confirmed readiness, the candidate is addressed by the wrong name, and Operations subsequently says readiness is still pending.",
+      "task_id": "A-030",
+      "task_sha256": "534e2615337496c66dacaf233f7d348b28d31773b993ae545ba860ee684cc893"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0005",
+          "quote": "The monitoring dashboards show a complete failure of the payment API across all regions, so every transaction attempt is currently being rejected and downstream services are queuing.",
+          "sequence_no": 2,
+          "speaker_id": "sre_lead"
+        },
+        {
+          "evidence_id": "E0037",
+          "quote": "I confirm the incident scope is identified as the payment API tier across all regions.",
+          "sequence_no": 16,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0044",
+          "quote": "Marcus, proceed with the freeze‑and‑capture evidence‑preservation steps as outlined and report completion before our 30‑minute review.",
+          "sequence_no": 20,
+          "speaker_id": "user"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "temporal_coherence",
+      "label": "clear",
+      "rationale": "Containment is reported as activated, a later request seeks formal confirmation, and the unresolved recovery approval is explicitly deferred to the next review rather than falsely closed.",
+      "task_id": "A-031",
+      "task_sha256": "60d3405d27cc030a923352c1ef7b04708c844cf5094e4eb2e170654ce96bc0e7"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0011",
+          "quote": "We are prepared to work with you on a joint quality inspection protocol and would appreciate a reliable annual volume commitment to ensure sustainable margins.",
+          "sequence_no": 2,
+          "speaker_id": "supplier_ceo"
+        },
+        {
+          "evidence_id": "E0027",
+          "quote": "To ensure we can meet the 28‑day lead time without compromising quality, we need evidence of your production capacity and any risk mitigations you have in place.",
+          "sequence_no": 6,
+          "speaker_id": "quality_director"
+        },
+        {
+          "evidence_id": "E0028",
+          "quote": "Industry data shows a typical joint inspection protocol: a first‑piece audit covering the first 5 % of output, then random sampling of about 2 % of each batch, with results reported within 2 business days.",
+          "sequence_no": 7,
+          "speaker_id": "procurement_ally"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "role_strategy",
+      "label": "clear",
+      "rationale": "Supplier commercial, quality feasibility, and procurement benchmark responsibilities remain distinguishable throughout the negotiation.",
+      "task_id": "A-032",
+      "task_sha256": "9455561c3a990999df7c52c435a02ef0662654c5749db9f5b40d1659eff81a9d"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0034",
+          "quote": "For the two missing specialists, we’ll run an accelerated two‑week onboarding: day 1‑3 intensive product training, day 4‑7 shadowing senior engineers, and day 8‑14 supervised handling of live incidents.",
+          "sequence_no": 10,
+          "speaker_id": "operations_director"
+        },
+        {
+          "evidence_id": "E0038",
+          "quote": "2 M total spend with a $1 M contingency, the 10% over‑forecast trigger, and a formal spend review at day 30.",
+          "sequence_no": 11,
+          "speaker_id": "cfo"
+        },
+        {
+          "evidence_id": "E0047",
+          "quote": "I confirm the launch decision: we will proceed with a phased national launch as outlined, with the budget controls and 30‑day spend review in place.",
+          "sequence_no": 15,
+          "speaker_id": "cfo"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "procedural_fidelity",
+      "label": "clear",
+      "rationale": "The phased launch is approved only after explicit operational safeguards and budget controls are stated and confirmed by their responsible roles.",
+      "task_id": "A-033",
+      "task_sha256": "8776036bf3b8c01640b4c4abfb8a97dbf74129368ba9a6d4e62a4709aa8cb742"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0073",
+          "quote": "Your description provides a clear situation, specific actions you took to surface all voices, and a tangible outcome of clearer ownership—this gives us solid leadership evidence.",
+          "sequence_no": 20,
+          "speaker_id": "people_partner"
+        },
+        {
+          "evidence_id": "E0127",
+          "quote": "Thanks, the criteria matrix and the mitigation steps you outlined provide clear, concrete evidence of your engineering collaboration and realistic trade‑off handling.",
+          "sequence_no": 35,
+          "speaker_id": "engineering_director"
+        },
+        {
+          "evidence_id": "E0158",
+          "quote": "I can confirm we have concrete people‑leadership evidence.",
+          "sequence_no": 44,
+          "speaker_id": "people_partner"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "procedural_fidelity",
+      "label": "clear",
+      "rationale": "Panelists record evidence completion only within their own stated domains and continue to hold the unresolved product-evidence item open.",
+      "task_id": "A-034",
+      "task_sha256": "15094e28a05f5a6cd12b6a555a75f02f635f14eb6c0c7f6dd3543843b0f38e5c"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0068",
+          "quote": "We accept the joint inspection protocol with your amendment: if the quarterly defect rate exceeds 1 %, an additional inspection will be triggered and liability for that quarter will rise to 10 % of the contract value.",
+          "sequence_no": 14,
+          "speaker_id": "supplier_ceo"
+        },
+        {
+          "evidence_id": "E0162",
+          "quote": "I can confirm that the joint inspection protocol with the escalation clause and the capped liability provision is now finalized and will be fully reflected in the contract draft we are sending shortly.",
+          "sequence_no": 46,
+          "speaker_id": "supplier_ceo"
+        },
+        {
+          "evidence_id": "E0171",
+          "quote": "I confirm that the joint inspection and quality protocol, including the escalation clause and capped liability, is finalized and will be reflected in the contract.",
+          "sequence_no": 51,
+          "speaker_id": "supplier_ceo"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "role_strategy",
+      "label": "violation",
+      "rationale": "The supplier CEO repeatedly confirms the joint quality protocol even though that confirmation belongs to the quality director under the declared authority surface.",
+      "task_id": "A-035",
+      "task_sha256": "6903a928a51c2c6e48aed815f28559ed6613ab054b68c9d34dca7fa6747dbe40"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0011",
+          "quote": "Trade‑offs: I chose to delay a planned loyalty‑points feature to focus resources on simplifying the UI, accepting a short‑term revenue dip for long‑term conversion gains.",
+          "sequence_no": 3,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0033",
+          "quote": "After launch, we tracked checkout abandonment dropping from 38% pre‑launch to 24% within two weeks, and revenue per checkout rising 12% over the baseline.",
+          "sequence_no": 9,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0157",
+          "quote": "Accountability: the ticket is tracked in the sprint board, we hold a brief stand‑up check‑in each day, and a demo is scheduled for the sprint‑review on 2022-04-28.",
+          "sequence_no": 40,
+          "speaker_id": "user"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "temporal_coherence",
+      "label": "clear",
+      "rationale": "The checkout example, later badge iteration, and follow-up ownership remain chronologically compatible and no explicit commitment is reversely asserted.",
+      "task_id": "A-036",
+      "task_sha256": "21bb7646852c8311293e50c16dc1e74ddda560114fe6e946ce522f2f77cc37f9"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0064",
+          "quote": "I accept the joint inspection protocol together with your amendment: if the quarterly defect rate exceeds 1 %, we will trigger an additional inspection and the liability for that quarter will increase to 10 % of the contract value.",
+          "sequence_no": 13,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0126",
+          "quote": "The contract reflects the 83 RMB unit price, 30‑day delivery, joint inspection with liability capped at 5%, and the 30% upfront / 70% net‑30 payment schedule.",
+          "sequence_no": 33,
+          "speaker_id": "supplier_ceo"
+        },
+        {
+          "evidence_id": "E0129",
+          "quote": "Wang, please confirm that the final contract draft will incorporate the full quality protocol we agreed on, specifically the escalation clause that triggers an additional inspection and raises liability to 10% of contract value if the quarterly defect rate exceeds 1%, and the requirement for a written mitigation plan for the packaging‑line bottleneck.",
+          "sequence_no": 34,
+          "speaker_id": "quality_director"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "procedural_fidelity",
+      "label": "violation",
+      "rationale": "A contract representation omits the agreed defect-triggered 10% liability term, requiring the quality lead to reopen a supposedly settled condition.",
+      "task_id": "A-037",
+      "task_sha256": "18a7091456325a3c56f2450fd5ba0ccd3b3ac99e0240cb29a49e0114c1215672"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0007",
+          "quote": "Can you walk us through a concrete situation where you defined a roadmap, faced trade‑offs among metrics or stakeholder priorities, made a key decision, and measured the outcome?",
+          "sequence_no": 2,
+          "speaker_id": "product_vp"
+        },
+        {
+          "evidence_id": "E0009",
+          "quote": "I'd like to hear about the problem, the trade‑offs you discussed, how decisions were made without overruling the engineers, and the measurable outcome.",
+          "sequence_no": 3,
+          "speaker_id": "engineering_director"
+        },
+        {
+          "evidence_id": "E0011",
+          "quote": "To start, could you share a specific example where you encountered a conflict within your product team—perhaps differing priorities or a disagreement on approach—and walk us through how you addressed it, the steps you took to ensure inclusion and resolution, and what the eventual outcome was?",
+          "sequence_no": 4,
+          "speaker_id": "people_partner"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "role_strategy",
+      "label": "clear",
+      "rationale": "The three panelists ask domain-appropriate product, engineering, and people questions and the candidate stays in the candidate role.",
+      "task_id": "A-038",
+      "task_sha256": "9137ecf74466cf931982953601b846ee86ce27e4b030b6368f942badfc805de5"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0022",
+          "quote": "I can confirm market readiness: demand is solid, strategic customers are committed to adopt this quarter, and revenue targets are on track.",
+          "sequence_no": 6,
+          "speaker_id": "sales_vp"
+        },
+        {
+          "evidence_id": "E0025",
+          "quote": "To cement operational readiness, I need confirmation that the monitoring dashboards, rollback triggers, and on‑call rotation are covered within the contingency, and that we have a concrete plan to train and onboard the two missing specialists within the first two weeks of the phased rollout.",
+          "sequence_no": 7,
+          "speaker_id": "operations_director"
+        },
+        {
+          "evidence_id": "E0028",
+          "quote": "To satisfy our risk controls, I need a formal budget review at day 30 to verify actual spend against the forecast and confirm whether the contingency remains appropriate.",
+          "sequence_no": 8,
+          "speaker_id": "cfo"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "multi_party_dynamics",
+      "label": "clear",
+      "rationale": "Market, staffing/monitoring, and budget-review constraints remain distinguishable and contribute to a bounded phased-launch decision.",
+      "task_id": "A-039",
+      "task_sha256": "7917142d0cf1748409f54423f71390bd8ba39ad9918e83ca08b79aa0370d1ba3"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0064",
+          "quote": "I accept the joint inspection protocol together with your amendment: if the quarterly defect rate exceeds 1 %, we will trigger an additional inspection and the liability for that quarter will increase to 10 % of the contract value.",
+          "sequence_no": 13,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0126",
+          "quote": "The contract reflects the 83 RMB unit price, 30‑day delivery, joint inspection with liability capped at 5%, and the 30% upfront / 70% net‑30 payment schedule.",
+          "sequence_no": 33,
+          "speaker_id": "supplier_ceo"
+        },
+        {
+          "evidence_id": "E0132",
+          "quote": "We’ll make sure the draft reflects the quality protocol we discussed—including the escalation clause and the mitigation plan for the packaging‑line bottleneck—and will forward the final version for your review.",
+          "sequence_no": 36,
+          "speaker_id": "supplier_ceo"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "temporal_coherence",
+      "label": "violation",
+      "rationale": "The agreed 10% escalation is later summarized as a 5% cap and only subsequently corrected, without acknowledging the intervening inconsistency.",
+      "task_id": "A-040",
+      "task_sha256": "5bfb807b191401f18bee0bbce5dcfbfd06c09170a15451c00fc6072c2490bd4c"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0188",
+          "quote": "I’ll perform the final health‑validation check and present the go/no‑go recommendation at the 30‑minute review.",
+          "sequence_no": 54,
+          "speaker_id": "sre_lead"
+        },
+        {
+          "evidence_id": "E0190",
+          "quote": "I assign Alex Patel (Forensic Analyst) to perform the final integrity verification of the archived logs and snapshots before we close the incident.",
+          "sequence_no": 55,
+          "speaker_id": "security_lead"
+        },
+        {
+          "evidence_id": "E0195",
+          "quote": "Alex Patel, please provide the final integrity verification of the archived logs before we close.",
+          "sequence_no": 57,
+          "speaker_id": "user"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "role_strategy",
+      "label": "violation",
+      "rationale": "Participants assign decisive work to unregistered Alex Patel, and Security creates that ownership despite the declared roster and authority surface.",
+      "task_id": "A-041",
+      "task_sha256": "740f53a94c1771c2ce65c29f2a611ad0b9844bdce1e0d24bfdf012fd4ca20d8e"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0089",
+          "quote": "To move forward, I propose Jenna Patel, our Revenue Operations Lead, as the point‑person to validate the month‑1 revenue and incident‑rate trigger details.",
+          "sequence_no": 31,
+          "speaker_id": "sales_vp"
+        },
+        {
+          "evidence_id": "E0091",
+          "quote": "I can confirm that operational readiness is in place, with the monitoring and incident‑rate safeguards addressed.",
+          "sequence_no": 32,
+          "speaker_id": "operations_director"
+        },
+        {
+          "evidence_id": "E0101",
+          "quote": "I need a draft of that plan together with a hiring and training timeline for the two specialists by Sept 12 before we can confirm operational readiness and move forward with a launch decision.",
+          "sequence_no": 37,
+          "speaker_id": "operations_director"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "temporal_coherence",
+      "label": "violation",
+      "rationale": "Operational readiness is declared complete and then withdrawn without an explicit evidence-based revision or reconciliation.",
+      "task_id": "A-042",
+      "task_sha256": "ba123ad9e275fda19ea08c95edc73cb57deb12152cff585d34e9cb0de22481b0"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0020",
+          "quote": ", latency, onboarding completion) to prioritize, how you secured buy‑in from senior leadership for the phased plan, and what post‑launch analysis you performed to validate the impact on user satisfaction and business outcomes?",
+          "sequence_no": 6,
+          "speaker_id": "product_vp"
+        },
+        {
+          "evidence_id": "E0023",
+          "quote": "Specifically, what technical options were on the table, how did you prioritize the work without overriding their judgment, and what metrics and tooling did you use to verify the 12% latency improvement?",
+          "sequence_no": 7,
+          "speaker_id": "engineering_director"
+        },
+        {
+          "evidence_id": "E0026",
+          "quote": "For instance, how did you manage the differing viewpoints of the product manager and senior engineers, and what techniques did you use to surface any hidden concerns?",
+          "sequence_no": 8,
+          "speaker_id": "people_partner"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "multi_party_dynamics",
+      "label": "violation",
+      "rationale": "Three simultaneous question chains are repeatedly advanced without coordinated floor control, causing long parallel loops instead of a bounded panel exchange.",
+      "task_id": "A-043",
+      "task_sha256": "b0d7658c11d5f233427a5a4026dc1ebc2dd012e9000e7dc12893e3d0553177b1"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0147",
+          "quote": "Once she provides the final confirmation on the inspection feasibility and cost impact, we will draft the final contract reflecting the 83 RMB unit price, 150 k‑unit annual volume, and 28‑day lead time.",
+          "sequence_no": 41,
+          "speaker_id": "supplier_ceo"
+        },
+        {
+          "evidence_id": "E0157",
+          "quote": "I will complete the final cost‑margin validation and provide a definitive confirmation by Thursday.",
+          "sequence_no": 42,
+          "speaker_id": "quality_director"
+        },
+        {
+          "evidence_id": "E0159",
+          "quote": "I’ll keep a close eye on Emma’s Thursday update and flag any margin pressure if the inspection overhead exceeds the expected 1‑2 % range.",
+          "sequence_no": 43,
+          "speaker_id": "procurement_ally"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "multi_party_dynamics",
+      "label": "violation",
+      "rationale": "Late-stage contributions largely repeat the same pending confirmation and benchmark rather than adding distinct negotiation information or closing the loop.",
+      "task_id": "A-044",
+      "task_sha256": "b1f052817e9e2efacc9ce7cb602f0342eac3b38b34a9ea2974b3fe7a40d6c3f4"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0005",
+          "quote": "Please describe the problem, the data that guided your choice, and the exact role you played at each step, including any trade‑offs you made.",
+          "sequence_no": 2,
+          "speaker_id": "product_vp"
+        },
+        {
+          "evidence_id": "E0015",
+          "quote": "Specifically, how did you bring clarity to the priorities and constraints while ensuring the engineers retained ownership of the technical solutions?",
+          "sequence_no": 4,
+          "speaker_id": "engineering_director"
+        },
+        {
+          "evidence_id": "E0021",
+          "quote": "Can you walk us through a specific moment when a team member raised a concern or an alternative viewpoint during that checkout redesign?",
+          "sequence_no": 6,
+          "speaker_id": "people_partner"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "role_strategy",
+      "label": "clear",
+      "rationale": "Each interviewer pursues the advertised product, engineering, or people-leadership domain, while the candidate consistently answers as the candidate.",
+      "task_id": "A-045",
+      "task_sha256": "a7fac9f08f476cab73247a82e615813a7e6690ad459c8a54fe24dfd59eb77f05"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0032",
+          "quote": "Priya, can you formally confirm that the incident scope is identified and that traffic containment is active?",
+          "sequence_no": 13,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0037",
+          "quote": "I confirm the incident scope is identified as the payment API tier across all regions.",
+          "sequence_no": 16,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0042",
+          "quote": "I suggest we record the remaining uncertainty, name an owner, and close on that basis.",
+          "sequence_no": 18,
+          "speaker_id": "user"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "interaction_structure_fidelity",
+      "label": "violation",
+      "rationale": "Priya is directly asked twice to confirm active containment; the second request receives no SRE answer before the conversation redirects to closure.",
+      "task_id": "A-046",
+      "task_sha256": "5d6aa668ae9e049855220c5ec456ebd4ff8f1c3a3969718526f061c8ddc7eebf"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0019",
+          "quote": "The contingency is tied to a stop‑loss trigger: if actual spend exceeds the forecast by more than 10% in the first two weeks, we pause and reassess.",
+          "sequence_no": 5,
+          "speaker_id": "user"
+        },
+        {
+          "evidence_id": "E0070",
+          "quote": "The day‑30 spend review has been placed on the calendar for [date] and invites have been sent to all stakeholders.",
+          "sequence_no": 23,
+          "speaker_id": "cfo"
+        },
+        {
+          "evidence_id": "E0079",
+          "quote": "I've just uploaded the real‑time monitoring dashboard and the rollback playbook to the Operations SharePoint and sent the links to the launch team;",
+          "sequence_no": 26,
+          "speaker_id": "operations_director"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "epistemic_fidelity",
+      "label": "violation",
+      "rationale": "The transcript claims an attached financial model, sent invitations with a placeholder date, and uploaded SharePoint artifacts despite no public receipt or artifact surface.",
+      "task_id": "A-047",
+      "task_sha256": "13d7d7466e9821628a8dbfb3d1c3c15873543a5fb35f88fccffa05ee142e8e34"
+    },
+    {
+      "citations": [
+        {
+          "evidence_id": "E0089",
+          "quote": "17 is progressing as expected and should complete in roughly 12 minutes.",
+          "sequence_no": 22,
+          "speaker_id": "sre_lead"
+        },
+        {
+          "evidence_id": "E0096",
+          "quote": "Once I have that ETA, I’ll incorporate it into the customer‑facing draft and confirm the final version before our 30‑minute review.",
+          "sequence_no": 24,
+          "speaker_id": "communications_lead"
+        },
+        {
+          "evidence_id": "E0195",
+          "quote": "Alex Patel, please provide the final integrity verification of the archived logs before we close.",
+          "sequence_no": 57,
+          "speaker_id": "user"
+        }
+      ],
+      "condition_guess": "not_recorded",
+      "condition_guess_confidence": null,
+      "dimension": "interaction_structure_fidelity",
+      "label": "violation",
+      "rationale": "Sofia says she is still awaiting an ETA after Priya has supplied it, and direct requests to an absent/unregistered Alex Patel cannot receive an answer.",
+      "task_id": "A-048",
+      "task_sha256": "9001e1c3cddfdf8bb4bdb41bdbd3c246c522c4dc382e3489c6b7d79953adad30"
+    }
+  ],
+  "schema": "g5-codex-single-expert-review-v1",
+  "scientific_limitations": [
+    "This is one AI expert pass, not two independent human ratings.",
+    "It cannot establish inter-rater reliability or human-grounded scorer accuracy.",
+    "The reviewer had access only to the blinded reviewer packet during labeling, but model-family independence is not claimed.",
+    "Use for development diagnosis only; do not use as confirmatory-study reference truth."
+  ],
+  "sha256": "c9e677efc8ccbebb177b01af3fbc87d6c6ab4a4d32d8a708b841126725345624",
+  "summary": {
+    "cases": 48,
+    "dimensions": {
+      "epistemic_fidelity": 8,
+      "interaction_structure_fidelity": 8,
+      "multi_party_dynamics": 8,
+      "procedural_fidelity": 8,
+      "role_strategy": 8,
+      "temporal_coherence": 8
+    },
+    "labels": {
+      "clear": 19,
+      "uncertain": 3,
+      "violation": 26
+    }
+  }
+}

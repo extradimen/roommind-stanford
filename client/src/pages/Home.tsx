@@ -36,6 +36,14 @@ export default function Home() {
           <span className="system-banner-btn">{t.home.systemBannerBtn} →</span>
         </Link>
 
+        <Link to="/batch-experiments" className="system-banner batch-banner">
+          <div className="system-banner-text">
+            <strong>Batch Experiments</strong>
+            <span>Run RoomMind and baseline comparisons in the background and export one analysis table.</span>
+          </div>
+          <span className="system-banner-btn">Open →</span>
+        </Link>
+
         {error && <div className="error-banner">{error}</div>}
 
         <div className="scenario-grid">
@@ -57,7 +65,13 @@ export default function Home() {
               <h2>{title}</h2>
               <p>{description}</p>
               <Link to={`/play/${s.id}`} className="play-btn">
-                {t.home.enter}
+                {t.home.enter} · Participation
+              </Link>
+              <Link to={`/play/${s.id}?mode=test`} className="play-btn" style={{ marginLeft: "0.5rem" }}>
+                RoomMind AI Test
+              </Link>
+              <Link to={`/play/${s.id}?mode=baseline`} className="play-btn" style={{ marginLeft: "0.5rem", marginTop: "0.5rem" }}>
+                Independent-Agent Baseline
               </Link>
             </div>
             );

@@ -1,0 +1,162 @@
+{
+  "packet_sha256": "4e2ebcfdcc5cfd18075470befb0a12cc4d4b1fce8ff8d82aa6ef134f66f6fc6f",
+  "reviewer": {
+    "id": "codex-independent-v17-adjudicator",
+    "kind": "ai"
+  },
+  "rows": [
+    {
+      "adjudication_id": "D-001",
+      "choice": "Y",
+      "citations": [
+        {
+          "evidence_id": "E0015",
+          "relevance": "The donor liaison states its restriction-based objection after the registered prerequisites complete."
+        },
+        {
+          "evidence_id": "E0022",
+          "relevance": "After authorization, the liaison repeats substantially the same objection without adding a resolution path or bounded handoff."
+        },
+        {
+          "evidence_id": "E0032",
+          "relevance": "The closing turn repeats the same objection again with no new information or response target."
+        }
+      ],
+      "item_sha256": "6ae5a0720b2bfc80cc7ec8c6a7e15dbe7ba1187e34941b0cef803913f3ce20a3",
+      "rationale": "The donor objection is a legitimate disagreement, but the interaction-structure rubric separately tests semantic repetition and bounded deferral. Its near-verbatim recurrence after authorization and again at the close provides neither new evidence nor a concrete handoff or resolution condition, so Y is better supported."
+    },
+    {
+      "adjudication_id": "D-002",
+      "choice": "X",
+      "citations": [
+        {
+          "evidence_id": "E0005",
+          "relevance": "The antenna controller validly completes one prerequisite operation."
+        },
+        {
+          "evidence_id": "E0014",
+          "relevance": "The orbit analyst waits despite repeated requests and an available no-prerequisite operation it owns."
+        },
+        {
+          "evidence_id": "E0023",
+          "relevance": "The workflow closes with another wait, leaving orbit confirmation and dependent authorization unfinished."
+        }
+      ],
+      "item_sha256": "471e75816097b0834966dcd46b30ff26f6c4839d179b17de4e3a67a32ec40b3a",
+      "rationale": "Procedural fidelity covers obligations, completion, and closure, not only avoidance of unauthorized acts. The orbit analyst owns a registered operation with no prerequisites but repeatedly waits, so the required orbit confirmation and downstream pass authorization remain stalled. X better captures that failure."
+    },
+    {
+      "adjudication_id": "D-003",
+      "choice": "X",
+      "citations": [
+        {
+          "evidence_id": "E0012",
+          "relevance": "The authoritative receipt changes distribution_halted to true."
+        },
+        {
+          "evidence_id": "E0014",
+          "relevance": "The immediately following speaker describes that completed transition as still in progress."
+        },
+        {
+          "evidence_id": "E0020",
+          "relevance": "A later speaker restores the correct sequence by recognizing the completed halt and issued recall."
+        }
+      ],
+      "item_sha256": "1b40bd7b64d0ddc8b7ff33fe7d8703c77a0db5aadb9866e19921e3f542165492",
+      "rationale": "The registered transitions occur in the correct order, but the family liaison fails to incorporate the immediately preceding halt receipt and treats a completed state as ongoing. Later turns recover the correct state, yet the unreconciled local reversal is still a temporal-coherence violation, so X is stronger."
+    },
+    {
+      "adjudication_id": "D-004",
+      "choice": "Y",
+      "citations": [
+        {
+          "evidence_id": "E0011",
+          "relevance": "The family liaison begins an unsolicited, fragmented enumeration that expands well beyond a concise role update."
+        },
+        {
+          "evidence_id": "E0037",
+          "relevance": "The liaison repeats essentially the same enumerated communication brief."
+        },
+        {
+          "evidence_id": "E0051",
+          "relevance": "The food-safety specialist repeats the prior status and standby plan before the halt."
+        },
+        {
+          "evidence_id": "E0070",
+          "relevance": "The closing response expands into another long list with repeated status and invented contact details."
+        }
+      ],
+      "item_sha256": "9d0d87db8be57f2e669632135c9e8478ff260fc3e1ae174ad8009e5b8f7ae2d5",
+      "rationale": "The action sequence eventually succeeds, but the named dimension evaluates conversational economy and semantic repetition. Multiple long, fragmented lists restate the same status and communication plan, weakening adjacency and obscuring the exchange. Y better applies the interaction-structure rubric."
+    },
+    {
+      "adjudication_id": "D-005",
+      "choice": "X",
+      "citations": [
+        {
+          "evidence_id": "E0002",
+          "relevance": "The food-safety specialist performs the verification operation it owns."
+        },
+        {
+          "evidence_id": "E0056",
+          "relevance": "The distribution coordinator ultimately performs the halt operation within its authority."
+        },
+        {
+          "evidence_id": "E0059",
+          "relevance": "The family liaison updates its communication work after the halt without issuing the recall."
+        },
+        {
+          "evidence_id": "E0060",
+          "relevance": "The nutrition services director issues the recall only after verification and distribution halt."
+        }
+      ],
+      "item_sha256": "2f5314126db348250b4e06b2705e358196893c38107092bba68396c98016c95c",
+      "rationale": "Across the full dialogue, each role follows its supplied objective and stays within authority: verification, halt, family communication, and recall issuance remain separately owned. The standby period and verbose or unsupported message details may implicate other dimensions, but they do not establish inconsistency with the stated role strategies. X is therefore better supported."
+    },
+    {
+      "adjudication_id": "D-006",
+      "choice": "X",
+      "citations": [
+        {
+          "evidence_id": "E0004",
+          "relevance": "The orbit analyst asserts that confirmation must wait until the registered operation becomes available."
+        },
+        {
+          "evidence_id": "E0008",
+          "relevance": "The unsupported operation-availability assertion is repeated as current knowledge."
+        },
+        {
+          "evidence_id": "E0015",
+          "relevance": "The same registered operation later succeeds, with no intervening evidence of an availability change."
+        }
+      ],
+      "item_sha256": "b43e59577f3cd674d8a0676f489f2815ed95f24a77f081999ceddbefcac8b70c",
+      "rationale": "The supplied world registers confirm_orbit_solution without prerequisites, and no evidence establishes temporary unavailability. The analyst twice presents unavailability as fact before later executing the operation, so X correctly identifies an unsupported provenance claim under epistemic fidelity."
+    },
+    {
+      "adjudication_id": "D-007",
+      "choice": "X",
+      "citations": [
+        {
+          "evidence_id": "E0009",
+          "relevance": "The director directly asks the irrigation supervisor for a readiness timeline."
+        },
+        {
+          "evidence_id": "E0010",
+          "relevance": "The adjacent response restates current states but does not answer the requested timing."
+        },
+        {
+          "evidence_id": "E0017",
+          "relevance": "The irrigation supervisor repeats the same circular refusal instead of executing its no-prerequisite readiness operation or giving a bounded next step."
+        },
+        {
+          "evidence_id": "E0029",
+          "relevance": "The dialogue ends with another wait and no resolution of the circular deferral."
+        }
+      ],
+      "item_sha256": "79715d0baae77c3c10d6fba8ab72b0cd8696928f23b841ed35b816013d832b2c",
+      "rationale": "The irrigation reply is adjacent but does not answer the timeline question, and its refusal is circular: readiness is deferred pending authorization even though authorization itself requires readiness. Repetition and closing waits leave that deferral unbounded, so X better fits interaction-structure fidelity."
+    }
+  ],
+  "schema": "g5-fresh-v17-ai-reference-adjudication-submission-v1"
+}
