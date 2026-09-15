@@ -381,3 +381,32 @@ technical failure but did not improve total label agreement or solve missed viol
 false positives, so the error is no longer only permissive. Phase 6 remains unqualified and the
 32-dialogue screen must not start. This is still an AI-reference development diagnostic and cannot
 estimate human accuracy or an architecture effect.
+
+## v17 scorer-v4 failure decomposition and measurement decision
+
+Joining every mismatch to both independent-review rationales and the scorer's archived rationale
+shows eight post-hoc error categories. The largest are mistaking an operation's currently false effect
+for a prerequisite of that same operation (four cells), and confusing a role's separate objection with
+the authoritative workflow boundary (three cells). The remaining errors concern overinterpretation of
+opaque trace identifiers (two), unsupported operational-availability claims, a stale post-receipt state,
+and three distinct interaction-structure boundaries. The complete row-level diagnosis hash is
+`f2640d305c180d6d1ef35549b56b0a8875ec981d76a49836a01d6ad4508549fc`.
+
+The two AI reference reviewers agreed on 41/48 cells (85.4%, Cohen's κ = 0.671). The scorer agreed with
+the individual reviewers on only 33/48 and 34/48 cells, so the failed gate cannot be explained solely by
+the seven reference disagreements or their adjudication. Scorer v3 and v4 each achieved only 34/48 on
+separate untouched development sets. More prompt edits derived from v17 would therefore be exposed
+development rather than new qualification evidence.
+
+Phase 6 now proceeds through the two human-review packets frozen before scorer output. Two independent
+humans must each label all 48 cells, followed by a third human's blinded adjudication of disagreements.
+Only that complete reference can estimate scorer performance relative to humans and determine whether
+the automated scorer remains usable. Version 17 cannot qualify a v5 scorer revised from these errors;
+any v5 qualification would require another prospectively frozen untouched set. No human reviewer has
+been assigned and no packet has been distributed. The 32-dialogue screen remains paused.
+
+The local human-reference handoff preflight is frozen at
+`c577f68320f8acd019459be9815b2a6b901b4b9777192f2385214ce81b21e981`. It binds both 48-task blinded
+packets and response templates, verifies the absence of model predictions, arm conditions, source-run
+IDs, and internal case IDs, and freezes the same scorer thresholds before any human label exists. It
+assigns no reviewer, contains no human data, and does not authorize external distribution.
